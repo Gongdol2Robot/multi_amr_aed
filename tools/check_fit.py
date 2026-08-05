@@ -29,7 +29,7 @@ from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformListener
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MAP_YAML = os.environ.get("MAP_YAML", os.path.join(REPO, "maps", "map.yaml"))
+MAP_YAML = os.environ.get("MAP_YAML", os.path.join(REPO, "maps", "map1.yaml"))
 ROBOT_NS = os.environ.get("ROBOT_NS", "/robot1")
 TOL_CELLS = 2  # 허용 오차, 셀 단위 (해상도 0.05m 기준 10cm)
 PASS, WARN = 0.80, 0.55

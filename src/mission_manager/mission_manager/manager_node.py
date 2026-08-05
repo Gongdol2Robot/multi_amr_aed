@@ -9,6 +9,7 @@ from aed_interfaces.msg import (
 from geometry_msgs.msg import PoseStamped
 import rclpy
 from rclpy.node import Node
+import time
 
 from mission_manager.role_assignment import rank_candidates
 
@@ -29,10 +30,16 @@ class MissionManager(Node):
         self.declare_parameter("event_topic", "/aed/emergency_event")
         self.declare_parameter("robot_state_topic", "/aed/robot_state")
         self.declare_parameter("mission_status_topic", "/aed/mission_status")
+        self.declare_parameter("path_collection_timeout_sec", 10.0)
 
         self.robot_ids = list(self.get_parameter("robot_ids").value)
         if len(self.robot_ids) != 2:
             raise ValueError("robot_ids must contain exactly two robots")
+        self.path_collection_timeout = float(
+            self.get_parameter("path_collection_timeout_sec").value
+        )
+        if self.path_collection_timeout <= 0.0:
+            raise ValueError("path_collection_timeout_sec must be positive")
 
         self.robot_states = {}
         self.events = {}
@@ -51,6 +58,7 @@ class MissionManager(Node):
             self._on_robot_state,
             20,
         )
+        self.path_timer = self.create_timer(0.25, self._check_path_deadlines)
         self.create_subscription(
             EmergencyEvent,
             str(self.get_parameter("event_topic").value),
@@ -68,10 +76,14 @@ class MissionManager(Node):
         if state.robot_id not in self.assignment_publishers:
             return
         self.robot_states[state.robot_id] = state
-        if not self._is_available(state):
-            return
         for event_id, context in self.events.items():
             if context["terminal"] or context["active_robot"] is not None:
+                continue
+            if state.path_event_id == event_id:
+                context["path_responses"].add(state.robot_id)
+            if not self._path_collection_ready(context):
+                continue
+            if not self._is_available(state):
                 continue
             # 복구된 로봇은 이전 Goal을 재개하지 않는다. 후보 제외만 해제한 뒤
             # 증가된 assignment version으로 완전히 새로운 임무를 발행한다.
@@ -94,8 +106,12 @@ class MissionManager(Node):
             "version": 0,
             "terminal": False,
             "waiting": False,
+            "path_responses": set(),
+            "path_collection_started": time.monotonic(),
         }
-        self._assign_next(event.event_id)
+        self.get_logger().info(
+            f"Event {event.event_id}: waiting for both Nav2 path costs"
+        )
 
     def _on_mission_status(self, status: MissionStatus) -> None:
         context = self.events.get(status.event_id)
@@ -129,6 +145,8 @@ class MissionManager(Node):
             if robot_id in context["excluded"]:
                 continue
             if not self._is_available(state):
+                continue
+            if state.path_event_id != event_id:
                 continue
             candidates[robot_id] = {
                 "position": (
@@ -170,6 +188,23 @@ class MissionManager(Node):
             self._publish_recovery_resumed(event_id, robot_id)
         self.get_logger().info(
             f"Event {event_id}: assign v{context['version']} to {robot_id}"
+        )
+
+    def _check_path_deadlines(self) -> None:
+        for event_id, context in self.events.items():
+            if context["terminal"] or context["active_robot"] is not None:
+                continue
+            if context["waiting"]:
+                continue
+            if self._path_collection_ready(context):
+                self._assign_next(event_id)
+
+    def _path_collection_ready(self, context) -> bool:
+        if len(context["path_responses"]) >= len(self.robot_ids):
+            return True
+        return (
+            time.monotonic() - context["path_collection_started"]
+            >= self.path_collection_timeout
         )
 
     @staticmethod
@@ -222,9 +257,12 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        try:
+            node.destroy_node()
+            if rclpy.ok():
+                rclpy.shutdown()
+        except KeyboardInterrupt:
+            pass
 
 
 if __name__ == "__main__":

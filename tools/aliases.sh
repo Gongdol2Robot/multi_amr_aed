@@ -36,9 +36,53 @@ robotstart() {
   disown
 }
 
+_preflight_robot() {
+  local n="$1" host="$2"
+  shift 2
+
+  # aed_interfaces 등 overlay 타입까지 preflight에서 확인할 수 있게 환경을 갱신한다.
+  aedenv
+  python3 "$AED_WS/tools/preflight.py" \
+    --namespace "robot$n" \
+    --host "$host" \
+    "$@"
+}
+
+pf1() {
+  _preflight_robot 1 "${ROBOT1_IP:-192.168.107.101}" "$@"
+}
+
+pf2() {
+  _preflight_robot 2 "${ROBOT2_IP:-192.168.107.102}" "$@"
+}
+
+pfboth() {
+  local rc=0
+
+  echo "===== robot1 preflight ====="
+  pf1 "$@" || rc=1
+  echo
+  echo "===== robot2 preflight ====="
+  pf2 "$@" || rc=1
+
+  return "$rc"
+}
+
+# 기존 pf 사용법도 유지한다: pf 1, pf 2, pf 1 --nav
 pf() {
-  local n=${1:-1} host=${2:-192.168.0.2}
-  python3 "$AED_WS/tools/preflight.py" --namespace "robot$n" --host "$host"
+  local n="${1:-1}"
+  if [ "$#" -gt 0 ]; then
+    shift
+  fi
+
+  case "$n" in
+    1) pf1 "$@" ;;
+    2) pf2 "$@" ;;
+    *)
+      echo "사용: pf <1|2> [--localization|--nav|--detect]" >&2
+      return 2
+      ;;
+  esac
 }
 
 fit() {
@@ -58,7 +102,7 @@ dock() {
 }
 
 loc() {
-  local n=${1:-1} map=${2:-$AED_WS/maps/map.yaml}
+  local n=${1:-1} map=${2:-$AED_WS/maps/map1.yaml}
   ros2 launch turtlebot4_navigation localization.launch.py \
     namespace:=/robot$n map:="$map"
 }

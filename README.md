@@ -79,8 +79,9 @@ PR에는 구현 내용, 확인 방법, 아직 남은 문제를 작성합니다. 
 - `emergency_alert`: TurtleBot4 긴급 부저 이관 완료
 - `aed_interfaces`: 응급 이벤트·로봇 상태·미션 배정 메시지 구현 완료
 - `robot_missions`: typed 상태를 발행하는 단일 AED Nav2 실행기 구현 완료
-- `mission_manager`: 경로비용 기반 우선 배정과 장애 재할당 골격 구현 완료
-- `aed_bringup`: 실기 Nav2 안전 설정 이관 완료
+- `robot_state_monitor`: 두 Nav2 실제 경로 길이 계산과 이벤트별 RobotState 발행 구현 완료
+- `mission_manager`: 실제 경로비용 수집 대기, 우선 배정과 장애 재할당 구현 완료
+- `aed_bringup`: 실기 Nav2 안전 설정과 중앙 dispatch launch 구현 완료
 - `amr_recovery`, `sensor_recovery`, `helper_mission`: 담당별 책임 구조 정의
 - `event_logger`: 상태 전이·복구·후속 미션 이력 구조 정의
 - 나머지 패키지: 실제 상태 수집, Watchdog, DB, HMI, 통합 launch 구현 예정
@@ -152,5 +153,8 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-환경별 지도, 카메라 보정값, YOLO 모델은 저장소 기본값으로 간주하지 않습니다.
-현장 측정과 모델 검증 후 별도로 설정해야 합니다.
+현재 두 로봇의 공통 기본 지도는 `maps/map1.yaml`입니다. `loc 1`, `loc 2`와
+`robotstart`의 localization 터미널은 이 지도를 자동으로 사용합니다. 다른
+지도를 시험할 때만 `loc <robot_number> /absolute/path/to/map.yaml`처럼 경로를
+명시합니다. 카메라 보정값과 YOLO 모델은 현장 측정과 모델 검증 후 별도로
+설정해야 합니다.

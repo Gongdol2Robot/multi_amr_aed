@@ -28,5 +28,6 @@ bool nav2_ok
 bool emergency_stop
 bool path_valid
 float32 estimated_path_cost
+string path_event_id
 builtin_interfaces/Time last_heartbeat
 string detail
