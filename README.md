@@ -38,7 +38,8 @@ multi_amr_aed/
 - `aed_interfaces`: 응급 이벤트·로봇 상태·미션 배정 메시지 구현 완료
 - `robot_missions`: namespace 기반 Nav2 미션 실행기 구현 완료
 - `mission_manager`: 두 로봇 거리 기반 AED·길안내 동적 배정 구현 완료
-- 나머지 패키지: 상태 수집, HMI, bringup을 순차 구현
+- `aed_bringup`: 실기 Nav2 안전 설정 이관 완료
+- 나머지 패키지: 상태 수집, HMI, 통합 launch를 순차 구현
 
 ## Build
 

@@ -77,7 +77,8 @@ nav() {
     echo "Nav2 시작 중단: loc $n -> initpose $n 순서로 복구하세요."
     return 1
   fi
-  ros2 launch turtlebot4_navigation nav2.launch.py namespace:=/robot$n
+  ros2 launch turtlebot4_navigation nav2.launch.py namespace:=/robot$n \
+    params_file:="$AED_WS/src/aed_bringup/config/nav2_aed.yaml"
 }
 
 rv() {
