@@ -1,0 +1,40 @@
+# ROS 2 / colcon
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Editors and OS
+.idea/
+.vscode/
+*~
+.DS_Store
+
+# Runtime output
+bags/
+captures/
+data/
+datasets/
+runs/
+*.db
+*.sqlite
+*.sqlite3
+
+# Large/generated ML artifacts
+models/*.engine
+models/*.onnx
+models/*.pt
+models/*.pth
+
+# Keep directory placeholders
+!models/.gitkeep
+

@@ -1,0 +1,9 @@
+string mission_id
+string event_id
+string robot_id
+uint8 role
+geometry_msgs/PoseStamped target
+geometry_msgs/PoseStamped secondary_target
+builtin_interfaces/Time assigned_at
+bool resume_previous_mission
+
