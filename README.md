@@ -31,6 +31,35 @@ multi_amr_aed/
 - 학습 데이터와 대용량 모델은 저장소에 직접 커밋하지 않습니다.
 - 기존 프로젝트 코드는 기능별로 검토한 뒤 해당 패키지로 이관합니다.
 
+## Collaboration workflow
+
+팀원은 `main` 브랜치에서 직접 개발하지 않고, 맡은 기능별 브랜치를 만들어
+작업합니다.
+
+```bash
+git switch main
+git pull origin main
+git switch -c feature/<기능명>
+```
+
+기능이 어느 정도 완성되고 로컬 빌드·기본 동작 확인이 끝나면 원격 브랜치에
+푸시하고 Pull Request를 생성합니다.
+
+```bash
+git add <변경한 파일>
+git commit -m "구현 내용 요약"
+git push -u origin feature/<기능명>
+```
+
+PR에는 구현 내용, 확인 방법, 아직 남은 문제를 작성합니다. 다른 팀원의 리뷰와
+충돌 확인을 거친 뒤 `main`에 병합하며, 병합 후 각 팀원은 최신 `main`을 다시
+받아 다음 작업 브랜치를 만듭니다.
+
+- 하나의 브랜치에는 가능한 한 하나의 기능이나 목적만 포함합니다.
+- 빌드되지 않는 코드와 개인 환경 경로는 PR에 올리지 않습니다.
+- 다른 팀원의 담당 파일을 함께 수정했다면 PR 설명에 변경 이유를 남깁니다.
+- 긴급한 수정이 아니라면 `main`에 직접 push하지 않습니다.
+
 ## Current migration status
 
 - `aed_vision`: 웹캠 압축 이미지 발행과 호모그래피 좌표 변환 이관 완료
