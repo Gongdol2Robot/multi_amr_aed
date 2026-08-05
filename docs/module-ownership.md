@@ -17,3 +17,15 @@
 - 통합 담당자는 검증된 모듈을 연결하고 통합 launch와 시나리오 시험을 관리한다.
 - 인터페이스 오류는 해당 모듈 담당자와 공동 수정한다.
 - 개별 미완성 기능을 통합 담당자에게 넘기지 않는다.
+
+## Scaffold entry points
+
+| 패키지 | 실행 파일 |
+|---|---|
+| `emergency_location_mapper` | `location_mapper` |
+| `robot_state_monitor` | `robot_state_monitor` |
+| `amr_recovery` | `recovery_manager` |
+| `sensor_recovery` | `sensor_health_monitor` |
+| `helper_mission` | `helper_mission_controller` |
+| `event_logger` | `event_logger` |
+| `aed_hmi` | `hmi_node` |
