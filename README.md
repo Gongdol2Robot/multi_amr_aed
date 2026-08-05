@@ -15,7 +15,7 @@ multi_amr_aed/
 │   ├── aed_interfaces/          # 이벤트·상태·Heartbeat·미션 메시지
 │   ├── aed_vision/              # YOLO 검출 및 응급 이벤트 확정
 │   ├── emergency_location_mapper/ # 카메라/구역을 지도 좌표로 변환
-│   ├── mission_manager/         # 경로비용 비교, 배정·재할당·최종 실패
+│   ├── mission_manager/         # 경로비용 비교, 배정·재할당·복구 지속
 │   ├── robot_missions/          # Undock, Nav2 AED 전달, 도착 판정
 │   ├── robot_state_monitor/     # 위치·배터리·Localization·Nav2 상태
 │   ├── heartbeat/               # 관제-로봇 양방향 Heartbeat
@@ -37,6 +37,8 @@ multi_amr_aed/
 - 로봇은 ROS 2 namespace와 robot ID로 구분합니다.
 - 하나의 응급 이벤트에는 한 대의 로봇만 활성 출동합니다.
 - 재할당은 증가하는 assignment version으로 중복 출동을 방지합니다.
+- AED 도착 전에는 응급 임무를 종료하지 않습니다.
+- 두 로봇이 불가하면 안전 정지·복구 대기 후 가용 로봇에 새 임무를 배정합니다.
 - 소스와 설정만 Git으로 관리하고 `build`, `install`, `log`는 제외합니다.
 - 학습 데이터와 대용량 모델은 저장소에 직접 커밋하지 않습니다.
 - 기존 프로젝트 코드는 기능별로 검토한 뒤 해당 패키지로 이관합니다.
@@ -86,7 +88,7 @@ PR에는 구현 내용, 확인 방법, 아직 남은 문제를 작성합니다. 
 1. 정상 출동: 유효 경로 중 예상 이동비용이 가장 작은 로봇 한 대를 선택
 2. 경로 장애: 지속적 Nav2 실패를 확정하고 다른 로봇으로 자동 재할당
 3. 네트워크 장애: 양방향 Heartbeat timeout, 기존 로봇 정지, 대체 로봇 출동
-4. 최종 실패: 두 로봇 모두 불가하면 `MISSION_FAILED`와 수동 대응 요청
+4. 동시 장애: `RECOVERY_WAIT`에서 안전하게 대기하며 복구 즉시 새 version으로 출동
 
 ## Workspace setup
 

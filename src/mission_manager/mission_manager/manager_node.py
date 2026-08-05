@@ -65,8 +65,18 @@ class MissionManager(Node):
         )
 
     def _on_robot_state(self, state: RobotState) -> None:
-        if state.robot_id in self.assignment_publishers:
-            self.robot_states[state.robot_id] = state
+        if state.robot_id not in self.assignment_publishers:
+            return
+        self.robot_states[state.robot_id] = state
+        if not self._is_available(state):
+            return
+        for event_id, context in self.events.items():
+            if context["terminal"] or context["active_robot"] is not None:
+                continue
+            # 복구된 로봇은 이전 Goal을 재개하지 않는다. 후보 제외만 해제한 뒤
+            # 증가된 assignment version으로 완전히 새로운 임무를 발행한다.
+            context["excluded"].discard(state.robot_id)
+            self._assign_next(event_id)
 
     def _on_emergency(self, event: EmergencyEvent) -> None:
         if event.status != EmergencyEvent.CONFIRMED:
@@ -83,6 +93,7 @@ class MissionManager(Node):
             "excluded": set(),
             "version": 0,
             "terminal": False,
+            "waiting": False,
         }
         self._assign_next(event.event_id)
 
@@ -132,13 +143,19 @@ class MissionManager(Node):
             candidates, (event.location.point.x, event.location.point.y)
         )
         if not ranked:
-            context["terminal"] = True
-            self._publish_final_failure(event_id, "no available robot")
+            context["active_robot"] = None
+            if not context["waiting"]:
+                context["waiting"] = True
+                self._publish_recovery_wait(
+                    event_id, "all robots temporarily unavailable"
+                )
             return
 
         robot_id = ranked[0]
         context["version"] += 1
         context["active_robot"] = robot_id
+        was_waiting = context["waiting"]
+        context["waiting"] = False
         assignment = MissionAssignment()
         assignment.mission_id = f"{event_id}-aed"
         assignment.event_id = event_id
@@ -149,6 +166,8 @@ class MissionManager(Node):
         assignment.assignment_version = context["version"]
         assignment.cancel_previous = True
         self.assignment_publishers[robot_id].publish(assignment)
+        if was_waiting:
+            self._publish_recovery_resumed(event_id, robot_id)
         self.get_logger().info(
             f"Event {event_id}: assign v{context['version']} to {robot_id}"
         )
@@ -164,15 +183,25 @@ class MissionManager(Node):
             and bool(state.pose.header.frame_id)
         )
 
-    def _publish_final_failure(self, event_id: str, reason: str) -> None:
+    def _publish_recovery_wait(self, event_id: str, reason: str) -> None:
         status = MissionStatus()
         status.mission_id = f"{event_id}-aed"
         status.event_id = event_id
-        status.status = MissionStatus.MISSION_FAILED
+        status.status = MissionStatus.RECOVERY_WAIT
         status.stamp = self.get_clock().now().to_msg()
         status.reason = reason
         self.status_publisher.publish(status)
-        self.get_logger().error(f"Event {event_id}: MISSION_FAILED: {reason}")
+        self.get_logger().warning(f"Event {event_id}: RECOVERY_WAIT: {reason}")
+
+    def _publish_recovery_resumed(self, event_id: str, robot_id: str) -> None:
+        status = MissionStatus()
+        status.mission_id = f"{event_id}-aed"
+        status.event_id = event_id
+        status.robot_id = robot_id
+        status.status = MissionStatus.RECOVERY_RESUMED
+        status.stamp = self.get_clock().now().to_msg()
+        status.reason = "available robot recovered; new assignment issued"
+        self.status_publisher.publish(status)
 
     @staticmethod
     def _event_pose(event: EmergencyEvent) -> PoseStamped:

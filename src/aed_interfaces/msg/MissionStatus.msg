@@ -7,7 +7,8 @@ uint8 CANCELED=5
 uint8 BLOCKED=6
 uint8 NETWORK_LOST=7
 uint8 NAVIGATION_ERROR=8
-uint8 MISSION_FAILED=9
+uint8 RECOVERY_WAIT=9
+uint8 RECOVERY_RESUMED=10
 
 string mission_id
 string event_id

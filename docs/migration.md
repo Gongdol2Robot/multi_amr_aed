@@ -25,4 +25,4 @@
 1. Nav2 `ComputePathToPose` 결과로 실제 경로비용 계산
 2. 양방향 Heartbeat와 로봇 측 Watchdog 구현
 3. AMCL/배터리/Nav2 상태를 `robot_state_monitor`에서 발행
-4. 장애·재할당 이력 SQLite 저장과 HMI 수동 대응 경고 구현
+4. 장애·복구 대기·재할당 이력 SQLite 저장과 HMI 복구 지원 알림 구현
