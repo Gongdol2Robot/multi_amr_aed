@@ -10,7 +10,9 @@ uint8 UNAVAILABLE=8
 
 uint8 ROLE_NONE=0
 uint8 ROLE_AED_DELIVERY=1
-uint8 ROLE_RETURN=2
+uint8 ROLE_HELPER_REQUEST=2
+uint8 ROLE_GUIDE=3
+uint8 ROLE_RETURN=4
 
 string robot_id
 builtin_interfaces/Time stamp

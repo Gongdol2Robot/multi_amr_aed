@@ -1,5 +1,7 @@
 # aed_bringup
 
+통합 담당: 이현민
+
 멀티 TurtleBot4 시스템의 공통 Nav2 설정과 전체 기동 파일을 관리합니다.
 
 ## Nav2 configuration
@@ -16,4 +18,3 @@
 
 두 로봇은 동일한 파일을 사용하고 namespace만 `/robot1`, `/robot2`로
 분리합니다.
-

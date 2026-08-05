@@ -26,3 +26,4 @@
 2. 양방향 Heartbeat와 로봇 측 Watchdog 구현
 3. AMCL/배터리/Nav2 상태를 `robot_state_monitor`에서 발행
 4. 장애·복구 대기·재할당 이력 SQLite 저장과 HMI 복구 지원 알림 구현
+5. AED 도착 후 사람 부재 판정과 `helper_mission` 호출·안내 구현

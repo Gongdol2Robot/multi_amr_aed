@@ -1,5 +1,7 @@
 # mission_manager
 
+담당: 김재엽
+
 확정된 응급 이벤트마다 한 대의 TurtleBot4만 AED 전달 로봇으로 배정합니다.
 
 ## Selection and recovery policy

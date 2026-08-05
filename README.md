@@ -5,7 +5,7 @@
 우선 로봇에 경로 또는 네트워크 장애가 발생하면 다른 로봇으로 임무를 자동
 재할당하여 단일 장애 상황에서도 AED 전달을 지속합니다.
 
-기획 기준: [장애 복구형 시나리오 v3.0](https://app.notion.com/p/3b35af693d3581f8a95feaa09b63a4d7)
+기획 기준: [기획안 최종 v3.0](https://app.notion.com/p/3b35af693d3581f8a95feaa09b63a4d7)
 
 ## Repository layout
 
@@ -18,8 +18,9 @@ multi_amr_aed/
 │   ├── mission_manager/         # 경로비용 비교, 배정·재할당·복구 지속
 │   ├── robot_missions/          # Undock, Nav2 AED 전달, 도착 판정
 │   ├── robot_state_monitor/     # 위치·배터리·Localization·Nav2 상태
-│   ├── heartbeat/               # 관제-로봇 양방향 Heartbeat
-│   ├── safety_watchdog/         # 통신 장애 시 Goal 취소와 안전 정지
+│   ├── amr_recovery/            # Heartbeat·Nav2·네트워크 복구
+│   ├── sensor_recovery/         # LiDAR 감시·안전 정지·센서 복구
+│   ├── helper_mission/          # AED 도착 후 사람 호출·현장 안내
 │   ├── event_logger/            # 이벤트·장애·재할당 이력 저장
 │   ├── emergency_alert/         # 부저 및 음성 알림
 │   ├── aed_hmi/                 # 웹 관제 및 이벤트 이력
@@ -80,7 +81,8 @@ PR에는 구현 내용, 확인 방법, 아직 남은 문제를 작성합니다. 
 - `robot_missions`: typed 상태를 발행하는 단일 AED Nav2 실행기 구현 완료
 - `mission_manager`: 경로비용 기반 우선 배정과 장애 재할당 골격 구현 완료
 - `aed_bringup`: 실기 Nav2 안전 설정 이관 완료
-- `heartbeat`, `safety_watchdog`, `event_logger`: 책임과 인터페이스 구조 정의
+- `amr_recovery`, `sensor_recovery`, `helper_mission`: 담당별 책임 구조 정의
+- `event_logger`: 상태 전이·복구·후속 미션 이력 구조 정의
 - 나머지 패키지: 실제 상태 수집, Watchdog, DB, HMI, 통합 launch 구현 예정
 
 ## Core scenarios
@@ -89,6 +91,20 @@ PR에는 구현 내용, 확인 방법, 아직 남은 문제를 작성합니다. 
 2. 경로 장애: 지속적 Nav2 실패를 확정하고 다른 로봇으로 자동 재할당
 3. 네트워크 장애: 양방향 Heartbeat timeout, 기존 로봇 정지, 대체 로봇 출동
 4. 동시 장애: `RECOVERY_WAIT`에서 안전하게 대기하며 복구 즉시 새 version으로 출동
+5. AED 도착 후 주변에 사람이 없으면 다른 AMR이 구조 인력을 호출·안내
+
+## Team ownership
+
+| 담당자 | 영역 | 주 패키지 |
+|---|---|---|
+| 김지훈 | 호모그래피·위치 검증·SLAM 보조 | `emergency_location_mapper`, `aed_vision` |
+| 이현민 | Vision 모델·인터페이스·전체 통합 | `aed_vision`, `aed_interfaces`, `aed_bringup` |
+| 김재엽 | 거리·경로비용 비교와 로봇 선정 | `mission_manager` |
+| 김영기 | 네트워크·Nav2 장애 복구 | `amr_recovery` |
+| 박재현 | LiDAR 장애 감지와 대처 | `sensor_recovery`, `robot_state_monitor` |
+| 김민성 | 구조 인력 호출과 현장 안내 | `helper_mission`, `emergency_alert` |
+
+세부 산출물과 통합 원칙은 [module ownership](docs/module-ownership.md)을 따릅니다.
 
 ## Workspace setup
 
