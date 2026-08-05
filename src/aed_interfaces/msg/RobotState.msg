@@ -1,14 +1,16 @@
 uint8 AVAILABLE=0
 uint8 BUSY=1
-uint8 UNAVAILABLE=2
-uint8 ERROR=3
+uint8 BLOCKED=2
+uint8 NETWORK_LOST=3
+uint8 NAVIGATION_ERROR=4
+uint8 LOCALIZATION_ERROR=5
+uint8 LOW_BATTERY=6
+uint8 EMERGENCY_STOP=7
+uint8 UNAVAILABLE=8
 
 uint8 ROLE_NONE=0
-uint8 ROLE_PATROL=1
-uint8 ROLE_CLEANING=2
-uint8 ROLE_AED_DELIVERY=3
-uint8 ROLE_GUIDE=4
-uint8 ROLE_RETURN=5
+uint8 ROLE_AED_DELIVERY=1
+uint8 ROLE_RETURN=2
 
 string robot_id
 builtin_interfaces/Time stamp
@@ -17,5 +19,12 @@ float32 battery_percentage
 uint8 availability
 uint8 role
 string mission_id
+bool is_docked
+bool network_ok
+bool localization_ok
+bool nav2_ok
+bool emergency_stop
+bool path_valid
+float32 estimated_path_cost
+builtin_interfaces/Time last_heartbeat
 string detail
-

@@ -10,9 +10,10 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/EmergencyEvent.msg"
   "msg/RobotState.msg"
   "msg/MissionAssignment.msg"
+  "msg/MissionStatus.msg"
+  "msg/Heartbeat.msg"
   DEPENDENCIES builtin_interfaces geometry_msgs
 )
 
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()
-

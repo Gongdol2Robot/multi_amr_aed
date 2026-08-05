@@ -1,15 +1,12 @@
 # robot_missions
 
-Mission Manager가 발행한 `MissionAssignment`를 Nav2 목표로 실행합니다.
+배정된 AED 전달 임무를 Nav2로 수행하고 typed `MissionStatus`를 발행합니다.
 
-각 로봇 namespace 안에서 같은 노드를 실행하면 상대 이름인
-`navigate_to_pose`, `mission_assignment`, `mission_status`가 자동 분리됩니다.
+- 새로운 assignment version을 수신하면 기존 Goal 취소
+- 출동·주행·도착·취소·Nav2 실패 상태 보고
+- 실패 후 자체적으로 이전 Goal을 재개하지 않음
 
 ```bash
 ros2 run robot_missions mission_executor --ros-args \
   -r __ns:=/robot1 -p robot_id:=robot1
 ```
-
-길안내 역할은 `secondary_target`이 설정된 경우 첫 목적지 도착 후 두 번째
-목적지를 수행합니다. 새로운 배정이 오면 진행 중인 Nav2 목표를 취소합니다.
-

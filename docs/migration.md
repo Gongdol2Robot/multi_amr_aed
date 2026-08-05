@@ -22,7 +22,7 @@
 
 ## Next candidates
 
-1. YOLO 추론부를 `EmergencyDetection` 인터페이스로 분리
-2. AMCL/배터리/통신 상태를 `robot_state_monitor`에서 발행
-3. 두 로봇과 중앙 노드를 함께 시작하는 `aed_bringup` launch 작성
-4. HMI와 이벤트 영속 저장 구현
+1. Nav2 `ComputePathToPose` 결과로 실제 경로비용 계산
+2. 양방향 Heartbeat와 로봇 측 Watchdog 구현
+3. AMCL/배터리/Nav2 상태를 `robot_state_monitor`에서 발행
+4. 장애·재할당 이력 SQLite 저장과 HMI 수동 대응 경고 구현

@@ -1,17 +1,15 @@
 # mission_manager
 
-확정된 응급 이벤트와 각 로봇의 상태를 받아 동적으로 역할을 배정합니다.
+확정된 응급 이벤트마다 한 대의 TurtleBot4만 AED 전달 로봇으로 배정합니다.
 
-정책:
+## Selection and recovery policy
 
-1. `AVAILABLE`이며 pose의 frame이 있는 로봇만 후보로 사용
-2. 응급 위치에 가장 가까운 로봇에 `ROLE_AED_DELIVERY` 배정
-3. 두 번째 로봇에 `ROLE_GUIDE` 배정
-4. 길안내 로봇은 설정된 대기 위치를 방문한 뒤 응급 위치로 이동
+1. 통신·Localization·Nav2·비상정지 상태가 정상인 로봇만 후보로 사용
+2. 유효한 Nav2 경로를 가진 후보를 예상 경로비용 순으로 정렬
+3. 최우선 로봇 한 대만 출동시키고 다른 로봇은 대기
+4. `BLOCKED`, `NETWORK_LOST`, `NAVIGATION_ERROR` 수신 시 수행 로봇 제외
+5. 동일 event에 assignment version을 증가시켜 대체 로봇에 재할당
+6. 후보가 없으면 `MISSION_FAILED`를 발행하고 자동 재시도 중단
 
-```bash
-ros2 run mission_manager mission_manager --ros-args \
-  -p robot_ids:="[robot1, robot2]" \
-  -p guide_wait_x:=0.0 -p guide_wait_y:=0.0
-```
-
+복구된 로봇의 이전 상태 메시지는 assignment version이 다르므로 동일 임무를
+자동 재개할 수 없습니다.

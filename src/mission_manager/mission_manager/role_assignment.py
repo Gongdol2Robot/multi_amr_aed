@@ -3,24 +3,29 @@
 import math
 
 
-def select_roles(robot_positions, emergency_position):
-    """Return `(aed_robot_id, guide_robot_id)` ordered by distance.
+def rank_candidates(robot_candidates, emergency_position):
+    """Order path-valid robots by path cost, then direct distance.
 
-    `robot_positions` maps a robot ID to an `(x, y)` pair. At least two
-    available robots are required.
+    A non-negative path cost is preferred. Direct distance is used as a
+    temporary fallback until the Nav2 path-cost response is available.
     """
-    if len(robot_positions) < 2:
-        raise ValueError("at least two available robots are required")
+    valid = {
+        robot_id: candidate
+        for robot_id, candidate in robot_candidates.items()
+        if candidate["path_valid"]
+    }
+    if not valid:
+        return []
     emergency_x, emergency_y = emergency_position
-    ranked = sorted(
-        robot_positions,
+    return sorted(
+        valid,
         key=lambda robot_id: (
-            math.hypot(
-                robot_positions[robot_id][0] - emergency_x,
-                robot_positions[robot_id][1] - emergency_y,
+            valid[robot_id]["path_cost"]
+            if valid[robot_id]["path_cost"] >= 0.0
+            else math.hypot(
+                valid[robot_id]["position"][0] - emergency_x,
+                valid[robot_id]["position"][1] - emergency_y,
             ),
             robot_id,
         ),
     )
-    return ranked[0], ranked[1]
-

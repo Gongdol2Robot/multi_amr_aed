@@ -11,4 +11,5 @@ float32 confidence
 uint32 consecutive_detections
 uint8 status
 string source_id
-
+string camera_id
+string zone_id
