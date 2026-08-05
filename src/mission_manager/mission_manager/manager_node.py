@@ -9,6 +9,13 @@ from aed_interfaces.msg import (
 from geometry_msgs.msg import PoseStamped
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
+from std_msgs.msg import String
 import time
 
 from mission_manager.role_assignment import rank_candidates
@@ -31,6 +38,7 @@ class MissionManager(Node):
         self.declare_parameter("robot_state_topic", "/aed/robot_state")
         self.declare_parameter("mission_status_topic", "/aed/mission_status")
         self.declare_parameter("path_collection_timeout_sec", 10.0)
+        self.declare_parameter("dispatch_enabled", False)
 
         self.robot_ids = list(self.get_parameter("robot_ids").value)
         if len(self.robot_ids) != 2:
@@ -40,6 +48,16 @@ class MissionManager(Node):
         )
         if self.path_collection_timeout <= 0.0:
             raise ValueError("path_collection_timeout_sec must be positive")
+        self.dispatch_enabled = bool(
+            self.get_parameter("dispatch_enabled").value
+        )
+
+        latched_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
 
         self.robot_states = {}
         self.events = {}
@@ -51,6 +69,9 @@ class MissionManager(Node):
         }
         self.status_publisher = self.create_publisher(
             MissionStatus, "/aed/mission_status", 20
+        )
+        self.selected_publisher = self.create_publisher(
+            String, "/aed/selected_robot", latched_qos
         )
         self.create_subscription(
             RobotState,
@@ -170,6 +191,23 @@ class MissionManager(Node):
             return
 
         robot_id = ranked[0]
+        selected = String()
+        selected.data = robot_id
+        self.selected_publisher.publish(selected)
+        costs = ", ".join(
+            f"{candidate}={candidates[candidate]['path_cost']:.2f}m"
+            for candidate in ranked
+        )
+        self.get_logger().info(
+            f"Event {event_id}: selected={robot_id}; {costs}"
+        )
+        if not self.dispatch_enabled:
+            context["terminal"] = True
+            self.get_logger().warning(
+                "Dispatch disabled; distance comparison only"
+            )
+            return
+
         context["version"] += 1
         context["active_robot"] = robot_id
         was_waiting = context["waiting"]

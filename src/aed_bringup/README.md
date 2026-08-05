@@ -27,3 +27,12 @@
 ```bash
 ros2 launch aed_bringup central_dispatch.launch.py
 ```
+
+기본값은 거리 비교 전용입니다. RViz의 **Publish Point**로 좌표를 클릭하면
+로봇별 Nav2 경로거리와 선택 결과를 발행합니다.
+
+```bash
+ros2 topic echo /aed/path_distance/robot1
+ros2 topic echo /aed/path_distance/robot2
+ros2 topic echo /aed/selected_robot
+```

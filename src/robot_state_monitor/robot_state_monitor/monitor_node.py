@@ -9,14 +9,25 @@ import time
 
 from action_msgs.msg import GoalStatus
 from aed_interfaces.msg import EmergencyEvent, RobotState
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
+from geometry_msgs.msg import (
+    PointStamped,
+    PoseStamped,
+    PoseWithCovarianceStamped,
+)
 from nav2_msgs.action import ComputePathToPose
 from nav_msgs.msg import Path
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from sensor_msgs.msg import BatteryState
+from std_msgs.msg import Float32
 
 
 @dataclass
@@ -53,12 +64,13 @@ class RobotStateMonitor(Node):
         super().__init__("robot_state_monitor")
         self.declare_parameter("robot_ids", ["robot1", "robot2"])
         self.declare_parameter("map_frame", "map")
-        self.declare_parameter("pose_timeout_sec", 3.0)
+        self.declare_parameter("pose_timeout_sec", 15.0)
         self.declare_parameter("plan_retry_sec", 3.0)
         self.declare_parameter("state_publish_period_sec", 0.5)
         self.declare_parameter("planner_id", "GridBased")
         self.declare_parameter("event_topic", "/aed/emergency_event")
         self.declare_parameter("state_topic", "/aed/robot_state")
+        self.declare_parameter("clicked_point_topic", "/clicked_point")
 
         self.robot_ids = [str(item) for item in self.get_parameter("robot_ids").value]
         if not self.robot_ids or len(set(self.robot_ids)) != len(self.robot_ids):
@@ -75,6 +87,14 @@ class RobotStateMonitor(Node):
         self.current_event_id = ""
         self.current_target: PoseStamped | None = None
         self.event_serial = 0
+        self.click_serial = 0
+
+        latched_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
 
         self.state_publisher = self.create_publisher(
             RobotState, str(self.get_parameter("state_topic").value), 20
@@ -82,6 +102,14 @@ class RobotStateMonitor(Node):
         self.path_publishers = {
             robot_id: self.create_publisher(
                 Path, f"/aed/candidate_path/{robot_id}", 10
+            )
+            for robot_id in self.robot_ids
+        }
+        self.distance_publishers = {
+            robot_id: self.create_publisher(
+                Float32,
+                f"/aed/path_distance/{robot_id}",
+                latched_qos,
             )
             for robot_id in self.robot_ids
         }
@@ -101,7 +129,7 @@ class RobotStateMonitor(Node):
                     PoseWithCovarianceStamped,
                     f"/{robot_id}/amcl_pose",
                     lambda message, rid=robot_id: self._on_pose(rid, message),
-                    qos_profile_sensor_data,
+                    latched_qos,
                 )
             )
             self.battery_subscriptions.append(
@@ -112,13 +140,33 @@ class RobotStateMonitor(Node):
                     qos_profile_sensor_data,
                 )
             )
+        event_topic = str(self.get_parameter("event_topic").value)
+        self.event_publisher = self.create_publisher(
+            EmergencyEvent, event_topic, 10
+        )
         self.event_subscription = self.create_subscription(
             EmergencyEvent,
-            str(self.get_parameter("event_topic").value),
+            event_topic,
             self._on_event,
             10,
         )
+        click_topics = [
+            str(self.get_parameter("clicked_point_topic").value),
+            *(f"/{robot_id}/clicked_point" for robot_id in self.robot_ids),
+        ]
+        self.click_subscriptions = [
+            self.create_subscription(
+                PointStamped,
+                topic,
+                self._on_clicked_point,
+                10,
+            )
+            for topic in dict.fromkeys(click_topics)
+        ]
         self.timer = self.create_timer(period, self._on_timer)
+        self.get_logger().info(
+            "RViz Publish Point topics: " + ", ".join(click_topics)
+        )
 
     def _on_pose(
         self, robot_id: str, message: PoseWithCovarianceStamped
@@ -141,6 +189,31 @@ class RobotStateMonitor(Node):
         percentage = float(message.percentage)
         if math.isfinite(percentage):
             self.runtime[robot_id].battery_percentage = percentage
+
+    def _on_clicked_point(self, message: PointStamped) -> None:
+        """Turn an RViz Publish Point click into a confirmed AED event."""
+        frame_id = message.header.frame_id or self.map_frame
+        if frame_id != self.map_frame:
+            self.get_logger().error(
+                f"Ignore clicked point frame={frame_id}; "
+                f"expected {self.map_frame}"
+            )
+            return
+        self.click_serial += 1
+        event = EmergencyEvent()
+        event.event_id = f"rviz-{self.click_serial:04d}"
+        event.detected_at = self.get_clock().now().to_msg()
+        event.location = deepcopy(message)
+        event.location.header.frame_id = self.map_frame
+        event.confidence = 1.0
+        event.consecutive_detections = 1
+        event.status = EmergencyEvent.CONFIRMED
+        event.source_id = "rviz_publish_point"
+        self.event_publisher.publish(event)
+        self.get_logger().info(
+            f"RViz event {event.event_id}: "
+            f"x={message.point.x:.3f}, y={message.point.y:.3f}"
+        )
 
     def _on_event(self, event: EmergencyEvent) -> None:
         if event.status != EmergencyEvent.CONFIRMED:
@@ -167,6 +240,8 @@ class RobotStateMonitor(Node):
             runtime.path_event_id = ""
             runtime.planning = False
             runtime.last_plan_attempt = 0.0
+        for robot_id in self.robot_ids:
+            self._publish_distance(robot_id, math.nan)
         self.get_logger().info(f"Evaluate Nav2 paths for event {event.event_id}")
         self._request_missing_plans()
 
@@ -259,6 +334,7 @@ class RobotStateMonitor(Node):
         runtime.path_valid = True
         runtime.path_cost = cost
         self.path_publishers[robot_id].publish(path)
+        self._publish_distance(robot_id, cost)
         self.get_logger().info(
             f"{event_id} {robot_id}: Nav2 path cost={cost:.2f}m"
         )
@@ -271,6 +347,7 @@ class RobotStateMonitor(Node):
         runtime.path_valid = False
         runtime.path_cost = -1.0
         self.path_publishers[robot_id].publish(Path())
+        self._publish_distance(robot_id, math.nan)
         self.get_logger().warning(f"{event_id} {robot_id}: {reason}")
         self._publish_state(robot_id)
 
@@ -303,6 +380,11 @@ class RobotStateMonitor(Node):
             state.availability = RobotState.AVAILABLE
             state.detail = "ready"
         self.state_publisher.publish(state)
+
+    def _publish_distance(self, robot_id: str, distance: float) -> None:
+        message = Float32()
+        message.data = float(distance)
+        self.distance_publishers[robot_id].publish(message)
 
     @staticmethod
     def _pose_age(runtime: RobotRuntime) -> float:

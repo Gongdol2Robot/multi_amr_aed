@@ -35,6 +35,25 @@ ros2 run robot_state_monitor robot_state_monitor --ros-args \
 ros2 launch aed_bringup central_dispatch.launch.py
 ```
 
+중앙 노드를 먼저 켠 뒤 RViz에서 **Publish Point**로 지도 좌표를 클릭하면
+`/clicked_point`, `/robot1/clicked_point`, `/robot2/clicked_point` 중 어느
+토픽으로 들어와도 새 이벤트로 변환하여 두 로봇의 경로를 다시 계산합니다.
+`Nav2 Goal`은 사용하지 않습니다. 기본값은 거리 비교만 수행하고 로봇을
+움직이지 않습니다.
+
+```bash
+ros2 topic echo /aed/path_distance/robot1
+ros2 topic echo /aed/path_distance/robot2
+ros2 topic echo /aed/selected_robot
+```
+
+경로를 계산할 수 없는 로봇의 거리에는 `nan`이 발행됩니다. 실제로 선정된
+로봇에 임무를 배정하려면 다음처럼 실행합니다.
+
+```bash
+ros2 launch aed_bringup central_dispatch.launch.py dispatch_enabled:=true
+```
+
 시험 이벤트:
 
 ```bash

@@ -12,10 +12,15 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
         [
             DeclareLaunchArgument("planner_id", default_value="GridBased"),
-            DeclareLaunchArgument("pose_timeout_sec", default_value="3.0"),
+            DeclareLaunchArgument("pose_timeout_sec", default_value="15.0"),
             DeclareLaunchArgument("plan_retry_sec", default_value="3.0"),
             DeclareLaunchArgument(
                 "path_collection_timeout_sec", default_value="10.0"
+            ),
+            DeclareLaunchArgument(
+                "dispatch_enabled",
+                default_value="false",
+                choices=["true", "false"],
             ),
             Node(
                 package="robot_state_monitor",
@@ -48,6 +53,10 @@ def generate_launch_description() -> LaunchDescription:
                         "path_collection_timeout_sec": ParameterValue(
                             LaunchConfiguration("path_collection_timeout_sec"),
                             value_type=float,
+                        ),
+                        "dispatch_enabled": ParameterValue(
+                            LaunchConfiguration("dispatch_enabled"),
+                            value_type=bool,
                         ),
                     }
                 ],
