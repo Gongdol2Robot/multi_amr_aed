@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from datetime import datetime
 from pathlib import Path
 from time import perf_counter
@@ -11,7 +12,9 @@ from time import perf_counter
 import yaml
 
 
-TRAINING_ROOT = Path(__file__).resolve().parent
+TRAINING_ROOT = Path(__file__).resolve().parents[1]
+if str(TRAINING_ROOT) not in sys.path:
+    sys.path.insert(0, str(TRAINING_ROOT))
 DEFAULT_MODELS = (
     TRAINING_ROOT / "models" / "yolov8n.pt",
     TRAINING_ROOT / "models" / "yolov8s.pt",

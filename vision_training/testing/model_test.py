@@ -4,14 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from datetime import datetime
 from pathlib import Path
 from time import perf_counter
 
-from yolo_train import REQUIRED_NAMES
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "training"))
 
-
-ROOT = Path(__file__).resolve().parent
+from yolo_train import REQUIRED_NAMES  # noqa: E402
 DEFAULT_FINETUNE_RUNS = ROOT / "finetune_runs"
 DEFAULT_PERSON_WEIGHTS = ROOT / "models" / "yolo11n.pt"
 DEFAULT_CAPTURE_DIR = ROOT / "test_captures"
@@ -157,7 +158,12 @@ def main() -> int:
     args = parse_args()
 
     # confidence와 IoU는 확률/비율 값이므로 유효 범위를 먼저 검사한다.
-    for option, value in (("--conf", args.conf), ("--person-conf", args.person_conf), ("--iou", args.iou)):
+    probability_options = (
+        ("--conf", args.conf),
+        ("--person-conf", args.person_conf),
+        ("--iou", args.iou),
+    )
+    for option, value in probability_options:
         if not 0.0 <= value <= 1.0:
             raise SystemExit(f"{option}는 0 이상 1 이하여야 합니다.")
     if args.imgsz < 32:

@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 import rclpy
 from aed_interfaces.msg import EmergencyEvent, Heartbeat
+from geometry_msgs.msg import PointStamped
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String, UInt32
@@ -179,6 +180,9 @@ class VisionDetector(Node):
         self.person_count_pub = self.create_publisher(
             UInt32, f"{prefix}/person_count", 10
         )
+        self.fallen_location_pub = self.create_publisher(
+            PointStamped, f"{prefix}/fallen_location", 10
+        )
         self.heartbeat_pub = self.create_publisher(
             Heartbeat, f"{prefix}/heartbeat", 10
         )
@@ -237,6 +241,10 @@ class VisionDetector(Node):
             result = self.pipeline.predict(frame)
             confirmed = self.confirmation.update(bool(result.fallen))
             target_location = self._target_location(result.fallen, frame.shape)
+            if target_location[2].startswith("homography"):
+                self._publish_fallen_location(
+                    source, target_location[:2]
+                )
             self.processed_frames += 1
             if self.processed_frames == 1:
                 self.get_logger().info(
@@ -284,11 +292,25 @@ class VisionDetector(Node):
         ):
             self.get_logger().warning(
                 f"Detected location is outside surveyed area: ({x:.2f}, {y:.2f}); "
-                "using configured fallback",
+                "publishing extrapolated homography coordinates",
                 throttle_duration_sec=5.0,
             )
-            return fallback[0], fallback[1], "configured"
+            return x, y, "homography_extrapolated"
         return x, y, "homography"
+
+    def _publish_fallen_location(
+        self,
+        source: CompressedImage,
+        location: tuple[float, float],
+    ) -> None:
+        """호모그래피로 계산한 검출 위치를 map 좌표 토픽으로 발행한다."""
+        message = PointStamped()
+        message.header.stamp = source.header.stamp
+        message.header.frame_id = self.frame_id
+        message.point.x = location[0]
+        message.point.y = location[1]
+        message.point.z = 0.0
+        self.fallen_location_pub.publish(message)
 
     def _publish_outputs(
         self,

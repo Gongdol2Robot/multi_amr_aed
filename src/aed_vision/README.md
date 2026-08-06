@@ -112,6 +112,7 @@ ros2 launch aed_vision camera_vision.launch.py \
 | `/<camera_id>/vision/status` | `std_msgs/String` | 전체 검출 상태 JSON |
 | `/<camera_id>/vision/crowd_level` | `std_msgs/String` | `NOT_APPLICABLE`, `CLEAR`, `CROWDED` |
 | `/<camera_id>/vision/person_count` | `std_msgs/UInt32` | 골목 ROI 내 유효 person 수 |
+| `/<camera_id>/vision/fallen_location` | `geometry_msgs/PointStamped` | 호모그래피로 계산한 구조 대상 map 좌표 |
 | `/<camera_id>/vision/heartbeat` | `aed_interfaces/Heartbeat` | 초당 노드 생존 신호 |
 | `/<camera_id>/vision/debug/compressed` | `sensor_msgs/CompressedImage` | bbox와 ROI가 표시된 JPEG |
 
@@ -161,6 +162,18 @@ person이 0~1명이면 `CLEAR`, 2명 이상이면 `CROWDED`입니다.
 
 입력 영상 해상도가 측량 당시의 640×480과 다르면 픽셀 좌표를 측량 해상도로
 자동 환산합니다. 측량 영역에서 `homography_margin_m`보다 멀리 벗어난 검출은
-외삽 오차를 피하기 위해 `location_x`, `location_y`의 고정 좌표로 대체합니다.
-프레임별 좌표와 변환 방식은 `vision/status` JSON의 `location_x`, `location_y`,
-`location_source`에서 확인할 수 있습니다.
+측량 영역 밖의 검출도 폐기하지 않고 외삽 좌표로 발행합니다. 프레임별 좌표와
+변환 방식은 `vision/status` JSON의 `location_x`, `location_y`,
+`location_source`에서 확인할 수 있습니다. 측량 영역 안은 `homography`, 밖은
+정확도가 낮을 수 있는 `homography_extrapolated`로 표시됩니다.
+
+호모그래피 좌표는 검출 프레임마다 다음 토픽으로도 발행합니다.
+
+```bash
+ros2 topic echo /camera_open/vision/fallen_location
+ros2 topic echo /camera_alley/vision/fallen_location
+```
+
+메시지 타입은 `geometry_msgs/msg/PointStamped`, `frame_id`는 `map`입니다.
+측량 신뢰 영역 밖의 좌표도 외삽값으로 발행하므로 이동에 사용할 때는 오차를
+감안해야 합니다.

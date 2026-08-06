@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 
-TRAINING_ROOT = Path(__file__).resolve().parent
+TRAINING_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_WEIGHTS = (
     TRAINING_ROOT
     / "finetune_runs"
