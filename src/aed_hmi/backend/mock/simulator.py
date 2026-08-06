@@ -40,6 +40,12 @@ EVENT_PREFIX = "evt"
 # 없다. 실제 주행도 이 정도는 어긋난다.
 ETA_ERROR_RANGE_S = (-3.5, 6.0)
 
+# 몇 번에 한 번 경로를 막을지. 재할당 화면을 보여주기 위한 것이다.
+REASSIGN_EVERY = 3
+# 목표까지의 몇 할 지점에서 막을지. 절반쯤 가서 막혀야 "가다가 못 갔다"로
+# 보인다. 출발하자마자 막히면 배정이 잘못된 것처럼 보인다.
+REASSIGN_AT_RATIO = 0.45
+
 
 class MockSimulator:
     """한 건의 출동 시나리오를 반복 재생한다."""
@@ -214,9 +220,14 @@ class MockSimulator:
         force: bool = False, role: RobotRole = RobotRole.AED_DELIVERY,
     ) -> bool:
         """목표까지 직선으로 간다. force 가 아니면 가끔 실패를 만든다."""
-        # 3번에 1번은 도중에 막히게 해서, 재할당 화면이 실제로 보이게 한다.
-        fail_at = None if force else (
-            random.uniform(0.3, 0.6) if random.random() < 0.34 else None
+        # 세 번에 한 번은 도중에 막아 재할당 화면이 실제로 보이게 한다.
+        #
+        # 무작위가 아니라 번호로 정한다. 시연 중에 "다음 건에서 재할당이
+        # 납니다" 라고 미리 짚을 수 있어야 하기 때문이다. 무작위면 열 번을
+        # 기다려도 안 나오거나, 설명하는 도중에 나와 버린다.
+        fail_at = (
+            None if force or self._sequence % REASSIGN_EVERY
+            else REASSIGN_AT_RATIO
         )
         start = positions[robot_id]
         total = math.hypot(goal.x - start.x, goal.y - start.y)

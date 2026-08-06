@@ -20,14 +20,38 @@ from dataclasses import dataclass
 
 
 def state_qos():
-    """상태·이벤트용. 놓치면 안 되므로 신뢰성 있게 받는다."""
+    """상태·이벤트용. 기본은 RELIABLE 이다.
+
+    상태 전이(MissionStatus, EmergencyEvent)는 한 번만 오므로 놓치면 그
+    기록이 영영 없다. 그래서 기본을 RELIABLE 로 둔다. 지금 발행하는
+    mission_manager(depth 20)와 vision_detector(depth 10) 둘 다 RELIABLE 이라
+    맞는다.
+
+    다만 터틀봇 위에서 도는 노드는 사정이 다르다. Create3 와 센서 토픽이
+    전부 `qos_profile_sensor_data`(BEST_EFFORT)라, 그 위에서 상태를 내는
+    노드도 같은 QoS 를 쓰기 쉽다. **발행이 BEST_EFFORT 인데 구독이
+    RELIABLE 이면 ROS 2 는 연결을 아예 안 맺고 경고도 안 낸다.** 화면에는
+    "ROS 수신" 이라 떠 있는데 로봇 칸만 영영 비는 모습이 된다.
+
+    그때 코드를 고치지 않고 넘길 수 있게 환경변수로 연다.
+
+        AED_HMI_STATE_RELIABILITY=best_effort python3 -m backend.main
+
+    BEST_EFFORT 로 내리면 어느 발행자와도 붙는다(RELIABLE 발행자와도 붙는다).
+    대신 상태 전이를 놓칠 수 있으므로, 안 붙을 때만 쓴다.
+    """
     from rclpy.qos import (
         DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy,
+    )
+    wanted = os.environ.get("AED_HMI_STATE_RELIABILITY", "reliable").lower()
+    reliability = (
+        ReliabilityPolicy.BEST_EFFORT if wanted == "best_effort"
+        else ReliabilityPolicy.RELIABLE
     )
     return QoSProfile(
         history=HistoryPolicy.KEEP_LAST,
         depth=20,
-        reliability=ReliabilityPolicy.RELIABLE,
+        reliability=reliability,
         durability=DurabilityPolicy.VOLATILE,
     )
 
@@ -72,6 +96,17 @@ def latched_qos():
 ROBOT_STATE_TOPIC = "/aed/robot_state"
 MISSION_STATUS_TOPIC = "/aed/mission_status"
 AGGREGATE_EVENT_TOPIC = "/aed/emergency_event"
+
+# mission_manager 가 로봇마다 따로 내는 배정 지시. 목표 좌표는 여기에만
+# 실려 온다. MissionStatus 에는 상태만 있고 좌표가 없어서, 이걸 안 받으면
+# 화면의 목표 좌표와 도착 예상이 영영 빈다.
+#
+# DeliverAed action 으로 바뀌면 이 토픽은 사라지고 goal 이 같은 값을 싣는다.
+def assignment_topic(robot_id: str) -> str:
+    return f"/{robot_id}/mission_assignment"
+
+
+ROBOT_IDS = ("robot1", "robot2")
 
 # 예상과 실제를 함께 재는 쪽(multi_robot_emergency)이 내는 토픽.
 # 로봇별 Float32 도 있지만 그건 안 받는다. 어느 요청의 값인지가 안 실려

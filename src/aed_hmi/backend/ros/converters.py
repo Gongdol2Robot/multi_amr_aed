@@ -109,6 +109,24 @@ def to_emergency_event(message) -> EmergencyEventSnapshot:
     )
 
 
+def to_assignment(message) -> dict:
+    """MissionAssignment.msg -> context.on_assignment 인자.
+
+    목표 좌표가 실려 오는 유일한 메시지다. MissionStatus 에는 상태만 있다.
+    """
+    return {
+        "mission_id": message.mission_id,
+        "version": int(message.assignment_version),
+        "event_id": message.event_id,
+        "robot_id": message.robot_id,
+        "role": robot_role(message.role).value,
+        "target": Point2D(
+            message.target.pose.position.x, message.target.pose.position.y
+        ),
+        "assigned_at": ros_time_to_epoch(message.assigned_at),
+    }
+
+
 def to_mission_event(message) -> MissionEvent:
     return MissionEvent(
         mission_id=message.mission_id,

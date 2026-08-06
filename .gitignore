@@ -63,3 +63,6 @@ vision_training/caterpillar_fall_pose_best.pt
 
 # Vite 개발 캐시
 .vite/
+
+# 데모 실행 중 남는 로그와 pid
+var/

@@ -5,6 +5,7 @@ rclpy 는 자기 스레드에서 돌고, FastAPI 는 asyncio 로 돈다. 둘을 
 넘기고, 그것을 asyncio 로 옮기는 일은 stream/hub 가 맡는다.
 """
 
+import logging
 import threading
 from typing import Callable, Optional
 
@@ -21,10 +22,16 @@ from ..domain.models import (
 from . import topics
 from .converters import (
     SpeedEstimator,
+    to_assignment,
     to_emergency_event,
     to_mission_event,
     to_robot_snapshot,
 )
+
+LOGGER = logging.getLogger(__name__)
+
+# 구독은 붙었는데 값이 안 오는지 몇 초 뒤에 확인할지.
+CONNECTION_CHECK_S = 8.0
 
 
 class RosBridge:
@@ -42,6 +49,7 @@ class RosBridge:
         on_frame: Callable[[str, bytes], None],
         on_person_count: Callable[[str, int], None],
         on_eta_record: Callable[[EtaRecord], None],
+        on_assignment: Callable[..., None],
         streams=topics.DEFAULT_STREAMS,
     ) -> None:
         self._on_robot = on_robot
@@ -50,12 +58,15 @@ class RosBridge:
         self._on_frame = on_frame
         self._on_person_count = on_person_count
         self._on_eta_record = on_eta_record
+        self._on_assignment = on_assignment
         self._streams = streams
         self._speeds: dict[str, SpeedEstimator] = {}
         self._node: Optional[Node] = None
         self._executor: Optional[SingleThreadedExecutor] = None
         self._thread: Optional[threading.Thread] = None
         self._started = threading.Event()
+        # 지난번에 발행자를 못 찾은 토픽. 바뀔 때만 로그를 남기기 위한 것이다.
+        self._missing_topics: frozenset = frozenset({"__초기값__"})
 
     @property
     def connected(self) -> bool:
@@ -87,6 +98,9 @@ class RosBridge:
         self._subscribe()
         self._executor = SingleThreadedExecutor()
         self._executor.add_node(self._node)
+        # 구독이 안 붙어도 ROS 2 는 아무 말이 없다. 몇 초 뒤에 직접 세어
+        # 본다. "ROS 수신" 이라 떠 있는데 화면만 비는 상황을 막는다.
+        self._node.create_timer(CONNECTION_CHECK_S, self._report_matches)
         self._started.set()
         try:
             self._executor.spin()
@@ -94,7 +108,9 @@ class RosBridge:
             self._started.clear()
 
     def _subscribe(self) -> None:
-        from aed_interfaces.msg import EmergencyEvent, MissionStatus, RobotState
+        from aed_interfaces.msg import (
+            EmergencyEvent, MissionAssignment, MissionStatus, RobotState,
+        )
         from sensor_msgs.msg import CompressedImage
         from std_msgs.msg import String, UInt32
 
@@ -132,6 +148,14 @@ class RosBridge:
                 topics.state_qos(),
             )
 
+        # 배정. 목표 좌표가 실려 오는 유일한 메시지라, 이걸 안 받으면
+        # 화면의 목표 좌표와 도착 예상이 영영 빈다. 로봇마다 따로 온다.
+        for robot_id in topics.ROBOT_IDS:
+            node.create_subscription(
+                MissionAssignment, topics.assignment_topic(robot_id),
+                self._handle_assignment, topics.state_qos(),
+            )
+
         # 예상과 실제를 재는 쪽이 내는 결과. 이 토픽만 std_msgs/String 에
         # JSON 이라 형이 보장되지 않으므로, converters 에서 한 번 검사한다.
         # QoS 도 다르다. TRANSIENT_LOCAL 로 맞추지 않으면 연결이 안 맺어지고
@@ -151,6 +175,45 @@ class RosBridge:
                 topics.image_qos(),
             )
 
+    def _report_matches(self) -> None:
+        """발행자를 못 찾은 토픽을 알린다.
+
+        QoS 가 안 맞으면 ROS 2 는 연결을 안 맺고 경고도 안 낸다. 특히
+        발행이 BEST_EFFORT 인데 구독이 RELIABLE 이면 그렇다. 화면에는
+        붙은 것처럼 보이므로, 여기서 이름을 대고 알려 준다.
+
+        바뀔 때만 적는다. 매번 적으면 로그가 같은 줄로 덮이고, 정작
+        로봇이 들어오거나 빠진 순간을 못 찾는다.
+        """
+        watched = [
+            topics.ROBOT_STATE_TOPIC,
+            topics.MISSION_STATUS_TOPIC,
+            topics.AGGREGATE_EVENT_TOPIC,
+            topics.ETA_RESULT_TOPIC,
+        ] + [topics.assignment_topic(r) for r in topics.ROBOT_IDS] \
+          + [source.topic for source in self._streams]
+
+        missing = frozenset(
+            name for name in watched
+            if self._node.count_publishers(name) == 0
+        )
+        if missing == self._missing_topics:
+            return
+        self._missing_topics = missing
+
+        if not missing:
+            LOGGER.info("구독 %d개 모두 발행자를 찾았다", len(watched))
+            return
+        LOGGER.warning(
+            "발행자를 못 찾은 토픽 %d/%d: %s",
+            len(missing), len(watched), ", ".join(sorted(missing)),
+        )
+        LOGGER.warning(
+            "ros2 topic list 에는 보이는데 여기 있다면 QoS 불일치다. "
+            "발행이 BEST_EFFORT 이면 "
+            "AED_HMI_STATE_RELIABILITY=best_effort 로 다시 띄운다."
+        )
+
     # ------------------------------------------------------------------
     # 콜백. ROS 스레드에서 불린다.
     # ------------------------------------------------------------------
@@ -162,6 +225,9 @@ class RosBridge:
         record = EtaRecord.from_json(message.data)
         if record is not None:
             self._on_eta_record(record)
+
+    def _handle_assignment(self, message) -> None:
+        self._on_assignment(**to_assignment(message))
 
     def _handle_robot_state(self, message) -> None:
         estimator = self._speeds.setdefault(message.robot_id, SpeedEstimator())
