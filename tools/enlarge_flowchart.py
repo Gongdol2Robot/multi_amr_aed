@@ -120,17 +120,45 @@ STATUS = [
     ("multi_robot_emergency", "main 에 없음"),
 ]
 
-# 오른쪽 참조표가 시작되는 x. **원본 좌표 기준**이다. 그래서 지우는 일은
-# 반드시 확대하기 전에 해야 한다. 확대 뒤에 이 값을 쓰면 3배 왼쪽에서
-# 잘려 흐름까지 날아간다.
-#   G. 네트워크 인터페이스 IDL·QoS 정본   x≈6720
-#   H. 전체 상태전이·판단 기준            x≈8640
-#   I. DB DDL·배포·보안·수용시험          x≈10160
-REFERENCE_X = 6600
+# 지울 구간. **원본 좌표 기준**이므로 지우는 일은 반드시 확대 전에 해야
+# 한다. 확대 뒤에 이 값을 쓰면 3배 왼쪽에서 잘려 흐름까지 날아간다.
+#
+# 원본은 흐름 옆에 표를 두 덩이 두었다. 흐름을 따라가다 눈을 옆으로 돌려
+# 표를 찾아야 하는 구조라, 표에 있던 판단 기준은 흐름 상자로 옮기고 표는
+# 지운다.
+#
+#   x 3135~4600   EVENT 목록 · 확정 인터페이스 · 시나리오 대응 ·
+#                 고정 판단 기준 · SQLite 계약 · DB→사용처
+#   x 6600~       IDL/QoS 정본 · 전체 상태전이·판단 기준 ·
+#                 DB DDL · 배포 · 수용시험
+#
+# 그 사이(4700~6600)는 표가 아니라 EXACT/AREA 모드별 흐름이라 남긴다.
+DROP_RANGES = [(3100, 4650), (6600, 10**9)]
+
+# 앞 구간을 지우면 그만큼 빈 자리가 생긴다. 뒤에 남은 흐름을 왼쪽으로
+# 당겨 붙인다. 안 그러면 화면 한가운데가 텅 빈다.
+SHIFT_FROM = 4650
+SHIFT_BY = 4650 - 3100
 
 # H 표에 있던 판단 기준 → 그 판단을 하는 흐름 상자.
 # 상자를 찾는 실마리(키워드)와 붙일 글이다.
 DECISIONS = [
+    ("ReportEmergency 수신",
+     "119 자동 연계는 안 쓴다. 운영자가 통화 내용을 HMI 에 read-back 으로 "
+     "넣고 report_id UUIDv4 로 호출한다"),
+    ("Guard",
+     "EXACT = patient_pose 또는 (caller_pose ∧ caller_with_patient) · "
+     "AREA = building+floor+search_area. 그 외 INVALID_FIELDS · "
+     "다른 active event 면 409/Goal 0건"),
+    ("출동 후보 구성",
+     "후보 필터: AVAILABLE · same_floor · state≤1초 · battery≥20% · "
+     "network/localization/nav/path 전부 true · estop 아님. "
+     "정렬: path_cost → battery 내림차순 → robot_id"),
+    ("탐색 알고리즘",
+     "AREA 는 0.8m lane / 1.0m waypoint 로 연속 2분할. "
+     "union=area · overlap=0 · uncovered=0. "
+     "첫 valid PatientFound 만 CAS 로 잡고, cancel/zero barrier 전에는 "
+     "responder 가 움직이지 않는다"),
     ("후보별 최종 ETA",
      "후보 tie: final_eta 오름차순 → robot_id 사전순. "
      "planner 실패·빈 Path 후보는 제외"),
@@ -274,7 +302,8 @@ def merge_decisions(model: ET.Element) -> int:
         geometry = cell.find("mxGeometry")
         if geometry is None or geometry.get("x") is None:
             continue
-        if float(geometry.get("x")) >= REFERENCE_X:
+        x = float(geometry.get("x"))
+        if any(low <= x < high for low, high in DROP_RANGES):
             continue          # 표 자신에는 붙이지 않는다
         plain = re.sub(r"<[^>]+>", " ", value)
         for key, note in DECISIONS:
@@ -308,11 +337,12 @@ def drop_reference(model: ET.Element) -> tuple:
             continue
 
         if cell.get("vertex") == "1" and geometry is not None \
-                and geometry.get("x") is not None \
-                and float(geometry.get("x")) >= REFERENCE_X:
-            root.remove(cell)
-            reference += 1
-            continue
+                and geometry.get("x") is not None:
+            x = float(geometry.get("x"))
+            if any(low <= x < high for low, high in DROP_RANGES):
+                root.remove(cell)
+                reference += 1
+                continue
 
         keep_ids.add(cell.get("id"))
 
@@ -326,6 +356,31 @@ def drop_reference(model: ET.Element) -> tuple:
             root.remove(cell)
             reference += 1
     return legend, reference
+
+
+def close_gap(model: ET.Element) -> int:
+    """앞 구간을 지워 생긴 빈 자리만큼 뒤쪽 흐름을 왼쪽으로 당긴다."""
+    moved = 0
+    for cell in model.iter("mxCell"):
+        geometry = cell.find("mxGeometry")
+        if geometry is None:
+            continue
+        touched = False
+        if geometry.get("x") is not None:
+            x = float(geometry.get("x"))
+            if x >= SHIFT_FROM:
+                geometry.set("x", str(round(x - SHIFT_BY)))
+                touched = True
+        for point in geometry.iter("mxPoint"):
+            if point.get("x") is None:
+                continue
+            px = float(point.get("x"))
+            if px >= SHIFT_FROM:
+                point.set("x", str(round(px - SHIFT_BY)))
+                touched = True
+        if touched:
+            moved += 1
+    return moved
 
 
 def main() -> int:
@@ -351,6 +406,7 @@ def main() -> int:
     # 확대한 뒤에 하면 REFERENCE_X 가 3배 왼쪽을 가리켜 흐름까지 지운다.
     merged = merge_decisions(model)
     legend, reference = drop_reference(model)
+    moved = close_gap(model)
 
     scale_geometry(model, args.scale)
     fonts = scale_fonts(model, args.scale)
@@ -390,6 +446,7 @@ def main() -> int:
     print(f"  흐름으로 옮긴 판단 {merged}개")
     print(f"  뺀 범례        {legend}개")
     print(f"  뺀 참조표 셀    {reference}개")
+    print(f"  빈 자리 당긴 셀  {moved}개")
     print(f"저장: {out}")
     return 0
 

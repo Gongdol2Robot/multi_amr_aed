@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net" agent="codex-modeA-crowd-levels">
   <diagram name="메인 시스템 플로우 아키텍처 v4 · v2 구조 + 구현 계약" id="main-flow-v4-extended">
-    <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="35420" pageHeight="9788" math="0" shadow="0">
+    <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="30770" pageHeight="9788" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -190,7 +190,7 @@
         <mxCell id="m_recv" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FCF3CF;strokeColor=#B7950B;strokeWidth=1.5;fontSize=30;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="정확 위치 응급 요청 수신&lt;/b&gt;&lt;br&gt;target PoseStamped(map) 검증 · 새 request마다 제외 목록 초기화&lt;br&gt;/emergency/request 또는 EmergencyEvent → planning_target" vertex="1">
           <mxGeometry height="234" width="1056" x="2232" y="3066" as="geometry" />
         </mxCell>
-        <mxCell id="m_av" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FCF3CF;strokeColor=#B7950B;strokeWidth=1.5;fontSize=30;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="출동 후보 구성&lt;/b&gt;&lt;br&gt;robot1·robot2 pose 확보 · 제외 로봇 제거 · 각 Nav2 planner 연결 확인&lt;br&gt;planner 실패·빈 Path 후보 제외 · 후보 0대면 FAILED" vertex="1">
+        <mxCell id="m_av" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FCF3CF;strokeColor=#B7950B;strokeWidth=1.5;fontSize=30;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="출동 후보 구성&lt;/b&gt;&lt;br&gt;robot1·robot2 pose 확보 · 제외 로봇 제거 · 각 Nav2 planner 연결 확인&lt;br&gt;planner 실패·빈 Path 후보 제외 · 후보 0대면 FAILED&lt;br&gt;▸ 후보 필터: AVAILABLE · same_floor · state≤1초 · battery≥20% · network/localization/nav/path 전부 true · estop 아님. 정렬: path_cost → battery 내림차순 → robot_id" vertex="1">
           <mxGeometry height="288" width="1056" x="2232" y="3330" as="geometry" />
         </mxCell>
         <mxCell id="m_rank" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D1F2EB;strokeColor=#117864;strokeWidth=1.5;fontSize=30;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="후보별 최종 ETA 계산·정렬&lt;/b&gt;&lt;br&gt;base ETA = D/0.20 + Θ/0.70 + 4.0×N(45° 이상 내부 코너)&lt;br&gt;RDP 0.10m로 회전 경로 단순화 · 초기/내부/최종 yaw 포함&lt;br&gt;Camera2 CROWDED이면 crowd delay = Dc×(1/0.10 − 1/0.20) = 5Dc&lt;br&gt;CLEAR/UNKNOWN이면 crowd delay=0&lt;br&gt;final ETA 오름차순 → 동률 robot_id&lt;br&gt;▸ 후보 tie: final_eta 오름차순 → robot_id 사전순. planner 실패·빈 Path 후보는 제외" vertex="1">
@@ -694,384 +694,6 @@
         <mxCell id="foot1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;align=left;verticalAlign=top;fontSize=27;spacingLeft=5;spacingTop=3;fontColor=#7D6608;" value="읽는 법 — v2의 하드웨어 경계·프로세스 수영레인·시간축·오른쪽 계약 패널 구조를 그대로 유지했다. 추가된 선은 AREA에서 robot2 대체 경로 구역/support를 나타내는 두 개뿐이다.&lt;br&gt;도형과 표에 적힌 값이 구현 기준이며 임의 기본값·자동 119 API·이전 Goal 자동 재개는 허용하지 않는다." vertex="1">
           <mxGeometry height="174" width="9480" x="120" y="9414" as="geometry" />
         </mxCell>
-        <mxCell id="event_side_panel" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#6C3483;strokeWidth=2;verticalAlign=top;align=center;spacingTop=6;fontSize=36;fontStyle=1;fontColor=#6C3483;" value="EVENT · INTERFACE · SCENARIO 계약" vertex="1">
-          <mxGeometry height="8646" width="4500" x="9405" y="534" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_help" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;align=left;verticalAlign=top;fontSize=27;spacingLeft=5;spacingTop=3;fontColor=#7D6608;" value="육각형 안: EVENT / WHEN / DATA / VIA / FROM→TO&lt;br&gt;아래 표는 첨부 검토 이미지의 확정 인터페이스·시나리오 대응을 메인 플로우와 연결한다." vertex="1">
-          <mxGeometry height="210" width="4290" x="9510" y="714" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_lbl" parent="1" style="text;html=1;fontSize=33;fontStyle=1;fontColor=#6C3483;align=left;" value="A. 이벤트 목록" vertex="1">
-          <mxGeometry height="72" width="1500" x="9510" y="969" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_h0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5DBDB;strokeColor=#566573;align=left;verticalAlign=middle;fontSize=30;fontStyle=1;spacingLeft=5;" value="ID" vertex="1">
-          <mxGeometry height="108" width="180" x="9510" y="1059" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_h1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5DBDB;strokeColor=#566573;align=left;verticalAlign=middle;fontSize=30;fontStyle=1;spacingLeft=5;" value="이벤트 의미" vertex="1">
-          <mxGeometry height="108" width="1080" x="9690" y="1059" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_h2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5DBDB;strokeColor=#566573;align=left;verticalAlign=middle;fontSize=30;fontStyle=1;spacingLeft=5;" value="실제 전달 경로 / 자료형" vertex="1">
-          <mxGeometry height="108" width="2970" x="10770" y="1059" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r0c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="" vertex="1">
-          <mxGeometry height="144" width="180" x="9510" y="1167" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r0c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="DETECTION_CONFIRMED" vertex="1">
-          <mxGeometry height="144" width="1080" x="9690" y="1167" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r0c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="WHEN conf≥0.60×3 frames/0.5s · DATA fallen_count,bbox,score,track,stamp&lt;br&gt;VIA /aed/detection_summary P_SENSOR · vision→mapper/MM" vertex="1">
-          <mxGeometry height="144" width="2970" x="10770" y="1167" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r1c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="" vertex="1">
-          <mxGeometry height="144" width="180" x="9510" y="1311" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r1c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="EMERGENCY_NORMALIZED" vertex="1">
-          <mxGeometry height="144" width="1080" x="9690" y="1311" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r1c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="WHEN pose/area validation pass · DATA mode,building,floor,pose|area,map_revision&lt;br&gt;VIA internal+DB transaction · mapper/HMI→DB writer" vertex="1">
-          <mxGeometry height="144" width="2970" x="10770" y="1311" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r2c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="" vertex="1">
-          <mxGeometry height="144" width="180" x="9510" y="1455" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r2c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="ROBOT_ASSIGNED" vertex="1">
-          <mxGeometry height="144" width="1080" x="9690" y="1455" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r2c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="WHEN /robotX/mission_assignment Goal accepted≤2s · DATA mission,robot,role,target,version&lt;br&gt;VIA DeliverAed Action · MM↔PC1/PC2" vertex="1">
-          <mxGeometry height="144" width="2970" x="10770" y="1455" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r3c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="" vertex="1">
-          <mxGeometry height="144" width="180" x="9510" y="1599" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r3c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="ACTIVE_ROBOT_FAILED" vertex="1">
-          <mxGeometry height="144" width="1080" x="9690" y="1599" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r3c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="WHEN ABORTED|health/network fault · DATA robot,version,result,pose,reason&lt;br&gt;VIA /aed/mission_status + · PC/watchdog→MM/HMI/DB" vertex="1">
-          <mxGeometry height="144" width="2970" x="10770" y="1599" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r4c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="" vertex="1">
-          <mxGeometry height="144" width="180" x="9510" y="1743" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r4c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="REASSIGNED_OR_WAIT" vertex="1">
-          <mxGeometry height="144" width="1080" x="9690" y="1743" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r4c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="WHEN cancel barrier+next candidate | candidate=0 · DATA new robot/version/state/reason&lt;br&gt;VIA /robotX/mission_assignment+· MM→PC/HMI/DB" vertex="1">
-          <mxGeometry height="144" width="2970" x="10770" y="1743" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r5c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="" vertex="1">
-          <mxGeometry height="144" width="180" x="9510" y="1887" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r5c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="AED_ARRIVED" vertex="1">
-          <mxGeometry height="144" width="1080" x="9690" y="1887" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r5c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="WHEN /robotX/mission_assignment SUCCEEDED ∧ distance≤0.15m · DATA mission,robot,final_pose,finished_at&lt;br&gt;VIA /aed/mission_status + · PC→MM/HMI/DB" vertex="1">
-          <mxGeometry height="144" width="2970" x="10770" y="1887" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r6c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="" vertex="1">
-          <mxGeometry height="144" width="180" x="9510" y="2031" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r6c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="HELPER_COMPLETED" vertex="1">
-          <mxGeometry height="144" width="1080" x="9690" y="2031" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r6c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="WHEN helper_count≥1×3 frames 또는 support 도착 · DATA helper_count,robot,pose&lt;br&gt;VIA +MissionStatus · vision/helper→MM/HMI" vertex="1">
-          <mxGeometry height="144" width="2970" x="10770" y="2031" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r7c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="ES" vertex="1">
-          <mxGeometry height="144" width="180" x="9510" y="2175" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r7c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="EMERGENCY_STOP&lt;br&gt;▸ 해제 조건: admin JWT + 각 로봇 physical_reset_counter 증가 + health 5초 연속. 수동 우선순위 ESTOP3 &gt; MANUAL lease2 &gt; AUTONOMOUS1" vertex="1">
-          <mxGeometry height="144" width="1080" x="9690" y="2175" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r7c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="WHEN operator engage 또는 cancel/heartbeat safety timeout · DATA event,actor,reason&lt;br&gt;VIA HTTPS→TRANSIENT_LOCAL→local Twist(0)" vertex="1">
-          <mxGeometry height="144" width="2970" x="10770" y="2175" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r8c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="" vertex="1">
-          <mxGeometry height="144" width="180" x="9510" y="2319" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r8c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="REPORT_ACCEPTED" vertex="1">
-          <mxGeometry height="144" width="1080" x="9690" y="2319" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r8c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="WHEN valid ∧ DB COMMIT · DATA report_id,event_id,mode,received_at&lt;br&gt;VIA Service response+WS · DB writer→HMI" vertex="1">
-          <mxGeometry height="144" width="2970" x="10770" y="2319" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r9c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="" vertex="1">
-          <mxGeometry height="144" width="180" x="9510" y="2463" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r9c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="EMERGENCY_CONFIRMED" vertex="1">
-          <mxGeometry height="144" width="1080" x="9690" y="2463" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r9c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="WHEN outbox publish after COMMIT · DATA event/version/mode/location&lt;br&gt;VIA /aed/emergency_event /aed/mission_status · outbox→MM/HMI/logger" vertex="1">
-          <mxGeometry height="144" width="2970" x="10770" y="2463" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r10c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="" vertex="1">
-          <mxGeometry height="144" width="180" x="9510" y="2607" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r10c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="SEARCH_PLAN_CREATED" vertex="1">
-          <mxGeometry height="144" width="1080" x="9690" y="2607" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r10c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="WHEN 1~2 zones satisfy union=area/overlap=0 · DATA epoch,zones,waypoints,ETA&lt;br&gt;VIA PlanSearch Service+DB+WS · coordinator→PC/HMI" vertex="1">
-          <mxGeometry height="144" width="2970" x="10770" y="2607" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r11c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="" vertex="1">
-          <mxGeometry height="144" width="180" x="9510" y="2751" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r11c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="SEARCH_STARTED" vertex="1">
-          <mxGeometry height="144" width="1080" x="9690" y="2751" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r11c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="WHEN required /robotX/mission_assignment Goal(s) accepted≤2s · DATA epoch,robot,zone,started_at&lt;br&gt;VIA SearchArea Action+· PC→MM/HMI/DB" vertex="1">
-          <mxGeometry height="144" width="2970" x="10770" y="2751" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r12c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="" vertex="1">
-          <mxGeometry height="144" width="180" x="9510" y="2895" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r12c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="PATIENT_CANDIDATE" vertex="1">
-          <mxGeometry height="144" width="1080" x="9690" y="2895" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r12c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="WHEN fallen+depth+TF valid · DATA event,epoch,zone,pose,confidence,frames&lt;br&gt;VIA /aed/patient_found /aed/mission_status · PC1/PC2→MM" vertex="1">
-          <mxGeometry height="144" width="2970" x="10770" y="2895" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r13c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="" vertex="1">
-          <mxGeometry height="144" width="180" x="9510" y="3039" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r13c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="PATIENT_LOCATED" vertex="1">
-          <mxGeometry height="144" width="1080" x="9690" y="3039" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r13c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="WHEN first CAS + all Search cancel/zero barrier · DATA finder,peer,pose,epoch&lt;br&gt;VIA +new /robotX/mission_assignment Goal · MM→PC/HMI/DB" vertex="1">
-          <mxGeometry height="144" width="2970" x="10770" y="3039" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r14c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="" vertex="1">
-          <mxGeometry height="144" width="180" x="9510" y="3183" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r14c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="SEARCH_REASSIGNED" vertex="1">
-          <mxGeometry height="144" width="1080" x="9690" y="3183" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r14c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="WHEN /robotX/mission_assignment ABORTED and replacement exists · DATA old/new robot,epoch+1,reason&lt;br&gt;VIA Action cancel/new Goal+· MM→PC/HMI" vertex="1">
-          <mxGeometry height="144" width="2970" x="10770" y="3183" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r15c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="" vertex="1">
-          <mxGeometry height="144" width="180" x="9510" y="3327" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r15c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="SEARCH_REVIEW" vertex="1">
-          <mxGeometry height="144" width="1080" x="9690" y="3327" as="geometry" />
-        </mxCell>
-        <mxCell id="event_side_r15c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="WHEN all /robotX/mission_assignment NOT_FOUND ∧ coverage≥99.5% · DATA zones,coverage,reason&lt;br&gt;VIA MissionStatus+WS · MM→operator; auto RESOLVED 금지" vertex="1">
-          <mxGeometry height="144" width="2970" x="10770" y="3327" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_lbl" parent="1" style="text;html=1;fontSize=33;fontStyle=1;fontColor=#2471A3;align=left;" value="B. 확정 인터페이스" vertex="1">
-          <mxGeometry height="72" width="1800" x="9510" y="3564" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_h0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5DBDB;strokeColor=#566573;align=left;verticalAlign=middle;fontSize=30;fontStyle=1;spacingLeft=5;" value="이름" vertex="1">
-          <mxGeometry height="108" width="750" x="9510" y="3654" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_h1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5DBDB;strokeColor=#566573;align=left;verticalAlign=middle;fontSize=30;fontStyle=1;spacingLeft=5;" value="방식" vertex="1">
-          <mxGeometry height="108" width="360" x="10260" y="3654" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_h2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5DBDB;strokeColor=#566573;align=left;verticalAlign=middle;fontSize=30;fontStyle=1;spacingLeft=5;" value="선정 근거 / 핵심 필드" vertex="1">
-          <mxGeometry height="108" width="3120" x="10620" y="3654" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r0c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="DeliverAed / SearchArea" vertex="1">
-          <mxGeometry height="198" width="750" x="9510" y="3762" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r0c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="Action" vertex="1">
-          <mxGeometry height="198" width="360" x="10260" y="3762" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r0c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="/robotX/mission_assignment /{rid}/deliver_aed: Goal event,version,role,target · Feedback pose,eta,speed · Result enum,reason&lt;br&gt;/robotX/mission_assignment /{rid}/search_area: Goal epoch,zone,polygon,waypoints · Feedback coverage · Result FOUND|NOT_FOUND|ABORTED · accept≤2s/cancel≤1s" vertex="1">
-          <mxGeometry height="198" width="3120" x="10620" y="3762" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r1c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="ReportEmergency" vertex="1">
-          <mxGeometry height="198" width="750" x="9510" y="3960" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r1c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="Service" vertex="1">
-          <mxGeometry height="198" width="360" x="10260" y="3960" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r1c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="/aed/report_emergency Request: report_id,operator,source,mode,building,floor,patient/caller pose,with_patient,area&lt;br&gt;Response: accepted,event_id,error_code,message · deadline 2s · report_id idempotent" vertex="1">
-          <mxGeometry height="198" width="3120" x="10620" y="3960" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r2c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="EmergencyEvent" vertex="1">
-          <mxGeometry height="198" width="750" x="9510" y="4158" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r2c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="Topic" vertex="1">
-          <mxGeometry height="198" width="360" x="10260" y="4158" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r2c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="/aed/emergency_event: event_id,version,mode,building,floor,map_revision,target_pose,area,desired_count,time&lt;br&gt;/aed/mission_status RELIABLE+TRANSIENT_LOCAL depth50 · DB COMMIT 후 발행" vertex="1">
-          <mxGeometry height="198" width="3120" x="10620" y="4158" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r3c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="CrowdLevel" vertex="1">
-          <mxGeometry height="198" width="750" x="9510" y="4356" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r3c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="Topic" vertex="1">
-          <mxGeometry height="198" width="360" x="10260" y="4356" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r3c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="Camera2 혼잡 입력&lt;br&gt;/camera_alley/vision/crowd_level · std_msgs/String · CLEAR/CROWDED&lt;br&gt;/camera_alley/vision/person_count · std_msgs/UInt32 · 보조 로그&lt;br&gt;CROWDED confirm 0.5s · CLEAR hold 1.5s · stale&amp;gt;2s UNKNOWN" vertex="1">
-          <mxGeometry height="198" width="3120" x="10620" y="4356" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r4c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="DetectionSummary / PatientFound" vertex="1">
-          <mxGeometry height="198" width="750" x="9510" y="4554" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r4c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="Topic" vertex="1">
-          <mxGeometry height="198" width="360" x="10260" y="4554" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r4c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="15Hz P_SENSOR BEST_EFFORT depth5: frame_seq,fallen/helper_count,detections&lt;br&gt;/aed/mission_status: event,epoch,robot,zone,candidate,pose,confidence,frames,distance,stamp" vertex="1">
-          <mxGeometry height="198" width="3120" x="10620" y="4554" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r5c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="SensorHealth" vertex="1">
-          <mxGeometry height="198" width="750" x="9510" y="4752" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r5c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="Topic" vertex="1">
-          <mxGeometry height="198" width="360" x="10260" y="4752" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r5c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="/aed/sensor_health 2Hz /aed/robot_state: robot,degraded,manual_drive,code,reason,stamp&lt;br&gt;scan gap&gt;0.5s | valid&lt;100 | invalid&gt;30% | same CRC×3; 3회 연속이면 local zero" vertex="1">
-          <mxGeometry height="198" width="3120" x="10620" y="4752" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r6c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="RobotState / MissionStatus / Heartbeat" vertex="1">
-          <mxGeometry height="198" width="750" x="9510" y="4950" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r6c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="Topic" vertex="1">
-          <mxGeometry height="198" width="360" x="10260" y="4950" as="geometry" />
-        </mxCell>
-        <mxCell id="if_side_r6c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="2Hz: robot,availability,pose,floor,speed_mps,battery,path_cost,health flags,stamp&lt;br&gt;=audit 상태(Action이 제어 정본) · 1Hz; gap3s warning/5s NETWORK_LOST" vertex="1">
-          <mxGeometry height="198" width="3120" x="10620" y="4950" as="geometry" />
-        </mxCell>
-        <mxCell id="scenario_side_lbl" parent="1" style="text;html=1;fontSize=33;fontStyle=1;fontColor=#148F77;align=left;" value="C. 시나리오별 인터페이스 대응" vertex="1">
-          <mxGeometry height="72" width="2100" x="9510" y="5199" as="geometry" />
-        </mxCell>
-        <mxCell id="scenario_side_h0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5DBDB;strokeColor=#566573;align=left;verticalAlign=middle;fontSize=30;fontStyle=1;spacingLeft=5;" value="시나리오" vertex="1">
-          <mxGeometry height="108" width="1680" x="9510" y="5289" as="geometry" />
-        </mxCell>
-        <mxCell id="scenario_side_h1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5DBDB;strokeColor=#566573;align=left;verticalAlign=middle;fontSize=30;fontStyle=1;spacingLeft=5;" value="판정·제어 인터페이스" vertex="1">
-          <mxGeometry height="108" width="2550" x="11190" y="5289" as="geometry" />
-        </mxCell>
-        <mxCell id="scenario_side_r0c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="119: 환자 또는 동행 신고자 좌표 정확" vertex="1">
-          <mxGeometry height="186" width="1680" x="9510" y="5397" as="geometry" />
-        </mxCell>
-        <mxCell id="scenario_side_r0c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="운영자 HMI 입력→EXACT; DB COMMIT→; CLEAR/MODERATE/UNKNOWN /robotX/mission_assignment 1대, CONGESTED 선택 로봇+support 2대" vertex="1">
-          <mxGeometry height="186" width="2550" x="11190" y="5397" as="geometry" />
-        </mxCell>
-        <mxCell id="scenario_side_r1c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="119: 건물·층만 정확, 환자/신고자 좌표 불명" vertex="1">
-          <mxGeometry height="186" width="1680" x="9510" y="5583" as="geometry" />
-        </mxCell>
-        <mxCell id="scenario_side_r1c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="운영자 HMI 입력→AREA; /robotX/mission_assignment Camera2 골목 구역/B 최대 2대; 1대면 전체 area; PatientFound→양쪽 cancel→finder RESPONDER" vertex="1">
-          <mxGeometry height="186" width="2550" x="11190" y="5583" as="geometry" />
-        </mxCell>
-        <mxCell id="scenario_side_r2c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="Camera2 혼잡 판정 수신" vertex="1">
-          <mxGeometry height="186" width="1680" x="9510" y="5769" as="geometry" />
-        </mxCell>
-        <mxCell id="scenario_side_r2c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="median people 0..2 CLEAR, 3..5 MODERATE, ≥6 CONGESTED; 5 windows hysteresis; stale&gt;1s UNKNOWN=1대" vertex="1">
-          <mxGeometry height="186" width="2550" x="11190" y="5769" as="geometry" />
-        </mxCell>
-        <mxCell id="scenario_side_r3c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="1대 실패/통신 끊김" vertex="1">
-          <mxGeometry height="186" width="1680" x="9510" y="5955" as="geometry" />
-        </mxCell>
-        <mxCell id="scenario_side_r3c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="ABORTED 또는 heartbeat&gt;5s→local zero; cancel ack 후 version/epoch+1로 나머지 로봇 새 Goal; 후보0 RECOVERY_WAIT" vertex="1">
-          <mxGeometry height="186" width="2550" x="11190" y="5955" as="geometry" />
-        </mxCell>
-        <mxCell id="scenario_side_r4c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="LiDAR 고장" vertex="1">
-          <mxGeometry height="186" width="1680" x="9510" y="6141" as="geometry" />
-        </mxCell>
-        <mxCell id="scenario_side_r4c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="degraded 3 checks→Nav2 cancel+Twist(0); healthy 5s 뒤만 후보 복귀; manual lease 중 autonomous cmd_vel 차단" vertex="1">
-          <mxGeometry height="186" width="2550" x="11190" y="6141" as="geometry" />
-        </mxCell>
-        <mxCell id="scenario_side_r5c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="환자·조력자 검출" vertex="1">
-          <mxGeometry height="186" width="1680" x="9510" y="6327" as="geometry" />
-        </mxCell>
-        <mxCell id="scenario_side_r5c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="fallen conf≥0.60×3+depth/TF valid→; red_rc_car 3 frames·≤3m→helper_count; &gt;1m 동시 후보는 양쪽 정지+운영자 선택" vertex="1">
-          <mxGeometry height="186" width="2550" x="11190" y="6327" as="geometry" />
-        </mxCell>
-        <mxCell id="scenario_side_r6c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="DB/HMI 시간·진행상황" vertex="1">
-          <mxGeometry height="186" width="1680" x="9510" y="6513" as="geometry" />
-        </mxCell>
-        <mxCell id="scenario_side_r6c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="Goal/Result 즉시 missions; Feedback/RobotState 2Hz; HMI는 DB snapshot+WS seq 사용; eta_seconds/speed_mps를 그대로 표시" vertex="1">
-          <mxGeometry height="186" width="2550" x="11190" y="6513" as="geometry" />
-        </mxCell>
-        <mxCell id="decision_side" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;align=left;verticalAlign=top;fontSize=27;spacingLeft=5;spacingTop=3;fontColor=#7D6608;" value="D. 구현 시 고정 판단 기준&lt;br&gt;1) 119 공식 자동연계는 사용하지 않는다. 운영자가 통화 내용을 HMI에 read-back 입력하고 report_id UUIDv4로 S01을 호출한다.&lt;br&gt;2) EXACT=patient_pose 또는 (caller_pose ∧ caller_with_patient). AREA=building+floor+search_area. 그 외 INVALID_FIELDS; active event가 다르면 409/Goal 0건.&lt;br&gt;3) 후보 필터=AVAILABLE·same_floor·state≤1초·battery≥20%·network/localization/nav/path true·!estop. 정렬=path_cost→battery↓→robot_id.&lt;br&gt;4) AREA=0.8m lane/1.0m waypoint 연속 2분할; union=area, overlap=0, uncovered=0. 첫 valid PatientFound만 CAS; cancel/zero barrier 전 responder 이동 금지.&lt;br&gt;5) scenario_replay_node는 test/*.jsonl의 at_ms,kind,payload로 ////발행·호출; production profile에서는 실행 금지." vertex="1">
-          <mxGeometry height="750" width="4290" x="9510" y="6789" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_lbl" parent="1" style="text;html=1;fontSize=33;fontStyle=1;fontColor=#922B21;align=left;" value="E. SQLite aed.db 저장·입출력 계약" vertex="1">
-          <mxGeometry height="72" width="2400" x="9510" y="7554" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_h0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5DBDB;strokeColor=#566573;align=left;verticalAlign=middle;fontSize=30;fontStyle=1;spacingLeft=5;" value="테이블" vertex="1">
-          <mxGeometry height="108" width="690" x="9510" y="7644" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_h1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5DBDB;strokeColor=#566573;align=left;verticalAlign=middle;fontSize=30;fontStyle=1;spacingLeft=5;" value="IN · 작성자 → DB" vertex="1">
-          <mxGeometry height="108" width="1170" x="10200" y="7644" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_h2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5DBDB;strokeColor=#566573;align=left;verticalAlign=middle;fontSize=30;fontStyle=1;spacingLeft=5;" value="저장 데이터" vertex="1">
-          <mxGeometry height="108" width="1530" x="11370" y="7644" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_h3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5DBDB;strokeColor=#566573;align=left;verticalAlign=middle;fontSize=30;fontStyle=1;spacingLeft=5;" value="OUT · DB → 사용처" vertex="1">
-          <mxGeometry height="108" width="840" x="12900" y="7644" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r0c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="reports" vertex="1">
-          <mxGeometry height="234" width="690" x="9510" y="7752" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r0c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="Browser/&lt;br&gt;→ db_writer" vertex="1">
-          <mxGeometry height="234" width="1170" x="10200" y="7752" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r0c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="report_id PK, operator,source,mode,building,floor&lt;br&gt;location_json,callback_enc,received_at,accepted_at" vertex="1">
-          <mxGeometry height="234" width="1530" x="11370" y="7752" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r0c3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="HMI 신고·감사&lt;br&gt;callback 평문 외부 출력 금지" vertex="1">
-          <mxGeometry height="234" width="840" x="12900" y="7752" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r1c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="events + outbox" vertex="1">
-          <mxGeometry height="234" width="690" x="9510" y="7986" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r1c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="/mapper/MM&lt;br&gt;→ transaction" vertex="1">
-          <mxGeometry height="234" width="1170" x="10200" y="7986" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r1c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="event_id PK,report_id UNIQUE,version,status,crowd,target/area,time&lt;br&gt;event_code,payload,attempts,published_at" vertex="1">
-          <mxGeometry height="234" width="1530" x="11370" y="7986" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r1c3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="COMMIT 후 /&lt;br&gt;startup replay·idempotent" vertex="1">
-          <mxGeometry height="234" width="840" x="12900" y="7986" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r2c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="missions + search_runs" vertex="1">
-          <mxGeometry height="234" width="690" x="9510" y="8220" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r2c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="/robotX/mission_assignment Goal·Result&lt;br&gt;→ DB Writer" vertex="1">
-          <mxGeometry height="234" width="1170" x="10200" y="8220" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r2c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="mission+version PK,robot,role,action,target,status,result&lt;br&gt;event+epoch+robot PK,zone polygon,waypoints,coverage" vertex="1">
-          <mxGeometry height="234" width="1530" x="11370" y="8220" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r2c3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="MM 재시작 복구&lt;br&gt;HMI 임무/zone 이력" vertex="1">
-          <mxGeometry height="234" width="840" x="12900" y="8220" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r3c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="action_feedback" vertex="1">
-          <mxGeometry height="234" width="690" x="9510" y="8454" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r3c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="/robotX/mission_assignment Feedback&lt;br&gt;→ DB Writer" vertex="1">
-          <mxGeometry height="234" width="1170" x="10200" y="8454" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r3c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="mission,version,robot,eta_seconds,speed_mps&lt;br&gt;coverage_percent,pose,feedback_at · 2Hz" vertex="1">
-          <mxGeometry height="234" width="1530" x="11370" y="8454" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r3c3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="HMI 실시간·KPI&lt;br&gt;30일 보존" vertex="1">
-          <mxGeometry height="234" width="840" x="12900" y="8454" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r4c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="robot_state + sensor_health" vertex="1">
-          <mxGeometry height="234" width="690" x="9510" y="8688" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r4c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="/Topic&lt;br&gt;→ DB Writer" vertex="1">
-          <mxGeometry height="234" width="1170" x="10200" y="8688" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r4c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="robot,availability,floor,pose,speed,battery,path_cost,flags&lt;br&gt;degraded,manual,code,reason,stamp" vertex="1">
-          <mxGeometry height="234" width="1530" x="11370" y="8688" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r4c3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="MM 후보·복구/HMI&lt;br&gt;latest UPSERT·health 30일" vertex="1">
-          <mxGeometry height="234" width="840" x="12900" y="8688" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r5c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="patient_locks + audit" vertex="1">
-          <mxGeometry height="234" width="690" x="9510" y="8922" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r5c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="CAS / HMI·MM&lt;br&gt;→ DB Writer" vertex="1">
-          <mxGeometry height="234" width="1170" x="10200" y="8922" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r5c2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="PK(event,epoch),candidate,robot,zone,pose,confidence,receive_seq&lt;br&gt;actor,action,before/after,reason,created_at" vertex="1">
-          <mxGeometry height="234" width="1530" x="11370" y="8922" as="geometry" />
-        </mxCell>
-        <mxCell id="db_side_r5c3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#909497;align=left;verticalAlign=middle;fontSize=27;spacingLeft=5;" value="중복 확정 방지&lt;br&gt;append-only 감사·장애 분석" vertex="1">
-          <mxGeometry height="234" width="840" x="12900" y="8922" as="geometry" />
-        </mxCell>
         <mxCell id="e_m_asg_p2_wait_mode" edge="1" parent="1" source="m_asg" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#8E44AD;strokeWidth=2;fontSize=24;fontColor=#6C3483;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;exitX=1;exitY=0.25;entryX=0.5;entryY=0;jumpStyle=arc;jumpSize=8;" target="p2_wait" value="[AREA] /robotX/mission_assignment 대체 경로 구역 | [EXACT] support if CONGESTED&lt;br&gt;Topic · aed_interfaces/MissionAssignment  (목표 좌표가 실린다)&lt;br&gt;발행 mission_manager  →  구독 mission_executor · aed_hmi_bridge">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
@@ -1090,103 +712,103 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="v4_ext_title" parent="1" style="text;html=1;fontSize=42;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;" value="v4 확장 구현 계약 — 왼쪽 v2/v3 구조는 그대로이며, 아래 영역이 누락된 분기·IDL·상태·DB·시험의 정본이다" vertex="1">
-          <mxGeometry height="102" width="21120" x="14100" y="30" as="geometry" />
+          <mxGeometry height="102" width="21120" x="9450" y="30" as="geometry" />
         </mxCell>
         <mxCell id="v4_priority" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.5;fontSize=27;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=5;spacingBottom=5;" value="규범 우선순위: ① 모드별 상세 분기 ② IDL/QoS ③ 상태전이·판단표 ④ DB/배포/시험. 충돌 시 앞 순서 우선. 표에 없는 입력·전이는 REJECTED_INVALID 또는 안전 정지로 처리하며 임의 기본값을 금지한다." vertex="1">
-          <mxGeometry height="156" width="21120" x="14100" y="144" as="geometry" />
+          <mxGeometry height="156" width="21120" x="9450" y="144" as="geometry" />
         </mxCell>
         <mxCell id="v4_runtime" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.5;fontSize=27;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=5;spacingBottom=5;" value="고정 환경: Ubuntu 22.04.4 · ROS 2 Humble · CycloneDDS · Python 3.10.12 · FastAPI 0.115.0 · React 18.3.1/TS 5.5.4 · SQLite 3.37.2 WAL · ROS_DOMAIN_ID=30 · UTC 저장/Asia-Seoul 표시" vertex="1">
-          <mxGeometry height="132" width="21120" x="14100" y="324" as="geometry" />
+          <mxGeometry height="132" width="21120" x="9450" y="324" as="geometry" />
         </mxCell>
         <mxCell id="v4_flow_panel" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6C3483;strokeWidth=2;fontSize=36;fontStyle=1;fontColor=#6C3483;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;" value="F. EXACT / AREA 모드별 상세 분기 · 이벤트 경계" vertex="1">
-          <mxGeometry height="8826" width="6000" x="14100" y="534" as="geometry" />
+          <mxGeometry height="8826" width="6000" x="9450" y="534" as="geometry" />
         </mxCell>
-        <mxCell id="v4_intake" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5F5E3;strokeColor=#148F77;strokeWidth=1.5;fontSize=30;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=5;spacingBottom=5;" value="ReportEmergency 수신&lt;br&gt;119 자동 API 없음: operator가 HMI POST&lt;br&gt;report_id UUIDv4 · Idempotency-Key 동일" vertex="1">
-          <mxGeometry height="276" width="5760" x="14220" y="720" as="geometry" />
+        <mxCell id="v4_intake" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5F5E3;strokeColor=#148F77;strokeWidth=1.5;fontSize=30;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=5;spacingBottom=5;" value="ReportEmergency 수신&lt;br&gt;119 자동 API 없음: operator가 HMI POST&lt;br&gt;report_id UUIDv4 · Idempotency-Key 동일&lt;br&gt;▸ 119 자동 연계는 안 쓴다. 운영자가 통화 내용을 HMI 에 read-back 으로 넣고 report_id UUIDv4 로 호출한다" vertex="1">
+          <mxGeometry height="276" width="5760" x="9570" y="720" as="geometry" />
         </mxCell>
         <mxCell id="v4_db_commit" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#922B21;strokeWidth=1.5;fontSize=27;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=5;spacingBottom=5;" value="DB transaction&lt;br&gt;BEGIN IMMEDIATE→reports/events/audit/outbox→COMMIT&lt;br&gt;실패: DB_WRITE_FAILED, Topic/Action 0건" vertex="1">
-          <mxGeometry height="270" width="5760" x="14220" y="1050" as="geometry" />
+          <mxGeometry height="270" width="5760" x="9570" y="1050" as="geometry" />
         </mxCell>
         <mxCell id="v4_E8" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#E8DAEF;strokeColor=#6C3483;strokeWidth=2;fontSize=27;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=28;spacingRight=28;" value="REPORT_ACCEPTED&lt;br&gt;WHEN validation+COMMIT&lt;br&gt;DATA report_id,event_id,mode,time&lt;br&gt;VIA response+WS · DB→HMI" vertex="1">
-          <mxGeometry height="354" width="2760" x="14220" y="1374" as="geometry" />
+          <mxGeometry height="354" width="2760" x="9570" y="1374" as="geometry" />
         </mxCell>
         <mxCell id="v4_E9" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#E8DAEF;strokeColor=#6C3483;strokeWidth=2;fontSize=27;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=28;spacingRight=28;" value="EMERGENCY_CONFIRMED&lt;br&gt;WHEN outbox publish after COMMIT&lt;br&gt;DATA EmergencyEvent&lt;br&gt;VIA /aed/mission_status · outbox→MM/HMI/logger" vertex="1">
-          <mxGeometry height="354" width="2760" x="17220" y="1374" as="geometry" />
+          <mxGeometry height="354" width="2760" x="12570" y="1374" as="geometry" />
         </mxCell>
         <mxCell id="v4_mode" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FCF3CF;strokeColor=#B7950B;strokeWidth=2;fontSize=30;fontStyle=1;fontColor=#17202A;" value="location_mode?" vertex="1">
-          <mxGeometry height="276" width="900" x="16650" y="1806" as="geometry" />
+          <mxGeometry height="276" width="900" x="12000" y="1806" as="geometry" />
         </mxCell>
         <mxCell id="v4_exact_lbl" parent="1" style="text;html=1;fontSize=33;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;" value="EXACT_DELIVERY" vertex="1">
-          <mxGeometry height="78" width="2550" x="14220" y="2130" as="geometry" />
+          <mxGeometry height="78" width="2550" x="9570" y="2130" as="geometry" />
         </mxCell>
         <mxCell id="v4_area_lbl" parent="1" style="text;html=1;fontSize=33;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;" value="AREA_SEARCH" vertex="1">
-          <mxGeometry height="78" width="2700" x="17220" y="2130" as="geometry" />
+          <mxGeometry height="78" width="2700" x="12570" y="2130" as="geometry" />
         </mxCell>
-        <mxCell id="v4_exact_guard" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FCF3CF;strokeColor=#B7950B;strokeWidth=1.5;fontSize=27;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=5;spacingBottom=5;" value="Guard&lt;br&gt;has_patient_pose OR(has_caller_pose AND caller_with_patient)&lt;br&gt;else INVALID_FIELDS · frame=map · floor match" vertex="1">
-          <mxGeometry height="324" width="2550" x="14220" y="2232" as="geometry" />
+        <mxCell id="v4_exact_guard" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FCF3CF;strokeColor=#B7950B;strokeWidth=1.5;fontSize=27;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=5;spacingBottom=5;" value="Guard&lt;br&gt;has_patient_pose OR(has_caller_pose AND caller_with_patient)&lt;br&gt;else INVALID_FIELDS · frame=map · floor match&lt;br&gt;▸ EXACT = patient_pose 또는 (caller_pose ∧ caller_with_patient) · AREA = building+floor+search_area. 그 외 INVALID_FIELDS · 다른 active event 면 409/Goal 0건" vertex="1">
+          <mxGeometry height="324" width="2550" x="9570" y="2232" as="geometry" />
         </mxCell>
         <mxCell id="v4_crowd" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2471A3;strokeWidth=1.5;fontSize=27;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=5;spacingBottom=5;" value="&lt;b&gt;Camera2 판정 → 중앙 ETA 보정&lt;/b&gt;&lt;br&gt;CLEAR: 추가 지연 없음&lt;br&gt;CROWDED: 골목 polygon 내부 경로 1m당 5초 추가&lt;br&gt;UNKNOWN(stale&amp;gt;2초): 추가 지연 없음&lt;br&gt;person_count는 상태·로그 확인용이며 중앙 판정에는 사용하지 않음" vertex="1">
-          <mxGeometry height="312" width="2550" x="14220" y="2610" as="geometry" />
+          <mxGeometry height="312" width="2550" x="9570" y="2610" as="geometry" />
         </mxCell>
         <mxCell id="v4_A01" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5B7B1;strokeColor=#A93226;strokeWidth=1.5;fontSize=27;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=5;spacingBottom=5;" value="/robotX/mission_assignment DeliverAed Goal(s)&lt;br&gt;선택 로봇=최소 path_cost; tie battery↓→robot_id&lt;br&gt;support=1.0m 16방향 free pose; 없으면 warning+선택 로봇만" vertex="1">
-          <mxGeometry height="348" width="2550" x="14220" y="2976" as="geometry" />
+          <mxGeometry height="348" width="2550" x="9570" y="2976" as="geometry" />
         </mxCell>
         <mxCell id="v4_E3" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#E8DAEF;strokeColor=#6C3483;strokeWidth=2;fontSize=27;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=28;spacingRight=28;" value="ROBOT_ASSIGNED&lt;br&gt;WHEN 선택 로봇 Goal accepted≤2s&lt;br&gt;DATA mission,robot,role,target,version&lt;br&gt;VIA /robotX/mission_assignment Action+· MM↔PC/HMI/DB" vertex="1">
-          <mxGeometry height="384" width="2550" x="14220" y="3378" as="geometry" />
+          <mxGeometry height="384" width="2550" x="9570" y="3378" as="geometry" />
         </mxCell>
         <mxCell id="v4_exact_active" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2471A3;strokeWidth=1.5;fontSize=27;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=5;spacingBottom=5;" value="DELIVERY_ACTIVE&lt;br&gt;Feedback 2Hz; stale&gt;2s warning, &gt;5s cancel&lt;br&gt;blocked=10s Δdistance&lt;0.1m after recovery each 1회" vertex="1">
-          <mxGeometry height="315" width="2550" x="14220" y="3816" as="geometry" />
+          <mxGeometry height="315" width="2550" x="9570" y="3816" as="geometry" />
         </mxCell>
         <mxCell id="v4_exact_result" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FCF3CF;strokeColor=#B7950B;strokeWidth=2;fontSize=30;fontStyle=1;fontColor=#17202A;" value="/robotX/mission_assignment Result?" vertex="1">
-          <mxGeometry height="258" width="900" x="15045" y="4185" as="geometry" />
+          <mxGeometry height="258" width="900" x="10395" y="4185" as="geometry" />
         </mxCell>
         <mxCell id="v4_E4E5" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#E8DAEF;strokeColor=#6C3483;strokeWidth=2;fontSize=27;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=28;spacingRight=28;" value="FAILED → REASSIGNED/WAIT&lt;br&gt;WHEN valid ABORTED/health/network&lt;br&gt;DATA old/new robot,version,result,reason&lt;br&gt;VIA cancel ack→new /robotX/mission_assignment | RECOVERY_WAIT" vertex="1">
-          <mxGeometry height="414" width="2550" x="14220" y="4500" as="geometry" />
+          <mxGeometry height="414" width="2550" x="9570" y="4500" as="geometry" />
         </mxCell>
         <mxCell id="v4_E6" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#E8DAEF;strokeColor=#6C3483;strokeWidth=2;fontSize=27;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=28;spacingRight=28;" value="AED_ARRIVED&lt;br&gt;WHEN SUCCEEDED ∧ final distance≤0.15m&lt;br&gt;DATA final_pose,finished_at,result=0&lt;br&gt;VIA /robotX/mission_assignment Result+→ MM/HMI/DB" vertex="1">
-          <mxGeometry height="396" width="2550" x="14220" y="4968" as="geometry" />
+          <mxGeometry height="396" width="2550" x="9570" y="4968" as="geometry" />
         </mxCell>
         <mxCell id="v4_exact_done" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5F5E3;strokeColor=#148F77;strokeWidth=1.5;fontSize=27;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=5;spacingBottom=5;" value="ARRIVED→HELPER/COMPLETED&lt;br&gt;helper_count≥1×3 frames 또는 support arrived&lt;br&gt;old version Result는 audit 후 무시" vertex="1">
-          <mxGeometry height="306" width="2550" x="14220" y="5418" as="geometry" />
+          <mxGeometry height="306" width="2550" x="9570" y="5418" as="geometry" />
         </mxCell>
-        <mxCell id="v4_area_guard" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FCF3CF;strokeColor=#B7950B;strokeWidth=1.5;fontSize=27;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=5;spacingBottom=5;" value="Guard&lt;br&gt;building_id+floor_id+search_area_id non-empty&lt;br&gt;catalog map revision exact · same_floor 가용 1..2대" vertex="1">
-          <mxGeometry height="324" width="2700" x="17220" y="2232" as="geometry" />
+        <mxCell id="v4_area_guard" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FCF3CF;strokeColor=#B7950B;strokeWidth=1.5;fontSize=27;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=5;spacingBottom=5;" value="Guard&lt;br&gt;building_id+floor_id+search_area_id non-empty&lt;br&gt;catalog map revision exact · same_floor 가용 1..2대&lt;br&gt;▸ EXACT = patient_pose 또는 (caller_pose ∧ caller_with_patient) · AREA = building+floor+search_area. 그 외 INVALID_FIELDS · 다른 active event 면 409/Goal 0건" vertex="1">
+          <mxGeometry height="324" width="2700" x="12570" y="2232" as="geometry" />
         </mxCell>
         <mxCell id="v4_E10" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#E8DAEF;strokeColor=#6C3483;strokeWidth=2;fontSize=27;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=28;spacingRight=28;" value="SEARCH_PLAN_CREATED&lt;br&gt;WHEN partition invariants pass&lt;br&gt;DATA epoch,zones,polygon,waypoints,ETA&lt;br&gt;VIA PlanSearch Service+DB+WS" vertex="1">
-          <mxGeometry height="384" width="2700" x="17220" y="2610" as="geometry" />
+          <mxGeometry height="384" width="2700" x="12570" y="2610" as="geometry" />
         </mxCell>
         <mxCell id="v4_A02" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#AED6F1;strokeColor=#2471A3;strokeWidth=1.5;fontSize=27;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=5;spacingBottom=5;" value="/robotX/mission_assignment SearchArea Goal×1..2&lt;br&gt;2대: Camera2 골목 구역/B · 1대: full area&lt;br&gt;Goal event,epoch,zone,polygon,waypoints,detector config" vertex="1">
-          <mxGeometry height="330" width="2700" x="17220" y="3048" as="geometry" />
+          <mxGeometry height="330" width="2700" x="12570" y="3048" as="geometry" />
         </mxCell>
         <mxCell id="v4_E11" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#E8DAEF;strokeColor=#6C3483;strokeWidth=2;fontSize=27;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=28;spacingRight=28;" value="SEARCH_STARTED&lt;br&gt;WHEN required /robotX/mission_assignment Goal(s) accepted≤2s&lt;br&gt;DATA epoch,accepted robot/zone,started_at&lt;br&gt;VIA /robotX/mission_assignment Action+→ MM/HMI/DB" vertex="1">
-          <mxGeometry height="384" width="2700" x="17220" y="3432" as="geometry" />
+          <mxGeometry height="384" width="2700" x="12570" y="3432" as="geometry" />
         </mxCell>
         <mxCell id="v4_searching" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2471A3;strokeWidth=1.5;fontSize=27;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=5;spacingBottom=5;" value="SEARCHING&lt;br&gt;coverage Feedback 2Hz/+5%; peer&lt;1.5m SUPPORT stop&lt;br&gt;epoch/zone mismatch·late result는 discard_reason audit" vertex="1">
-          <mxGeometry height="312" width="2700" x="17220" y="3870" as="geometry" />
+          <mxGeometry height="312" width="2700" x="12570" y="3870" as="geometry" />
         </mxCell>
         <mxCell id="v4_search_out" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FCF3CF;strokeColor=#B7950B;strokeWidth=2;fontSize=30;fontStyle=1;fontColor=#17202A;" value="/robotX/mission_assignment outcome?" vertex="1">
-          <mxGeometry height="258" width="900" x="18120" y="4236" as="geometry" />
+          <mxGeometry height="258" width="900" x="13470" y="4236" as="geometry" />
         </mxCell>
         <mxCell id="v4_E12" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#E8DAEF;strokeColor=#6C3483;strokeWidth=2;fontSize=27;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=28;spacingRight=28;" value="PATIENT_CANDIDATE&lt;br&gt;WHEN fallen conf≥0.60×3+depth0.2..8m+TF valid&lt;br&gt;DATA event,epoch,zone,pose,confidence&lt;br&gt;VIA /aed/patient_found /aed/mission_status → MM" vertex="1">
-          <mxGeometry height="414" width="2700" x="17220" y="4548" as="geometry" />
+          <mxGeometry height="414" width="2700" x="12570" y="4548" as="geometry" />
         </mxCell>
         <mxCell id="v4_E13" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#E8DAEF;strokeColor=#6C3483;strokeWidth=2;fontSize=27;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=28;spacingRight=28;" value="PATIENT_LOCATED&lt;br&gt;WHEN first valid CAS + all /robotX/mission_assignment cancel/zero barrier&lt;br&gt;DATA finder,peer,epoch,pose,receive_seq&lt;br&gt;VIA +new /robotX/mission_assignment RESPONDER Goal" vertex="1">
-          <mxGeometry height="414" width="2700" x="17220" y="5016" as="geometry" />
+          <mxGeometry height="414" width="2700" x="12570" y="5016" as="geometry" />
         </mxCell>
         <mxCell id="v4_responder" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5B7B1;strokeColor=#A93226;strokeWidth=1.5;fontSize=27;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=5;spacingBottom=5;" value="finder=RESPONDER · peer=SUPPORT staging&lt;br&gt;cancel ack≤1s AND speed≤0.02m/s by 0.5s 전 이동 금지&lt;br&gt;pose 차&gt;1m 동시 후보=양쪽 정지+operator 선택" vertex="1">
-          <mxGeometry height="330" width="2700" x="17220" y="5484" as="geometry" />
+          <mxGeometry height="330" width="2700" x="12570" y="5484" as="geometry" />
         </mxCell>
         <mxCell id="v4_E14" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#E8DAEF;strokeColor=#6C3483;strokeWidth=2;fontSize=27;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=28;spacingRight=28;" value="SEARCH_REASSIGNED&lt;br&gt;WHEN /robotX/mission_assignment ABORTED+replacement&lt;br&gt;DATA old/new robot,epoch+1,remaining area,reason&lt;br&gt;VIA cancel/new /robotX/mission_assignment+" vertex="1">
-          <mxGeometry height="450" width="1290" x="17220" y="5868" as="geometry" />
+          <mxGeometry height="450" width="1290" x="12570" y="5868" as="geometry" />
         </mxCell>
         <mxCell id="v4_E15" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#E8DAEF;strokeColor=#6C3483;strokeWidth=2;fontSize=27;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=28;spacingRight=28;" value="SEARCH_REVIEW&lt;br&gt;WHEN all NOT_FOUND coverage≥99.5%&lt;br&gt;DATA zones,coverage,reason&lt;br&gt;VIA +WS; auto RESOLVED 금지" vertex="1">
-          <mxGeometry height="450" width="1290" x="18630" y="5868" as="geometry" />
+          <mxGeometry height="450" width="1290" x="13980" y="5868" as="geometry" />
         </mxCell>
         <mxCell id="v4_ES" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#E8DAEF;strokeColor=#6C3483;strokeWidth=2;fontSize=27;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=28;spacingRight=28;" value="ES EMERGENCY_STOP&lt;br&gt;WHEN operator engage OR cancel/heartbeat timeout&lt;br&gt;DATA event,actor,reason · VIA HTTPS→TL→local Twist(0)&lt;br&gt;▸ 해제 조건: admin JWT + 각 로봇 physical_reset_counter 증가 + health 5초 연속. 수동 우선순위 ESTOP3 &gt; MANUAL lease2 &gt; AUTONOMOUS1" vertex="1">
-          <mxGeometry height="285" width="3480" x="14220" y="6354" as="geometry" />
+          <mxGeometry height="285" width="3480" x="9570" y="6354" as="geometry" />
         </mxCell>
         <mxCell id="v4_E16" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#E8DAEF;strokeColor=#6C3483;strokeWidth=2;fontSize=27;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=28;spacingRight=28;" value="EVENT_CANCELED&lt;br&gt;WHEN operator cancel/CLOSE_NO_PATIENT&lt;br&gt;DATA event,state_from,state_to=14,reason&lt;br&gt;VIA →MM/HMI/DB" vertex="1">
-          <mxGeometry height="285" width="2160" x="17760" y="6354" as="geometry" />
+          <mxGeometry height="285" width="2160" x="13110" y="6354" as="geometry" />
         </mxCell>
         <mxCell id="v4_e_intake_db" edge="1" parent="1" source="v4_intake" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.5;fontSize=24;fontColor=#1A5276;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;orthogonalLoop=1;jumpStyle=arc;jumpSize=8;strokeColor=#922B21;dashed=1;dashPattern=3 3;" target="v4_db_commit" value="validated request">
           <mxGeometry relative="1" as="geometry" />
@@ -1203,18 +825,18 @@
         <mxCell id="v4_e_mode_exact" edge="1" parent="1" source="v4_mode" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.5;fontSize=24;fontColor=#1A5276;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;orthogonalLoop=1;jumpStyle=arc;jumpSize=8;" target="v4_exact_guard" value="EXACT">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="16440" y="1944" />
-              <mxPoint x="16440" y="2190" />
-              <mxPoint x="15495" y="2190" />
+              <mxPoint x="11790" y="1944" />
+              <mxPoint x="11790" y="2190" />
+              <mxPoint x="10845" y="2190" />
             </Array>
           </mxGeometry>
         </mxCell>
         <mxCell id="v4_e_mode_area" edge="1" parent="1" source="v4_mode" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.5;fontSize=24;fontColor=#1A5276;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;orthogonalLoop=1;jumpStyle=arc;jumpSize=8;" target="v4_area_guard" value="AREA">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="17760" y="1944" />
-              <mxPoint x="17760" y="2190" />
-              <mxPoint x="18570" y="2190" />
+              <mxPoint x="13110" y="1944" />
+              <mxPoint x="13110" y="2190" />
+              <mxPoint x="13920" y="2190" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -1242,8 +864,8 @@
         <mxCell id="v4_e_exact_result_E6" edge="1" parent="1" source="v4_exact_result" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.5;fontSize=24;fontColor=#1A5276;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;orthogonalLoop=1;jumpStyle=arc;jumpSize=8;strokeColor=#6C3483;strokeWidth=2;startArrow=blockThin;startFill=1;exitX=1;exitY=0.5;entryX=1;entryY=0.5;" target="v4_E6" value="SUCCEEDED">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="16830" y="4314" />
-              <mxPoint x="16830" y="5166" />
+              <mxPoint x="12180" y="4314" />
+              <mxPoint x="12180" y="5166" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -1274,64 +896,64 @@
         <mxCell id="v4_e_search_e14" edge="1" parent="1" source="v4_search_out" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.5;fontSize=24;fontColor=#1A5276;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;orthogonalLoop=1;jumpStyle=arc;jumpSize=8;exitX=1;exitY=0.35;entryX=0.5;entryY=1;" target="v4_E14" value="ABORTED">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="20040" y="4326" />
-              <mxPoint x="20040" y="6360" />
-              <mxPoint x="17865" y="6360" />
+              <mxPoint x="15390" y="4326" />
+              <mxPoint x="15390" y="6360" />
+              <mxPoint x="13215" y="6360" />
             </Array>
           </mxGeometry>
         </mxCell>
         <mxCell id="v4_e_search_e15" edge="1" parent="1" source="v4_search_out" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.5;fontSize=24;fontColor=#1A5276;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;orthogonalLoop=1;jumpStyle=arc;jumpSize=8;exitX=1;exitY=0.65;entryX=1;entryY=0.5;" target="v4_E15" value="NOT_FOUND 99.5%">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="19980" y="4404" />
-              <mxPoint x="19980" y="6093" />
+              <mxPoint x="15330" y="4404" />
+              <mxPoint x="15330" y="6093" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="v4_flow_rules_lbl" parent="1" style="text;html=1;fontSize=33;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;" value="탐색 알고리즘·분기 고정값" vertex="1">
-          <mxGeometry height="72" width="3000" x="14220" y="6675" as="geometry" />
+        <mxCell id="v4_flow_rules_lbl" parent="1" style="text;html=1;fontSize=33;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;" value="탐색 알고리즘·분기 고정값&lt;br&gt;▸ AREA 는 0.8m lane / 1.0m waypoint 로 연속 2분할. union=area · overlap=0 · uncovered=0. 첫 valid PatientFound 만 CAS 로 잡고, cancel/zero barrier 전에는 responder 가 움직이지 않는다" vertex="1">
+          <mxGeometry height="72" width="3000" x="9570" y="6675" as="geometry" />
         </mxCell>
         <mxCell id="v4_flow_rules_h0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5DBDB;strokeColor=#85929E;fontSize=27;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=5;" value="항목" vertex="1">
-          <mxGeometry height="102" width="900" x="14220" y="6765" as="geometry" />
+          <mxGeometry height="102" width="900" x="9570" y="6765" as="geometry" />
         </mxCell>
         <mxCell id="v4_flow_rules_h1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5DBDB;strokeColor=#85929E;fontSize=27;fontStyle=1;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=5;" value="정확한 계산·동작" vertex="1">
-          <mxGeometry height="102" width="4800" x="15120" y="6765" as="geometry" />
+          <mxGeometry height="102" width="4800" x="10470" y="6765" as="geometry" />
         </mxCell>
         <mxCell id="v4_flow_rules_r0c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#AEB6BF;fontSize=24;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=5;spacingRight=4;" value="Grid" vertex="1">
-          <mxGeometry height="300" width="900" x="14220" y="6867" as="geometry" />
+          <mxGeometry height="300" width="900" x="9570" y="6867" as="geometry" />
         </mxCell>
         <mxCell id="v4_flow_rules_r0c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#AEB6BF;fontSize=24;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=5;spacingRight=4;" value="map resolution 0.05m; cost≤252만 free; polygon 밖 제외" vertex="1">
-          <mxGeometry height="300" width="4800" x="15120" y="6867" as="geometry" />
+          <mxGeometry height="300" width="4800" x="10470" y="6867" as="geometry" />
         </mxCell>
         <mxCell id="v4_flow_rules_r1c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#AEB6BF;fontSize=24;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=5;spacingRight=4;" value="Path" vertex="1">
-          <mxGeometry height="300" width="900" x="14220" y="7167" as="geometry" />
+          <mxGeometry height="300" width="900" x="9570" y="7167" as="geometry" />
         </mxCell>
         <mxCell id="v4_flow_rules_r1c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#AEB6BF;fontSize=24;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=5;spacingRight=4;" value="최장축 평행 0.8m lanes→1.0m samples; boustrophedon 순서" vertex="1">
-          <mxGeometry height="300" width="4800" x="15120" y="7167" as="geometry" />
+          <mxGeometry height="300" width="4800" x="10470" y="7167" as="geometry" />
         </mxCell>
         <mxCell id="v4_flow_rules_r2c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#AEB6BF;fontSize=24;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=5;spacingRight=4;" value="Split" vertex="1">
-          <mxGeometry height="300" width="900" x="14220" y="7467" as="geometry" />
+          <mxGeometry height="300" width="900" x="9570" y="7467" as="geometry" />
         </mxCell>
         <mxCell id="v4_flow_rules_r2c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#AEB6BF;fontSize=24;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=5;spacingRight=4;" value="각 robot pose→sample 8-neighbor Dijkstra; 모든 절단점 k 중 max(ETA A,B) 최소; tie 작은 k" vertex="1">
-          <mxGeometry height="300" width="4800" x="15120" y="7467" as="geometry" />
+          <mxGeometry height="300" width="4800" x="10470" y="7467" as="geometry" />
         </mxCell>
         <mxCell id="v4_flow_rules_r3c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#AEB6BF;fontSize=24;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=5;spacingRight=4;" value="Invariant" vertex="1">
-          <mxGeometry height="300" width="900" x="14220" y="7767" as="geometry" />
+          <mxGeometry height="300" width="900" x="9570" y="7767" as="geometry" />
         </mxCell>
         <mxCell id="v4_flow_rules_r3c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#AEB6BF;fontSize=24;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=5;spacingRight=4;" value="zone union=area, overlap=0, uncovered=0; 위반→" vertex="1">
-          <mxGeometry height="300" width="4800" x="15120" y="7767" as="geometry" />
+          <mxGeometry height="300" width="4800" x="10470" y="7767" as="geometry" />
         </mxCell>
         <mxCell id="v4_flow_rules_r4c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#AEB6BF;fontSize=24;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=5;spacingRight=4;" value="Failure" vertex="1">
-          <mxGeometry height="300" width="900" x="14220" y="8067" as="geometry" />
+          <mxGeometry height="300" width="900" x="9570" y="8067" as="geometry" />
         </mxCell>
         <mxCell id="v4_flow_rules_r4c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#AEB6BF;fontSize=24;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=5;spacingRight=4;" value="Search ABORTED→unvisited samples만 epoch+1 재계획; 후보0 SEARCH_RECOVERY_WAIT" vertex="1">
-          <mxGeometry height="300" width="4800" x="15120" y="8067" as="geometry" />
+          <mxGeometry height="300" width="4800" x="10470" y="8067" as="geometry" />
         </mxCell>
         <mxCell id="v4_flow_rules_r5c0" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#AEB6BF;fontSize=24;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=5;spacingRight=4;" value="Review" vertex="1">
-          <mxGeometry height="300" width="900" x="14220" y="8367" as="geometry" />
+          <mxGeometry height="300" width="900" x="9570" y="8367" as="geometry" />
         </mxCell>
         <mxCell id="v4_flow_rules_r5c1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F4F6F7;strokeColor=#AEB6BF;fontSize=24;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=5;spacingRight=4;" value="EXPAND=strict superset | CHANGE_FLOOR=catalog area | CLOSE_NO_PATIENT=reason 5..500" vertex="1">
-          <mxGeometry height="300" width="4800" x="15120" y="8367" as="geometry" />
+          <mxGeometry height="300" width="4800" x="10470" y="8367" as="geometry" />
         </mxCell>
         </root>
     </mxGraphModel>
