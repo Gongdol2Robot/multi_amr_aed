@@ -10,8 +10,15 @@ AED 전달 임무를 수행합니다.
 1. `Undock` Action 수행
 2. Undock 성공 직후 알람음 반복 시작
 3. 응급 위치로 `NavigateToPose` Goal 전송
-4. 도착, 주행 실패 또는 Goal 취소 시 알람 중지
-5. 도착 시 `ARRIVED`, 실패 시 `NAVIGATION_ERROR`를 `/aed/mission_status`에 발행
+4. 도착, 주행 실패 또는 Goal 취소 시 출동 경보 중지
+5. 결과에 맞는 도착음 또는 출동 중단음을 한 번 재생
+6. 도착 시 `ARRIVED`, 실패 시 `NAVIGATION_ERROR`를 `/aed/mission_status`에 발행
+
+알람 패턴은 서로 구분됩니다.
+
+- 출동 중: `1000 Hz → 440 Hz`, 각 0.25초, 0.8초마다 반복
+- 도착: `523 → 659 → 784 → 1047 Hz`, 각 0.2초, 한 번 재생
+- 장애·취소: `880 → 660 → 440 → 220 Hz`, 각 0.2초, 한 번 재생
 
 Mission Manager는 수행 로봇의 `NAVIGATION_ERROR`를 받으면 해당 로봇을
 제외하고 다음 가용 로봇에 새 assignment version을 발행합니다. 새로 배정된
@@ -67,7 +74,10 @@ ros2 run emergency_alert alert_mission_executor --ros-args \
 ros2 run emergency_alert alert_mission_executor --ros-args \
   -r __ns:=/robot1 -p robot_id:=robot1 \
   -p alarm_period:=0.8 -p note_duration:=0.25 \
-  -p high_frequency:=1000 -p low_frequency:=440
+  -p high_frequency:=1000 -p low_frequency:=440 \
+  -p terminal_note_duration:=0.2 \
+  -p arrival_frequencies:="[523, 659, 784, 1047]" \
+  -p interrupted_frequencies:="[880, 660, 440, 220]"
 ```
 
 ## 단발 Siren

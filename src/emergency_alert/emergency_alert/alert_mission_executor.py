@@ -40,6 +40,13 @@ class AlertMissionExecutor(Node):
         self.declare_parameter("note_duration", 0.25)
         self.declare_parameter("high_frequency", 1000)
         self.declare_parameter("low_frequency", 440)
+        self.declare_parameter("terminal_note_duration", 0.2)
+        self.declare_parameter(
+            "arrival_frequencies", [523, 659, 784, 1047]
+        )
+        self.declare_parameter(
+            "interrupted_frequencies", [880, 660, 440, 220]
+        )
 
         self.robot_id = str(self.get_parameter("robot_id").value)
         if not self.robot_id:
@@ -54,14 +61,41 @@ class AlertMissionExecutor(Node):
             int(self.get_parameter("high_frequency").value),
             int(self.get_parameter("low_frequency").value),
         )
+        self.terminal_note_duration = float(
+            self.get_parameter("terminal_note_duration").value
+        )
+        self.arrival_frequencies = tuple(
+            int(frequency)
+            for frequency in self.get_parameter("arrival_frequencies").value
+        )
+        self.interrupted_frequencies = tuple(
+            int(frequency)
+            for frequency in self.get_parameter(
+                "interrupted_frequencies"
+            ).value
+        )
         if self.server_timeout <= 0.0:
             raise ValueError("action_server_timeout must be positive")
         if self.alarm_period <= 0.0:
             raise ValueError("alarm_period must be positive")
         if self.note_duration <= 0.0:
             raise ValueError("note_duration must be positive")
+        if self.terminal_note_duration <= 0.0:
+            raise ValueError("terminal_note_duration must be positive")
         if any(frequency <= 0 for frequency in self.frequencies):
             raise ValueError("alarm frequencies must be positive")
+        if not self.arrival_frequencies or any(
+            frequency <= 0 for frequency in self.arrival_frequencies
+        ):
+            raise ValueError(
+                "arrival_frequencies must contain positive values"
+            )
+        if not self.interrupted_frequencies or any(
+            frequency <= 0 for frequency in self.interrupted_frequencies
+        ):
+            raise ValueError(
+                "interrupted_frequencies must contain positive values"
+            )
 
         self.undock_client = ActionClient(
             self,
@@ -268,9 +302,11 @@ class AlertMissionExecutor(Node):
             return
 
         if status == GoalStatus.STATUS_SUCCEEDED:
+            self._play_arrival_alert()
             self._publish_status(MissionStatus.ARRIVED)
             self.get_logger().info("AED arrived; travel alarm stopped")
         elif status == GoalStatus.STATUS_CANCELED:
+            self._play_interrupted_alert()
             self._publish_status(MissionStatus.CANCELED, "Nav2 goal canceled")
         else:
             self._mission_error(f"Nav2 failed: status={status}", serial)
@@ -280,6 +316,7 @@ class AlertMissionExecutor(Node):
         if serial != self.mission_serial:
             return
         self._stop_alarm()
+        self._play_interrupted_alert()
         self._publish_status(MissionStatus.NAVIGATION_ERROR, reason)
         self.get_logger().error(reason)
 
@@ -299,13 +336,31 @@ class AlertMissionExecutor(Node):
         ``append=False``를 사용해 Create3의 기존 음계 큐를 교체한다. 따라서
         오래된 음계가 계속 누적되지 않고 최신 경보 패턴만 재생된다.
         """
+        self._publish_note_sequence(self.frequencies, self.note_duration)
+
+    def _play_arrival_alert(self) -> None:
+        """낮은 음에서 높은 음으로 올라가는 도착 완료음을 한 번 재생한다."""
+        self._publish_note_sequence(
+            self.arrival_frequencies,
+            self.terminal_note_duration,
+        )
+        self.get_logger().info("Arrival alert published")
+
+    def _play_interrupted_alert(self) -> None:
+        """높은 음에서 낮은 음으로 내려가는 출동 중단음을 한 번 재생한다."""
+        self._publish_note_sequence(
+            self.interrupted_frequencies,
+            self.terminal_note_duration,
+        )
+        self.get_logger().warning("Mission interrupted alert published")
+
+    def _publish_note_sequence(self, frequencies, duration: float) -> None:
+        """주파수 목록을 AudioNoteVector 하나로 변환해 오디오 큐에 넣는다."""
         message = AudioNoteVector()
         message.append = False
-        seconds = int(self.note_duration)
-        nanoseconds = int(
-            (self.note_duration - seconds) * 1_000_000_000
-        )
-        for frequency in self.frequencies:
+        seconds = int(duration)
+        nanoseconds = int((duration - seconds) * 1_000_000_000)
+        for frequency in frequencies:
             note = AudioNote()
             note.frequency = frequency
             note.max_runtime.sec = seconds
@@ -319,13 +374,13 @@ class AlertMissionExecutor(Node):
         도착뿐 아니라 Nav2 오류, Goal 취소, 새 임무 수신, 노드 종료에서도
         호출되어 로봇에 경보음이 남는 것을 방지한다.
         """
-        if not self.alarm_active:
-            return
+        was_active = self.alarm_active
         self.alarm_active = False
         stop_message = AudioNoteVector()
         stop_message.append = False
         self.audio_publisher.publish(stop_message)
-        self.get_logger().info("Travel alarm stopped")
+        if was_active:
+            self.get_logger().info("Travel alarm stopped")
 
     def _cancel_active_goals(self) -> None:
         """진행 중인 Undock과 Nav2 Goal이 있으면 비동기로 취소한다."""
