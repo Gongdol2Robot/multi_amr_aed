@@ -33,7 +33,10 @@ import sys
 import cv2
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(REPO, "tools", "survey")
+# 카메라별로 대응점을 따로 모은다. CAM_ID 는 논리 번호(1, 2 ...)이고
+# CAM_INDEX 는 /dev/videoN 의 N 이다. 둘은 다를 수 있다.
+CAM_ID = os.environ.get("CAM_ID", "2")
+OUT = os.path.join(REPO, "tools", "survey", f"cam{CAM_ID}")
 CSV_PATH = os.path.join(OUT, "points.csv")
 CAM_INDEX = int(os.environ.get("CAM_INDEX", "2"))
 CAM_WIDTH = int(os.environ.get("CAM_WIDTH", "640"))

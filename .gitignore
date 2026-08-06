@@ -22,7 +22,8 @@ venv/
 # Runtime output
 bags/
 captures/
-tools/survey/*.jpg
+# tools/survey 의 측량 사진은 제외하지 않는다. 호모그래피를 다시 계산하거나
+# 왜 그 값이 나왔는지 확인할 때 필요한 근거 자료이고, 장당 60KB 수준이다.
 data/
 datasets/
 runs/

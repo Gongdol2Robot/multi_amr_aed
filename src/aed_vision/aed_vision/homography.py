@@ -18,12 +18,21 @@ def _config_dir() -> str:
         return os.path.join(here, "config")
 
 
-def _default_config_path() -> str:
-    """현장 측량 결과가 있으면 그것을 쓰고, 없으면 예시 항등행렬로 떨어진다."""
+def _default_config_path(camera_id: str = None) -> str:
+    """카메라별 측량 결과를 찾고, 없으면 예시 항등행렬로 떨어진다.
+
+    카메라마다 보는 각도가 달라 행렬을 공유할 수 없다. 그래서 파일을
+    camera_id 별로 나눈다. camera_id 는 EmergencyEvent.camera_id 와 맞춘다.
+    """
     config_dir = _config_dir()
-    surveyed = os.path.join(config_dir, "homography.yaml")
-    if os.path.exists(surveyed):
-        return surveyed
+    if camera_id:
+        surveyed = os.path.join(config_dir, f"homography_{camera_id}.yaml")
+        if os.path.exists(surveyed):
+            return surveyed
+        raise FileNotFoundError(
+            f"{camera_id} 의 호모그래피 설정이 없습니다: {surveyed} — "
+            f"tools/fit_homography.py 로 먼저 측량하세요."
+        )
     return os.path.join(config_dir, "homography.example.yaml")
 
 
@@ -39,8 +48,9 @@ class Homography:
         self.survey_area = survey_area or []
 
     @classmethod
-    def load(cls, path: str = None) -> "Homography":
-        config_path = path or _default_config_path()
+    def load(cls, path: str = None, camera_id: str = None) -> "Homography":
+        """camera_id 를 주면 그 카메라의 설정을 읽는다. 예: "cam1", "cam2"."""
+        config_path = path or _default_config_path(camera_id)
         with open(config_path, encoding="utf-8") as config_file:
             config = yaml.safe_load(config_file)
         return cls(
@@ -80,4 +90,20 @@ class Homography:
                 if x < intersection:
                     inside = not inside
         return inside
+
+
+def load_all() -> dict:
+    """설치된 카메라별 호모그래피를 모두 읽어 camera_id 로 색인한다.
+
+    검출은 어느 카메라에서 올지 모르므로, EmergencyEvent.camera_id 로 바로
+    꺼내 쓸 수 있게 미리 전부 읽어 둔다. 측량이 안 된 카메라는 아예 없다.
+    """
+    import glob
+
+    result = {}
+    pattern = os.path.join(_config_dir(), "homography_*.yaml")
+    for path in sorted(glob.glob(pattern)):
+        name = os.path.basename(path)[len("homography_"):-len(".yaml")]
+        result[name] = Homography.load(path=path)
+    return result
 
