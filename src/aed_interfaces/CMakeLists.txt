@@ -12,6 +12,11 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MissionAssignment.msg"
   "msg/MissionStatus.msg"
   "msg/Heartbeat.msg"
+  "msg/CrowdLevel.msg"
+  "msg/DetectionSummary.msg"
+  "msg/SensorHealth.msg"
+  "srv/ReportEmergency.srv"
+  "action/DeliverAed.action"
   DEPENDENCIES builtin_interfaces geometry_msgs
 )
 

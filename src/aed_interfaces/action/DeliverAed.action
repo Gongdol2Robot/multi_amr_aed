@@ -1,0 +1,40 @@
+# AED 전달 출동 지시.
+#
+# 왜 Action 인가:
+#   - 수십 초가 걸린다            → Service 로는 응답이 그때까지 막힌다
+#   - 진행 상황을 계속 봐야 한다   → feedback 이 필요하다
+#   - 재할당 때 취소해야 한다      → cancel_goal 이 필요하다
+# 이 셋이 Action 의 정의 그대로다.
+#
+# 기존 MissionAssignment.msg(topic) + MissionStatus.msg(topic) 조합은 이것을
+# 손으로 흉내낸 것이었다. assignment_version 으로 중복 출동을 막던 코드는
+# Action 의 goal 취소로 대체된다.
+
+# ---- Goal ----
+string mission_id
+string event_id
+uint8 role                          # RobotState 의 ROLE_* 와 같은 값
+geometry_msgs/PoseStamped target
+uint8 crowd_level                   # CrowdLevel 의 등급. 왜 이 대수가 갔는지 근거
+builtin_interfaces/Time requested_at
+---
+# ---- Result ----
+uint8 SUCCESS=0
+uint8 ABORTED_NAVIGATION=1          # Nav2 가 반복 실패
+uint8 ABORTED_NETWORK=2             # 로봇과 통신 두절
+uint8 ABORTED_SENSOR=3              # 라이다 이상으로 주행 불가
+uint8 CANCELED=4                    # 재할당 등으로 취소됨
+
+uint8 outcome
+builtin_interfaces/Time started_at  # goal 수락 시각 = 출동 시작
+builtin_interfaces/Time finished_at # 도착 또는 포기 시각
+float32 travelled_m
+geometry_msgs/PoseStamped final_pose
+string detail
+---
+# ---- Feedback ----
+uint8 state                         # MissionStatus 의 상태값과 같은 의미
+geometry_msgs/PoseStamped current_pose
+float32 speed_mps
+float32 distance_remaining_m
+float32 eta_seconds                 # 음수면 아직 추정 불가

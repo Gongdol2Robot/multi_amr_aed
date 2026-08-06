@@ -19,6 +19,13 @@ venv/
 *~
 .DS_Store
 
+# HMI. node_modules 는 68MB 가 넘고 package-lock.json 으로 복원된다.
+# var/ 는 관제 서버가 만드는 SQLite 파일이라 환경마다 다르다.
+node_modules/
+src/aed_hmi/frontend/dist/
+src/aed_hmi/var/
+var/
+
 # Runtime output
 bags/
 captures/
@@ -49,3 +56,6 @@ vision_training/models/*.pt
 
 # Keep directory placeholders
 !models/.gitkeep
+
+# TypeScript 증분 빌드 캐시
+*.tsbuildinfo

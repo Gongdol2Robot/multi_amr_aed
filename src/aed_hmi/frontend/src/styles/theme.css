@@ -1,0 +1,164 @@
+/*
+ * 관제실 화면의 색과 간격.
+ *
+ * 어두운 배경을 쓰는 이유는 취향이 아니라, 영상 4개가 화면 대부분을
+ * 차지하기 때문이다. 밝은 배경이면 영상 경계에서 눈이 계속 조리개를
+ * 조절하게 되고, 오래 보는 화면에서 그게 피로가 된다.
+ *
+ * 상태색은 세 가지만 쓴다. 색을 늘리면 "지금 급한 게 무엇인가"가 흐려진다.
+ *   정상 = 초록, 주의 = 노랑, 위험 = 빨강
+ */
+
+:root {
+  --bg-base: #0b0f14;
+  --bg-panel: #131a22;
+  --bg-panel-2: #1a2430;
+  --bg-tile: #05080b;
+
+  --line: #263140;
+  --line-soft: #1b232e;
+
+  --text: #dce6f2;
+  --text-dim: #8496ab;
+  --text-faint: #5b6b7d;
+
+  --ok: #2ecc71;
+  --warn: #f5b544;
+  --danger: #ff4d5e;
+  --info: #4aa8ff;
+  --accent: #00d4c8;
+
+  --radius: 6px;
+  --gap: 10px;
+
+  /* 숫자는 자릿수가 흔들리면 읽기 어렵다. 어디서나 고정폭을 쓴다. */
+  --mono: 'JetBrains Mono', 'D2Coding', 'Consolas', ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--text);
+  font-family: 'Pretendard', 'Noto Sans KR', system-ui, sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panel__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+
+.panel__body {
+  padding: 10px;
+  overflow: auto;
+  min-height: 0;
+}
+
+/* 상태 점 ---------------------------------------------------------- */
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+.dot--ok {
+  background: var(--ok);
+  box-shadow: 0 0 6px rgba(46, 204, 113, 0.7);
+}
+.dot--warn {
+  background: var(--warn);
+  box-shadow: 0 0 6px rgba(245, 181, 68, 0.7);
+}
+.dot--danger {
+  background: var(--danger);
+  box-shadow: 0 0 6px rgba(255, 77, 94, 0.75);
+  animation: pulse 1.1s ease-in-out infinite;
+}
+.dot--idle {
+  background: var(--text-faint);
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* 배지 ------------------------------------------------------------- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.badge--ok {
+  color: var(--ok);
+  background: rgba(46, 204, 113, 0.1);
+  border-color: rgba(46, 204, 113, 0.32);
+}
+.badge--warn {
+  color: var(--warn);
+  background: rgba(245, 181, 68, 0.1);
+  border-color: rgba(245, 181, 68, 0.32);
+}
+.badge--danger {
+  color: var(--danger);
+  background: rgba(255, 77, 94, 0.12);
+  border-color: rgba(255, 77, 94, 0.36);
+}
+.badge--info {
+  color: var(--info);
+  background: rgba(74, 168, 255, 0.1);
+  border-color: rgba(74, 168, 255, 0.3);
+}
+.badge--idle {
+  color: var(--text-faint);
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--line);
+}
