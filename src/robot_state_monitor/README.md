@@ -50,6 +50,10 @@ ros2 topic echo /aed/selected_robot
 경로를 계산할 수 없는 로봇의 거리에는 `nan`이 발행됩니다. 실제로 선정된
 로봇에 임무를 배정하려면 다음처럼 실행합니다.
 
+정지 중에는 AMCL pose가 반복 발행되지 않으므로 마지막 수신 위치를 계속
+사용합니다. 엄격한 pose 시간 제한은 `allow_stale_pose:=false`로 켤 수
+있습니다.
+
 ```bash
 ros2 launch aed_bringup central_dispatch.launch.py dispatch_enabled:=true
 ```

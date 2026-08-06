@@ -65,6 +65,7 @@ class RobotStateMonitor(Node):
         self.declare_parameter("robot_ids", ["robot1", "robot2"])
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("pose_timeout_sec", 15.0)
+        self.declare_parameter("allow_stale_pose", True)
         self.declare_parameter("plan_retry_sec", 3.0)
         self.declare_parameter("state_publish_period_sec", 0.5)
         self.declare_parameter("planner_id", "GridBased")
@@ -77,6 +78,9 @@ class RobotStateMonitor(Node):
             raise ValueError("robot_ids must contain one or more unique robots")
         self.map_frame = str(self.get_parameter("map_frame").value)
         self.pose_timeout = float(self.get_parameter("pose_timeout_sec").value)
+        self.allow_stale_pose = bool(
+            self.get_parameter("allow_stale_pose").value
+        )
         self.plan_retry = float(self.get_parameter("plan_retry_sec").value)
         self.planner_id = str(self.get_parameter("planner_id").value)
         period = float(self.get_parameter("state_publish_period_sec").value)
@@ -264,7 +268,7 @@ class RobotStateMonitor(Node):
 
     def _request_plan(self, robot_id: str, serial: int) -> None:
         runtime = self.runtime[robot_id]
-        if runtime.pose is None or self._pose_age(runtime) > self.pose_timeout:
+        if not self._pose_is_usable(runtime):
             runtime.path_event_id = self.current_event_id
             runtime.path_valid = False
             runtime.path_cost = -1.0
@@ -353,7 +357,7 @@ class RobotStateMonitor(Node):
 
     def _publish_state(self, robot_id: str) -> None:
         runtime = self.runtime[robot_id]
-        pose_fresh = runtime.pose is not None and self._pose_age(runtime) <= self.pose_timeout
+        pose_usable = self._pose_is_usable(runtime)
         nav2_ok = self.planner_clients[robot_id].server_is_ready()
         state = RobotState()
         state.robot_id = robot_id
@@ -362,15 +366,15 @@ class RobotStateMonitor(Node):
             state.pose = deepcopy(runtime.pose)
         state.battery_percentage = runtime.battery_percentage
         state.role = RobotState.ROLE_NONE
-        state.network_ok = pose_fresh
-        state.localization_ok = pose_fresh
+        state.network_ok = pose_usable
+        state.localization_ok = pose_usable
         state.nav2_ok = nav2_ok
         state.emergency_stop = False
         state.path_valid = runtime.path_valid
         state.estimated_path_cost = runtime.path_cost
         state.path_event_id = runtime.path_event_id
         state.last_heartbeat = state.stamp
-        if not pose_fresh:
+        if not pose_usable:
             state.availability = RobotState.LOCALIZATION_ERROR
             state.detail = "AMCL pose missing or stale"
         elif not nav2_ok:
@@ -389,6 +393,11 @@ class RobotStateMonitor(Node):
     @staticmethod
     def _pose_age(runtime: RobotRuntime) -> float:
         return time.monotonic() - runtime.pose_received_at
+
+    def _pose_is_usable(self, runtime: RobotRuntime) -> bool:
+        if runtime.pose is None:
+            return False
+        return self.allow_stale_pose or self._pose_age(runtime) <= self.pose_timeout
 
 
 def main(args=None) -> None:

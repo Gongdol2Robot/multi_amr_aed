@@ -13,6 +13,11 @@ def generate_launch_description() -> LaunchDescription:
         [
             DeclareLaunchArgument("planner_id", default_value="GridBased"),
             DeclareLaunchArgument("pose_timeout_sec", default_value="15.0"),
+            DeclareLaunchArgument(
+                "allow_stale_pose",
+                default_value="true",
+                choices=["true", "false"],
+            ),
             DeclareLaunchArgument("plan_retry_sec", default_value="3.0"),
             DeclareLaunchArgument(
                 "path_collection_timeout_sec", default_value="10.0"
@@ -34,6 +39,10 @@ def generate_launch_description() -> LaunchDescription:
                         "pose_timeout_sec": ParameterValue(
                             LaunchConfiguration("pose_timeout_sec"),
                             value_type=float,
+                        ),
+                        "allow_stale_pose": ParameterValue(
+                            LaunchConfiguration("allow_stale_pose"),
+                            value_type=bool,
                         ),
                         "plan_retry_sec": ParameterValue(
                             LaunchConfiguration("plan_retry_sec"),
