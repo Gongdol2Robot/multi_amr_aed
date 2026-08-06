@@ -26,7 +26,10 @@ captures/
 # 왜 그 값이 나왔는지 확인할 때 필요한 근거 자료이고, 장당 60KB 수준이다.
 data/
 datasets/
+hard_negatives/
 runs/
+finetune_runs/
+test_captures/
 *.db
 *.sqlite
 *.sqlite3
@@ -42,7 +45,7 @@ models/*.engine
 models/*.onnx
 models/*.pt
 models/*.pth
+vision_training/models/*.pt
 
 # Keep directory placeholders
 !models/.gitkeep
-

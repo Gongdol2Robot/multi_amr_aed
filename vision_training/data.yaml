@@ -1,0 +1,6 @@
+train: datasets/rescue/images/train
+val: datasets/rescue/images/val
+test: datasets/rescue/images/test
+names:
+  0: fallen_person
+  1: helper_rc_car

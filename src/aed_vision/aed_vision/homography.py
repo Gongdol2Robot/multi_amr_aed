@@ -106,4 +106,3 @@ def load_all() -> dict:
         name = os.path.basename(path)[len("homography_"):-len(".yaml")]
         result[name] = Homography.load(path=path)
     return result
-

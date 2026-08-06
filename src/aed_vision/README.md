@@ -1,18 +1,160 @@
 # aed_vision
 
-응급상황 비전 파이프라인의 공통 입력과 좌표 변환 기능입니다.
+고정 웹캠 영상에서 쓰러진 구조 대상과 구조 보조자(`helper`)를 검출하고,
+골목 카메라에서는 실제 사람 수를 이용해 통로 혼잡도까지 판단하는 ROS 2
+패키지입니다.
 
-담당: 김지훈(호모그래피·위치 검증), 이현민(목각인형·사람 검출 및 통합)
+담당: 김지훈(호모그래피·위치 검증), 이현민(구조 대상·사람 검출 및 통합)
 
-## Nodes
+## 카메라 구성
 
-- `webcam_publisher`: 로컬 웹캠을 JPEG 압축 ROS 2 이미지 토픽으로 발행
-- `emergency_detector` 예정: 쓰러진 목각인형 연속 검출과 이벤트 생성
-- `helper_presence_detector` 예정: AED 도착 후 주변 도움 인력 존재 여부 판별
+같은 코드를 두 노트북에 설치하고 YAML 설정만 다르게 실행합니다. 두 노트북은
+같은 ROS 2 네트워크와 `ROS_DOMAIN_ID`를 사용해야 합니다.
 
-## Library
+| 카메라 | 모드 | 파인튜닝 구조 모델 | COCO person 모델 | 혼잡도 |
+|---|---|---:|---:|---:|
+| `camera_open` | `open` | 사용 | 미사용 | `NOT_APPLICABLE` |
+| `camera_alley` | `alley` | 사용 | 사용 | `CLEAR`/`CROWDED` |
 
-- `aed_vision.homography.Homography`: 검출 박스의 바닥 접점을 map 좌표로 변환
+- `open`: 탁 트인 장소에서 `fallen_person`과 `helper`만 검출합니다.
+- `alley`: 좁은 통로에서 구조 검출과 ROI 내부 실제 사람 수를 함께 계산합니다.
+- 학습 가중치 내부 클래스명은 `helper_rc_car`지만 디버그 bbox와 상태 JSON에는
+  역할 중심 이름인 `helper`를 사용합니다.
 
-`config/homography.example.yaml`은 형식 예제입니다. 실제 설치 장소에서 측량한
-픽셀-map 대응점을 사용해 행렬을 다시 계산해야 합니다.
+## 노드
+
+### `vision_detector`
+
+- 각 노트북의 USB 웹캠을 직접 읽어 같은 프로세스에서 즉시 추론
+- 읽은 원본 영상은 모니터링용 JPEG 압축 토픽으로도 발행
+- 두 모드 모두 파인튜닝 YOLO11n으로 `fallen_person`, `helper` 검출
+- 최근 10프레임 중 6프레임 이상 검출될 때 응급상황 확정
+- 확정/해제 전환 시 `aed_interfaces/EmergencyEvent` 발행
+- `alley` 모드에서는 COCO YOLO11n으로 ROI 내부 `person` 수 계산
+- COCO가 쓰러진 대상을 person으로 중복 검출하면 bbox IoU를 이용해 인파에서 제외
+- 상태 JSON, 혼잡도, 사람 수, heartbeat, JPEG 디버그 영상 발행
+- 기본 설정에서는 실행한 노트북에 OpenCV 실시간 검출 창 표시
+
+한 프레임을 처리하는 동안 새 프레임이 도착하면 큐 깊이 1의 best-effort QoS를
+사용해 오래된 프레임을 쌓지 않습니다.
+
+`webcam_publisher` 실행 파일은 단독 카메라 토픽 시험용으로 남겨 두었지만,
+`camera_vision.launch.py`에서는 사용하지 않습니다. 실행 launch는 카메라별
+`vision_detector` 노드 하나만 시작합니다.
+
+## 설치
+
+```bash
+cd ~/rokey_ws/multi_amr_aed
+rosdep install --from-paths src --ignore-src -r -y
+python3 -m pip install -r src/aed_vision/requirements.txt
+colcon build --packages-select aed_interfaces aed_vision
+source install/setup.bash
+```
+
+두 모델은 패키지의 `models/`에 포함되고 빌드할 때 ROS share 폴더에 함께
+설치됩니다.
+
+- `models/rescue_yolo11n.pt`: 파인튜닝 구조 검출 모델
+- `models/coco_yolo11n.pt`: COCO person 검출 모델
+
+YAML은 절대 경로 대신 다음 ROS 패키지 URI를 사용하므로 노트북마다 경로를
+수정할 필요가 없습니다.
+
+```text
+package://aed_vision/models/rescue_yolo11n.pt
+package://aed_vision/models/coco_yolo11n.pt
+```
+
+## 실행
+
+탁 트인 공간 노트북:
+
+```bash
+ros2 launch aed_vision camera_vision.launch.py \
+  camera:=1
+```
+
+`camera:=1`은 `camera_open` namespace와 `open_camera.yaml`을 자동 선택하며,
+파인튜닝 구조 모델만 실행해 쓰러진 사람과 helper를 검출합니다. 실행한
+노트북에는 `AED Vision - camera_open (open)` 결과 창이 표시됩니다.
+
+좁은 골목 노트북:
+
+```bash
+ros2 launch aed_vision camera_vision.launch.py \
+  camera:=2
+```
+
+`camera:=2`는 `camera_alley` namespace와 `alley_camera.yaml`을 자동 선택하며,
+쓰러진 사람과 helper 검출에 COCO person 기반 인파 감지를 추가합니다. 실행한
+노트북에는 구조 bbox, person bbox와 혼잡 ROI가 합쳐진 결과 창이 표시됩니다.
+
+실행 전 각 YAML에서 다음 값을 현장에 맞게 수정합니다.
+
+- `camera_device`: USB 웹캠 장치 경로. 기본값은 `/dev/video2`이며 가능하면
+  재부팅 후에도 유지되는 `/dev/v4l/by-id/...` 경로 사용 권장
+- `inference_device`: YOLO 추론 장치 (`"cuda:0"`은 첫 GPU, `"cpu"`는 CPU)
+- `location_x`, `location_y`: 해당 고정 카메라 구조 지점의 map 좌표
+- `crowd_roi`: 골목 영상에서 AMR이 통과해야 하는 영역
+- `crowded_person_threshold`: `CROWDED`로 판단할 최소 사람 수
+- `show_window`: 해당 노트북에 OpenCV 결과 창을 표시할지 여부
+
+## 토픽
+
+`<camera_id>`는 `camera_open` 또는 `camera_alley`입니다.
+
+| 토픽 | 타입 | 내용 |
+|---|---|---|
+| `/<camera_id>/image_raw/compressed` | `sensor_msgs/CompressedImage` | 로컬 웹캠 JPEG |
+| `/<camera_id>/vision/emergency_event` | `aed_interfaces/EmergencyEvent` | 확정 또는 해제된 구조 이벤트 |
+| `/<camera_id>/vision/status` | `std_msgs/String` | 전체 검출 상태 JSON |
+| `/<camera_id>/vision/crowd_level` | `std_msgs/String` | `NOT_APPLICABLE`, `CLEAR`, `CROWDED` |
+| `/<camera_id>/vision/person_count` | `std_msgs/UInt32` | 골목 ROI 내 유효 person 수 |
+| `/<camera_id>/vision/heartbeat` | `aed_interfaces/Heartbeat` | 초당 노드 생존 신호 |
+| `/<camera_id>/vision/debug/compressed` | `sensor_msgs/CompressedImage` | bbox와 ROI가 표시된 JPEG |
+
+`status` JSON 예시:
+
+```json
+{
+  "camera_id": "camera_alley",
+  "zone_id": "alley_zone",
+  "mode": "alley",
+  "fallen_detected": true,
+  "fallen_confirmed": true,
+  "fallen_count": 1,
+  "fallen_max_confidence": 0.91,
+  "helper_count": 0,
+  "person_count": 3,
+  "crowd_level": "CROWDED",
+  "confirmation_hits": 7,
+  "inference_ms": 42.5
+}
+```
+
+## 혼잡도 ROI 조정
+
+`crowd_roi`는 `[left, top, right, bottom]` 순서이며 영상 너비·높이에 대한
+0.0~1.0 비율입니다. 현재 골목 카메라는 `[0.375, 0.0, 1.0, 0.5]`로 영상
+상단의 오른쪽 62.5% 영역을 사용합니다. 이 영역은 1번 터틀봇의 골목 진입
+경로이며, 여기서
+`CROWDED`가 나오면 인파 때문에 1번 터틀봇의 접근 경로가 막힌 상황으로
+해석합니다. 실제 이동 통로에 맞게 디버그 영상의 청록색 사각형을 보면서
+조정해야 합니다.
+
+현재 혼잡 기준은 **쓰러진 대상 외의 실제 사람 2명 이상**입니다. 파인튜닝
+모델의 `fallen_person` bbox와 COCO YOLO11n의 `person` bbox가 겹치면 동일한
+쓰러진 대상으로 판단해 사람 수에서 제외합니다. 제외 후 우상단 ROI에 남은
+person이 0~1명이면 `CLEAR`, 2명 이상이면 `CROWDED`입니다.
+
+혼잡도는 골목 카메라에서만 의미가 있으므로 `camera_open`은 항상
+`NOT_APPLICABLE`을 발행합니다. 중앙 Mission Manager는 이 값을 사람 수 0과
+구별해야 합니다.
+
+## 좌표 변환 라이브러리
+
+`aed_vision.homography.Homography`는 bbox 하단 중앙점을 map 좌표로 변환합니다.
+현재 검출 노드는 고정 카메라별 `location_x`, `location_y`를 이벤트 위치로
+사용합니다. 실제 측량이 완료되면 `config/homography.example.yaml` 형식의
+행렬을 이용한 개별 검출 위치 계산으로 확장할 수 있습니다.
