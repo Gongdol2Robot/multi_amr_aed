@@ -53,6 +53,7 @@ models/*.onnx
 models/*.pt
 models/*.pth
 vision_training/models/*.pt
+vision_training/caterpillar_fall_pose_best.pt
 
 # Keep directory placeholders
 !models/.gitkeep
