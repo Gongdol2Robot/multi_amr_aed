@@ -16,6 +16,8 @@ setup(
         ),
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/config", glob("config/*.yaml")),
+        ("share/" + package_name + "/launch", glob("launch/*.launch.py")),
+        ("share/" + package_name + "/models", glob("models/*.pt")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -26,7 +28,7 @@ setup(
     entry_points={
         "console_scripts": [
             "webcam_publisher = aed_vision.webcam_publisher:main",
+            "vision_detector = aed_vision.vision_detector:main",
         ],
     },
 )
-
