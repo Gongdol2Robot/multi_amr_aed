@@ -24,6 +24,46 @@ from .inference_pipeline import InferenceOutput, InferencePipeline
 from .qos import CAMERA_QOS
 
 
+PARAMETER_DEFAULTS = (
+    # 카메라 역할과 입력
+    ("camera_id", "camera_open"),
+    ("zone_id", "open_zone"),
+    ("mode", "open"),
+    ("image_topic", "/camera/image_raw/compressed"),
+    ("direct_camera", True),
+    ("camera_device", "/dev/video2"),
+    ("width", 640),
+    ("height", 480),
+    ("fps", 15.0),
+    ("frame_id", "aed_camera_optical_frame"),
+    ("jpeg_quality", 85),
+    # 모델과 추론
+    ("rescue_weights", ""),
+    ("person_weights", ""),
+    ("rescue_conf", 0.25),
+    ("person_conf", 0.25),
+    ("iou", 0.5),
+    ("imgsz", 640),
+    ("inference_device", ""),
+    # 검출 확정과 혼잡도
+    ("confirmation_window", 10),
+    ("confirmation_hits", 6),
+    ("crowd_roi", [0.0, 0.0, 1.0, 1.0]),
+    ("crowded_person_threshold", 3),
+    ("fallen_person_overlap_iou", 0.4),
+    # map 좌표와 호모그래피
+    ("location_frame_id", "map"),
+    ("location_x", 0.0),
+    ("location_y", 0.0),
+    ("homography_camera_id", ""),
+    ("homography_margin_m", 0.15),
+    # 디버그 출력
+    ("publish_debug_image", True),
+    ("show_window", True),
+    ("debug_jpeg_quality", 80),
+)
+
+
 class VisionDetector(Node):
     """압축 영상을 받아 카메라 설치 장소에 맞는 추론 파이프라인을 수행한다.
 
@@ -169,45 +209,8 @@ class VisionDetector(Node):
         )
 
     def _declare_parameters(self) -> None:
-        """YAML로 덮어쓸 수 있는 모든 ROS 파라미터와 기본값을 선언한다.
-
-        카메라별 차이는 코드 수정 없이 open_camera.yaml과 alley_camera.yaml로
-        관리한다. 기본값만으로는 가중치가 없으므로 실제 실행 시 YAML이 필요하다.
-        """
-        self.declare_parameter("camera_id", "camera_open")
-        self.declare_parameter("zone_id", "open_zone")
-        self.declare_parameter("mode", "open")
-        self.declare_parameter("image_topic", "/camera/image_raw/compressed")
-        self.declare_parameter("direct_camera", True)
-        # camera_device는 USB 장치 경로, inference_device는 YOLO 연산 장치이다.
-        # 내장 카메라가 /dev/video0을 차지하므로 기본 USB 웹캠은 video2로 둔다.
-        self.declare_parameter("camera_device", "/dev/video2")
-        self.declare_parameter("width", 640)
-        self.declare_parameter("height", 480)
-        self.declare_parameter("fps", 15.0)
-        self.declare_parameter("frame_id", "aed_camera_optical_frame")
-        self.declare_parameter("jpeg_quality", 85)
-        self.declare_parameter("rescue_weights", "")
-        self.declare_parameter("person_weights", "")
-        self.declare_parameter("rescue_conf", 0.25)
-        self.declare_parameter("person_conf", 0.25)
-        self.declare_parameter("iou", 0.5)
-        self.declare_parameter("imgsz", 640)
-        self.declare_parameter("inference_device", "")
-        self.declare_parameter("confirmation_window", 10)
-        self.declare_parameter("confirmation_hits", 6)
-        self.declare_parameter("crowd_roi", [0.0, 0.0, 1.0, 1.0])
-        self.declare_parameter("crowded_person_threshold", 3)
-        self.declare_parameter("fallen_person_overlap_iou", 0.4)
-        self.declare_parameter("location_frame_id", "map")
-        self.declare_parameter("location_x", 0.0)
-        self.declare_parameter("location_y", 0.0)
-        self.declare_parameter("homography_camera_id", "")
-        self.declare_parameter("homography_margin_m", 0.15)
-        self.declare_parameter("publish_debug_image", True)
-        # true이면 추론을 실행하는 노트북에 OpenCV 결과 창을 직접 표시한다.
-        self.declare_parameter("show_window", True)
-        self.declare_parameter("debug_jpeg_quality", 80)
+        """YAML로 덮어쓸 수 있는 ROS 파라미터를 일괄 선언한다."""
+        self.declare_parameters("", PARAMETER_DEFAULTS)
 
     def _on_image(self, message: CompressedImage) -> None:
         """구독한 JPEG 프레임을 디코딩해 추론한다."""
