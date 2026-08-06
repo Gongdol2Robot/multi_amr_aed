@@ -28,7 +28,10 @@ from rclpy.node import Node
 from tf2_ros import Buffer, TransformListener
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(REPO, "tools", "survey")
+# 카메라가 여러 대면 대응점도 카메라마다 따로 모은다. 한 폴더에 섞으면
+# 나중에 측량한 카메라가 앞의 결과를 덮어쓴다.
+CAM_ID = os.environ.get("CAM_ID", "2")
+OUT = os.path.join(REPO, "tools", "survey", f"cam{CAM_ID}")
 CSV = os.path.join(OUT, "points.csv")
 CAM_INDEX = int(os.environ.get("CAM_INDEX", "2"))
 

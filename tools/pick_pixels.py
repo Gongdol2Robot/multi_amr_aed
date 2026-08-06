@@ -8,8 +8,14 @@ A) 라이브 모드 — 바닥에 표시해 둔 기준점을 화면에서 직접
    SPACE로 프레임을 고정하고 기준점을 순서대로 클릭한 뒤 ENTER를 누른다.
    창이 닫히면 각 점의 map 좌표를 터미널에서 입력한다.
 
-B) 채우기 모드 — survey_point.py로 모아 둔 이미지에서 로봇 바닥 중심을 찍어
-   points.csv의 빈 pixel_u, pixel_v 열을 채운다.
+B) 자동 모드 — 로봇 없는 기준 사진(camera_view.jpg)과 비교해 로봇 바닥
+   접지 중심을 자동으로 찾아 채운다. 사람이 클릭하는 것보다 재현성이 좋다.
+     CAM_ID=2 python3 tools/pick_pixels.py --auto
+   결과는 detection_check.jpg 로 남으니 반드시 눈으로 확인한다.
+
+C) 채우기 모드 — survey_point.py로 모아 둔 이미지에서 로봇 바닥 중심을 찍어
+   points.csv의 빈 pixel_u, pixel_v 열을 채운다. 자동 모드가 실패한 점을
+   손으로 메울 때 쓴다.
      python3 tools/pick_pixels.py --fill
 
 조작:
@@ -31,9 +37,13 @@ import os
 import sys
 
 import cv2
+import numpy as np
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(REPO, "tools", "survey")
+# 카메라별로 대응점을 따로 모은다. CAM_ID 는 논리 번호(1, 2 ...)이고
+# CAM_INDEX 는 /dev/videoN 의 N 이다. 둘은 다를 수 있다.
+CAM_ID = os.environ.get("CAM_ID", "2")
+OUT = os.path.join(REPO, "tools", "survey", f"cam{CAM_ID}")
 CSV_PATH = os.path.join(OUT, "points.csv")
 CAM_INDEX = int(os.environ.get("CAM_INDEX", "2"))
 CAM_WIDTH = int(os.environ.get("CAM_WIDTH", "640"))
@@ -149,6 +159,110 @@ def pick_points(frame, title, limit=None, allow_skip=False):
     finally:
         cv2.destroyWindow(title)
         cv2.waitKey(1)
+
+
+def detect_contact_center(image, background):
+    """로봇 바닥 접지원의 중심 픽셀을 찾는다. 실패하면 None.
+
+    로봇 없는 기준 사진과의 차분으로 로봇을 고르고, 그 실루엣 아래쪽만
+    남겨 범퍼에 타원을 맞춘다. 세 단계 모두 이유가 있다.
+
+    - 차분: 어두운 바닥재나 케이블은 배경에도 있으므로 걸러진다. 검은색만
+      찾으면 그런 것들과 뭉쳐 화면 전체가 한 덩어리가 된다.
+    - 최대 덩어리: 조명 변화로 생긴 자잘한 차이를 버린다.
+    - 아래 45%: 로봇 상판도 검은색이라 통째로 맞추면 접지원이 아니라
+      실루엣 전체를 감싸는 타원이 나온다.
+    """
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    changed = (cv2.absdiff(gray, background) > 25).astype(np.uint8)
+    changed = cv2.morphologyEx(changed, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(changed, 8)
+    if count < 2:
+        return None
+    index = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    x0, y0, width, height, area = stats[index]
+    if area < 500:
+        return None
+
+    robot = labels == index
+    lower = np.zeros_like(changed)
+    lower[y0 + int(height * 0.55):y0 + height, x0:x0 + width] = 1
+    base = ((gray < 115) & robot & (lower > 0)).astype(np.uint8)
+    base = cv2.morphologyEx(base, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
+
+    contours, _ = cv2.findContours(
+        base, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
+    )
+    if not contours:
+        return None
+    contour = max(contours, key=cv2.contourArea)
+    if len(contour) < 5:
+        return None
+
+    ellipse = cv2.fitEllipse(contour.astype(np.float32))
+    (cx, cy), (axis_a, axis_b), _ = ellipse
+    # 로봇을 옆에서 보면 아래쪽 호가 평평해져 타원 맞춤이 발산한다.
+    # 중심이 로봇 밖으로 튀거나 축이 비정상이면 믿지 않는다.
+    if not (x0 <= cx <= x0 + width and y0 <= cy <= y0 + height):
+        return None
+    if max(axis_a, axis_b) > 2.2 * width:
+        return None
+    return (float(cx), float(cy)), ellipse, (x0, y0, width, height)
+
+
+def auto_mode():
+    """기준 사진과 비교해 픽셀을 자동으로 채운다."""
+    rows = read_rows()
+    if not rows:
+        print(f"실패: {CSV_PATH} 가 없습니다. 먼저 survey_point.py 를 실행하세요.")
+        return 1
+    reference_path = os.path.join(OUT, "camera_view.jpg")
+    background = cv2.imread(reference_path, cv2.IMREAD_GRAYSCALE)
+    if background is None:
+        print(f"실패: 기준 사진이 없습니다 — {reference_path}")
+        print("  로봇이 화면에 없을 때 찍은 사진이 있어야 합니다.")
+        return 1
+
+    tiles, failed = [], []
+    for row in rows:
+        label = row["label"]
+        image = cv2.imread(os.path.join(OUT, f"{label}.jpg"))
+        if image is None:
+            print(f"  {label}: 이미지 없음 — 건너뜀")
+            continue
+        found = detect_contact_center(image, background)
+        if found is None:
+            print(f"  {label}: 검출 실패 — 손으로 찍어야 합니다")
+            failed.append(label)
+            continue
+        (cx, cy), ellipse, _ = found
+        row["pixel_u"], row["pixel_v"] = f"{cx:.1f}", f"{cy:.1f}"
+        print(f"  {label}: 접지 중심 ({cx:.1f}, {cy:.1f})")
+        view = image.copy()
+        cv2.ellipse(view, ellipse, (0, 255, 255), 2)
+        cv2.drawMarker(view, (int(cx), int(cy)), (0, 0, 255),
+                       cv2.MARKER_CROSS, 20, 2)
+        cv2.putText(view, label, (8, 24), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7, (0, 0, 255), 2)
+        tiles.append(cv2.resize(view, (320, 240)))
+
+    write_rows(rows)
+    if tiles:
+        while len(tiles) % 3:
+            tiles.append(np.zeros_like(tiles[0]))
+        grid = np.vstack([
+            np.hstack(tiles[i:i + 3]) for i in range(0, len(tiles), 3)
+        ])
+        check = os.path.join(OUT, "detection_check.jpg")
+        cv2.imwrite(check, grid)
+        print(f"\n검출 결과 확인용 이미지: {check}")
+        print("  노란 타원이 로봇 바닥 범퍼에 맞았는지 눈으로 확인하세요.")
+    if failed:
+        print(f"\n검출 실패 {len(failed)}개: {', '.join(failed)}")
+        print("  python3 tools/pick_pixels.py --fill 로 손으로 채우세요.")
+    print(f"\n저장: {CSV_PATH}")
+    return 1 if failed else 0
 
 
 def read_rows():
@@ -304,6 +418,9 @@ def fill_mode():
 
 
 def main():
+    # 자동 검출은 창을 띄우지 않으므로 화면이 없어도 된다.
+    if "--auto" in sys.argv[1:]:
+        return auto_mode()
     if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
         print("실패: 화면이 없습니다. 데스크톱 터미널에서 실행하세요.")
         return 1

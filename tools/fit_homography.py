@@ -23,9 +23,13 @@ import cv2
 import numpy as np
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CSV_PATH = os.path.join(REPO, "tools", "survey", "points.csv")
+# 카메라별로 행렬이 따로 나온다. 카메라마다 보는 각도가 달라 하나로 못 쓴다.
+# CAM_ID 는 논리 번호(EmergencyEvent.camera_id 와 맞춘다),
+# CAM_INDEX 는 /dev/videoN 의 N 이다. 둘은 다를 수 있다.
+CAM_ID = os.environ.get("CAM_ID", "2")
+CSV_PATH = os.path.join(REPO, "tools", "survey", f"cam{CAM_ID}", "points.csv")
 CONFIG_PATH = os.path.join(
-    REPO, "src", "aed_vision", "config", "homography.yaml"
+    REPO, "src", "aed_vision", "config", f"homography_cam{CAM_ID}.yaml"
 )
 CAM_INDEX = int(os.environ.get("CAM_INDEX", "2"))
 CAM_WIDTH = int(os.environ.get("CAM_WIDTH", "640"))
@@ -84,6 +88,9 @@ def format_config(matrix, points, area):
         "# tools/fit_homography.py 가 생성한 파일입니다.",
         "# 현장 재측량 없이 손으로 고치지 마세요.",
         "camera:",
+        # EmergencyEvent.camera_id 와 맞춘다. 어느 카메라의 검출인지에 따라
+        # 적용할 행렬이 달라진다.
+        f"  id: \"cam{CAM_ID}\"",
         f"  device: {CAM_INDEX}",
         f"  width: {CAM_WIDTH}",
         f"  height: {CAM_HEIGHT}",
