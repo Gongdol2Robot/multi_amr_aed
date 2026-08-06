@@ -9,6 +9,7 @@ import time
 
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PointStamped, PoseStamped, PoseWithCovarianceStamped
+from irobot_create_msgs.msg import DockStatus
 from nav2_msgs.action import ComputePathToPose, NavigateToPose
 from nav_msgs.msg import Path
 import rclpy
@@ -47,7 +48,9 @@ class EmergencyMissionManager(Node):
         self.declare_parameter("pose_timeout_sec", 15.0)
         self.declare_parameter("allow_stale_pose", True)
         self.declare_parameter("use_planner_start", True)
+        self.declare_parameter("docked_start_offset_m", 0.35)
         self.declare_parameter("planning_timeout_sec", 30.0)
+        self.declare_parameter("dispatch_retry_timeout_sec", 15.0)
         self.declare_parameter("planner_id", "GridBased")
         self.declare_parameter("dispatch_enabled", False)
         self.declare_parameter("automatic_request", False)
@@ -71,8 +74,14 @@ class EmergencyMissionManager(Node):
         self.use_planner_start = bool(
             self.get_parameter("use_planner_start").value
         )
+        self.docked_start_offset = float(
+            self.get_parameter("docked_start_offset_m").value
+        )
         self.planning_timeout = float(
             self.get_parameter("planning_timeout_sec").value
+        )
+        self.dispatch_retry_timeout = float(
+            self.get_parameter("dispatch_retry_timeout_sec").value
         )
         self.planner_id = str(self.get_parameter("planner_id").value)
         self.dispatch_enabled = bool(
@@ -82,6 +91,10 @@ class EmergencyMissionManager(Node):
             raise ValueError("pose_timeout_sec must be positive")
         if self.planning_timeout <= 0.0:
             raise ValueError("planning_timeout_sec must be positive")
+        if self.dispatch_retry_timeout <= 0.0:
+            raise ValueError("dispatch_retry_timeout_sec must be positive")
+        if self.docked_start_offset < 0.0:
+            raise ValueError("docked_start_offset_m must be non-negative")
 
         latched_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -119,6 +132,7 @@ class EmergencyMissionManager(Node):
         }
 
         self.observations: dict[str, RobotObservation] = {}
+        self.dock_states: dict[str, bool] = {}
         self.navigation_clients = {
             robot_id: ActionClient(
                 self,
@@ -143,6 +157,17 @@ class EmergencyMissionManager(Node):
                 # AMCL publishes a transient-local pose. Matching that QoS
                 # gives a newly started central manager the last known pose
                 # even while the robot is stationary.
+                latched_qos,
+            )
+            for robot_id in self.robot_ids
+        ]
+        self.dock_subscriptions = [
+            self.create_subscription(
+                DockStatus,
+                f"/{robot_id}/dock_status",
+                lambda message, rid=robot_id: self._on_dock_status(
+                    rid, message
+                ),
                 latched_qos,
             )
             for robot_id in self.robot_ids
@@ -174,6 +199,9 @@ class EmergencyMissionManager(Node):
         self.request_serial = 0
         self.goal_serial = 0
         self.goal_handle = None
+        self.pending_dispatch: tuple[str, PoseStamped] | None = None
+        self.dispatch_retry_deadline = 0.0
+        self.dispatch_retry_timer = None
         self.navigation_active = False
         self.planning_active = False
         self.pending_plans: set[str] = set()
@@ -225,6 +253,9 @@ class EmergencyMissionManager(Node):
             pose=pose,
             received_at=time.monotonic(),
         )
+
+    def _on_dock_status(self, robot_id: str, message: DockStatus) -> None:
+        self.dock_states[robot_id] = bool(message.is_docked)
 
     def _on_request(self, message: PoseStamped) -> None:
         request = deepcopy(message)
@@ -289,7 +320,8 @@ class EmergencyMissionManager(Node):
             stamp = self.get_clock().now().to_msg()
             goal.goal.header.stamp = stamp
             goal.planner_id = self.planner_id
-            goal.use_start = not self.use_planner_start
+            docked = self.dock_states.get(robot_id, False)
+            goal.use_start = docked or not self.use_planner_start
             if goal.use_start:
                 observation = self.observations.get(robot_id)
                 if observation is None:
@@ -307,6 +339,13 @@ class EmergencyMissionManager(Node):
                         f"({age:.1f}s old)"
                     )
                 goal.start = deepcopy(observation.pose)
+                if docked:
+                    goal.start = self._project_undocked_start(goal.start)
+                    self.get_logger().info(
+                        f"{robot_id}: docked; plan from predicted "
+                        f"undocked pose ({goal.start.pose.position.x:.2f}, "
+                        f"{goal.start.pose.position.y:.2f})"
+                    )
                 goal.start.header.stamp = stamp
             self.pending_plans.add(robot_id)
             future = client.send_goal_async(goal)
@@ -456,16 +495,23 @@ class EmergencyMissionManager(Node):
         if self.planning_target is None:
             self._publish_status("FAILED", "planning target was lost")
             return
+        self.navigation_active = True
+        self.pending_dispatch = (
+            self.selected_robot,
+            deepcopy(self.planning_target),
+        )
+        self.dispatch_retry_deadline = (
+            time.monotonic() + self.dispatch_retry_timeout
+        )
         self._dispatch_goal(self.selected_robot, self.planning_target)
 
     def _dispatch_goal(self, robot_id: str, target: PoseStamped) -> None:
         client = self.navigation_clients[robot_id]
         if not client.wait_for_server(timeout_sec=2.0):
-            self._publish_status(
-                "FAILED", f"/{robot_id}/navigate_to_pose is unavailable"
+            self._retry_dispatch_or_fail(
+                f"/{robot_id}/navigate_to_pose is unavailable"
             )
             return
-        self.navigation_active = True
         self.goal_serial += 1
         serial = self.goal_serial
         goal = NavigateToPose.Goal()
@@ -494,14 +540,50 @@ class EmergencyMissionManager(Node):
             self._publish_status("FAILED", f"goal send error: {error}")
             return
         if not handle.accepted:
-            self.navigation_active = False
-            self._publish_status("FAILED", f"{robot_id} rejected the goal")
+            self._retry_dispatch_or_fail(
+                f"{robot_id} navigator rejected the goal while starting"
+            )
             return
+        self.pending_dispatch = None
+        self._cancel_dispatch_retry_timer()
         self.goal_handle = handle
         self._publish_status("NAVIGATING", f"{robot_id} is moving")
         handle.get_result_async().add_done_callback(
             lambda result: self._on_navigation_result(robot_id, serial, result)
         )
+
+    def _retry_dispatch_or_fail(self, reason: str) -> None:
+        """Retry while Nav2 lifecycle nodes finish activating."""
+        if (
+            self.pending_dispatch is not None
+            and time.monotonic() < self.dispatch_retry_deadline
+        ):
+            self.get_logger().warning(f"{reason}; retrying in 0.5s")
+            self._cancel_dispatch_retry_timer()
+            self.dispatch_retry_timer = self.create_timer(
+                0.5, self._retry_pending_dispatch
+            )
+            return
+        self.pending_dispatch = None
+        self.navigation_active = False
+        self._cancel_dispatch_retry_timer()
+        self._publish_status("FAILED", reason)
+
+    def _retry_pending_dispatch(self) -> None:
+        pending = self.pending_dispatch
+        self._cancel_dispatch_retry_timer()
+        if pending is None:
+            return
+        robot_id, target = pending
+        self._dispatch_goal(robot_id, target)
+
+    def _cancel_dispatch_retry_timer(self) -> None:
+        if self.dispatch_retry_timer is None:
+            return
+        timer = self.dispatch_retry_timer
+        self.dispatch_retry_timer = None
+        timer.cancel()
+        self.destroy_timer(timer)
 
     def _on_feedback(self, robot_id: str, serial: int, feedback) -> None:
         if serial != self.goal_serial:
@@ -653,6 +735,24 @@ class EmergencyMissionManager(Node):
             pose.pose.orientation.w,
         )
         return all(math.isfinite(value) for value in values)
+
+    def _project_undocked_start(self, pose: PoseStamped) -> PoseStamped:
+        """Move a docked pose backward to the expected post-undock pose."""
+        result = deepcopy(pose)
+        orientation = result.pose.orientation
+        yaw = math.atan2(
+            2.0 * (
+                orientation.w * orientation.z
+                + orientation.x * orientation.y
+            ),
+            1.0 - 2.0 * (
+                orientation.y * orientation.y
+                + orientation.z * orientation.z
+            ),
+        )
+        result.pose.position.x -= self.docked_start_offset * math.cos(yaw)
+        result.pose.position.y -= self.docked_start_offset * math.sin(yaw)
+        return result
 
 
 def main(args=None) -> None:

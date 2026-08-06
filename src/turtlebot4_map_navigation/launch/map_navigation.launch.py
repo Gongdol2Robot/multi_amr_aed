@@ -62,8 +62,8 @@ def generate_launch_description() -> LaunchDescription:
             'namespace': namespace,
             'use_sim_time': use_sim_time,
             'params_file': nav2_params,
-            # DDS 응답 유실에도 재시도하는 아래 초기화기가 활성화를 맡는다.
-            'autostart': 'false',
+            # 표준 lifecycle manager가 lifecycle bond까지 함께 소유해야 한다.
+            'autostart': 'true',
         }.items(),
     )
     localization_initializer = Node(

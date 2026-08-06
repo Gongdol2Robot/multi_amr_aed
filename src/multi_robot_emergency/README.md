@@ -101,6 +101,9 @@ ros2 topic echo /emergency/path_distance/robot2
 
 기본 `use_planner_start:=true`에서는 중앙 노드가 오래된 AMCL 시작점을 강제로
 넣지 않고 각 Nav2 Planner가 TF에서 현재 로봇 위치를 직접 사용합니다.
+단, `dock_status.is_docked=true`이면 Dock 벽의 인플레이션에 시작점이 갇히지
+않도록 실제 언도킹 방향으로 0.35m 이동한 예상 위치에서 경로를 계산합니다.
+이 값은 `docked_start_offset_m`으로 조정할 수 있습니다.
 
 후보 실제 경로도 계속 발행합니다.
 

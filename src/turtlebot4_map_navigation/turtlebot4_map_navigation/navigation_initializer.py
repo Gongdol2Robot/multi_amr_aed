@@ -28,6 +28,7 @@ class NavigationInitializer(Node):
         super().__init__('navigation_initializer')
         self.declare_parameter('startup_delay_sec', 2.0)
         self.declare_parameter('lifecycle_timeout_sec', 300.0)
+        self.declare_parameter('lifecycle_fallback_delay_sec', 8.0)
         self.declare_parameter('service_call_timeout_sec', 3.0)
 
         self.get_state_clients = {
@@ -74,16 +75,15 @@ class NavigationInitializer(Node):
     def ensure_active(self, name: str) -> None:
         timeout = float(self.get_parameter('lifecycle_timeout_sec').value)
         deadline = time.monotonic() + timeout
+        fallback_at = time.monotonic() + float(
+            self.get_parameter('lifecycle_fallback_delay_sec').value
+        )
         get_client = self.get_state_clients[name]
-        change_client = self.change_state_clients[name]
         last_state = None
 
         self.get_logger().info(f'Waiting for {name} lifecycle services...')
         while rclpy.ok() and time.monotonic() < deadline:
-            if (
-                get_client.wait_for_service(timeout_sec=0.25)
-                and change_client.wait_for_service(timeout_sec=0.25)
-            ):
+            if get_client.wait_for_service(timeout_sec=0.25):
                 break
         else:
             raise RuntimeError(f'{name} lifecycle services are unavailable')
@@ -97,12 +97,29 @@ class NavigationInitializer(Node):
             if state == State.PRIMARY_STATE_ACTIVE:
                 self.get_logger().info(f'{name} is active.')
                 return
-            if state == State.PRIMARY_STATE_UNCONFIGURED:
-                self._change_state(name, Transition.TRANSITION_CONFIGURE)
-            elif state == State.PRIMARY_STATE_INACTIVE:
-                self._change_state(name, Transition.TRANSITION_ACTIVATE)
+            if time.monotonic() >= fallback_at:
+                change_client = self.change_state_clients[name]
+                if change_client.wait_for_service(timeout_sec=0.25):
+                    if state == State.PRIMARY_STATE_UNCONFIGURED:
+                        self.get_logger().warning(
+                            f'{name}: lifecycle manager stalled; '
+                            'retrying configure'
+                        )
+                        self._change_state(
+                            name,
+                            Transition.TRANSITION_CONFIGURE,
+                        )
+                    elif state == State.PRIMARY_STATE_INACTIVE:
+                        self.get_logger().warning(
+                            f'{name}: lifecycle manager stalled; '
+                            'retrying activate'
+                        )
+                        self._change_state(
+                            name,
+                            Transition.TRANSITION_ACTIVATE,
+                        )
 
-            # A lost response is harmless: read the real state and retry.
+            # Prefer the standard manager; fallback only after it stalls.
             self._spin_for(0.25)
 
         raise RuntimeError(f'{name} did not become active')

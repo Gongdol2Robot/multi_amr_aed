@@ -31,7 +31,13 @@ def generate_launch_description() -> LaunchDescription:
                 choices=["true", "false"],
             ),
             DeclareLaunchArgument(
+                "docked_start_offset_m", default_value="0.35"
+            ),
+            DeclareLaunchArgument(
                 "planning_timeout_sec", default_value="30.0"
+            ),
+            DeclareLaunchArgument(
+                "dispatch_retry_timeout_sec", default_value="15.0"
             ),
             DeclareLaunchArgument("planner_id", default_value="GridBased"),
             DeclareLaunchArgument(
@@ -69,8 +75,16 @@ def generate_launch_description() -> LaunchDescription:
                             LaunchConfiguration("use_planner_start"),
                             value_type=bool,
                         ),
+                        "docked_start_offset_m": ParameterValue(
+                            LaunchConfiguration("docked_start_offset_m"),
+                            value_type=float,
+                        ),
                         "planning_timeout_sec": ParameterValue(
                             LaunchConfiguration("planning_timeout_sec"),
+                            value_type=float,
+                        ),
+                        "dispatch_retry_timeout_sec": ParameterValue(
+                            LaunchConfiguration("dispatch_retry_timeout_sec"),
                             value_type=float,
                         ),
                         "planner_id": LaunchConfiguration("planner_id"),
