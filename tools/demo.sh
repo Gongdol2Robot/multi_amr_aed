@@ -7,11 +7,18 @@
 # 구독이 붙는지까지 전부 실물과 같은 경로로 돈다.
 #
 # 무엇이 뜨나
-#   영상 4갈래   bag 에 녹화된 실제 프레임. 웹캠은 vision_detector 가 검출
-#                상자를 그려 둔 그림이고, 로봇은 OAK-D 원본이다.
-#   로봇 카드    bag 의 odom / battery_state / dock_status 에서 온 실제 값
+#   영상 4갈래   docs/videos 의 mp4 를 CompressedImage 로 낸다. bag 을 그대로
+#                틀지 않는 이유는 두 가지다. 로봇 주행 bag 의 OAK-D 영상에는
+#                검출 상자가 없고(그때는 로봇 검출 노드가 없었다), 웹캠 bag 은
+#                11분 중 앞쪽 대부분이 인형이 서 있는 구간이다. 그 bag 들에서
+#                쓸 만한 구간만 골라 만든 것이 이 mp4 다.
+#   로봇 카드    bag 의 odom / battery_state / dock_status 에서 온 실제 값.
+#                이건 bag 을 그대로 쓴다.
 #   출동 이력    demo_publisher 가 내는 시나리오. 그 흐름을 담은 bag 이 없어
 #                지어냈지만, 메시지 타입과 상태 전이 순서는 실물과 같다.
+#
+# 어느 쪽이든 관제는 실제 토픽에서 구독한다. 메시지 타입·QoS·구독이 붙는지가
+# 모두 실물과 같은 경로로 검증된다.
 #
 # 쓰기:
 #   tools/demo.sh          띄운다
@@ -20,8 +27,8 @@ set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_DIR="${ROOT}/var/demo"
-CAM_BAG="${ROOT}/bags/camera_open_0806_1900"
 ROBOT_BAG="${ROOT}/bags/robot1_map_0806_1846"
+VIDEOS="${ROOT}/docs/videos"
 DB="${ROOT}/var/aed_hmi_demo.sqlite3"
 
 stop_all() {
@@ -48,6 +55,7 @@ stop_all() {
   pkill -f "[b]ackend.main" 2>/dev/null && stopped=$((stopped + 1))
   pkill -f "[d]emo_publisher.py" 2>/dev/null && stopped=$((stopped + 1))
   pkill -f "[b]ag play ${ROOT}/bags" 2>/dev/null && stopped=$((stopped + 1))
+  pkill -f "[v]ideo_publisher.py" 2>/dev/null && stopped=$((stopped + 1))
 
   # 포트가 비었는지 확인한다. 안 비었으면 새 백엔드가 못 뜬다.
   for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -62,9 +70,13 @@ if [ "${1:-}" = "stop" ]; then
   exit 0
 fi
 
-for bag in "${CAM_BAG}" "${ROBOT_BAG}"; do
-  if [ ! -d "${bag}" ]; then
-    echo "실패: ${bag} 가 없습니다" >&2
+if [ ! -d "${ROBOT_BAG}" ]; then
+  echo "실패: ${ROBOT_BAG} 가 없습니다" >&2
+  exit 1
+fi
+for name in camera_open_demo camera_alley_demo robot_approach_yolo; do
+  if [ ! -f "${VIDEOS}/${name}.mp4" ]; then
+    echo "실패: ${VIDEOS}/${name}.mp4 가 없습니다" >&2
     exit 1
   fi
 done
@@ -106,22 +118,22 @@ launch_in() {   # launch_in <디렉터리> <이름> <명령...>
 
 echo "띄우는 중"
 
-# 웹캠 bag. 검출 상자가 그려진 debug 영상과 person_count 가 들어 있다.
-launch cam_open ros2 bag play "${CAM_BAG}" --loop
+# 영상 네 갈래. 로봇 둘은 같은 파일을 시작 위치만 벌려 쓴다. 한 대가
+# 이동 중일 때 다른 한 대는 이미 발견한 상태라 같은 그림 둘로 안 보인다.
+launch video python3 "${ROOT}/tools/video_publisher.py" \
+  --stream "camera_open=${VIDEOS}/camera_open_demo.mp4" \
+  --stream "camera_alley=${VIDEOS}/camera_alley_demo.mp4" \
+  --stream "robot1=${VIDEOS}/robot_approach_yolo.mp4" \
+  --stream "robot2=${VIDEOS}/robot_approach_yolo.mp4:0.45"
 
-# 같은 bag 을 골목 카메라 이름으로 한 번 더 튼다. 카메라가 한 대뿐이라
-# 두 갈래를 채우려면 이 방법밖에 없다. 시연에서 두 웹캠 타일이 같은 그림인
-# 이유가 이것이다.
-launch cam_alley ros2 bag play "${CAM_BAG}" --loop --remap \
-  /camera_open/vision/debug/compressed:=/camera_alley/vision/debug/compressed \
-  /camera_open/vision/person_count:=/camera_alley/vision/person_count
-
-# 로봇 주행 bag. 영상과 함께 odom / battery / dock 이 나온다.
-launch robot1 ros2 bag play "${ROBOT_BAG}" --loop
+# 로봇 주행 bag 에서 상태만 뽑는다. 영상은 위에서 내므로 여기서는 뺀다.
+# 같은 토픽에 둘이 내면 화면이 두 그림을 번갈아 받는다.
+BAG_STATE_TOPICS="/robot1/odom /robot1/battery_state /robot1/dock_status"
+launch robot1 ros2 bag play "${ROBOT_BAG}" --loop --topics ${BAG_STATE_TOPICS}
 
 # 로봇이 한 대분만 녹화돼 있어, 2호기도 같은 bag 을 이름만 바꿔 튼다.
-launch robot2 ros2 bag play "${ROBOT_BAG}" --loop --remap \
-  /robot1/oakd/rgb/image_raw/compressed:=/robot2/oakd/rgb/image_raw/compressed \
+launch robot2 ros2 bag play "${ROBOT_BAG}" --loop --topics ${BAG_STATE_TOPICS} \
+  --remap \
   /robot1/odom:=/robot2/odom \
   /robot1/battery_state:=/robot2/battery_state \
   /robot1/dock_status:=/robot2/dock_status
