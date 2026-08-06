@@ -72,3 +72,4 @@ docs/*.drawio
 # 다만 tools/make_flowchart.py 가 만드는 것은 저장소에 둔다.
 # 팀원이 파이썬을 돌리지 않고 바로 열 수 있어야 한다.
 !docs/system_flow.drawio
+!docs/system_flow_big.drawio
