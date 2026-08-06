@@ -25,7 +25,10 @@ captures/
 tools/survey/*.jpg
 data/
 datasets/
+hard_negatives/
 runs/
+finetune_runs/
+test_captures/
 *.db
 *.sqlite
 *.sqlite3
@@ -41,7 +44,7 @@ models/*.engine
 models/*.onnx
 models/*.pt
 models/*.pth
+vision_training/models/*.pt
 
 # Keep directory placeholders
 !models/.gitkeep
-
