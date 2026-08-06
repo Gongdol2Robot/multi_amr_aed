@@ -19,6 +19,7 @@ from .detection_logic import (
     Box,
     TemporalConfirmation,
 )
+from .homography import Homography
 from .inference_pipeline import InferenceOutput, InferencePipeline
 from .qos import CAMERA_QOS
 
@@ -47,6 +48,20 @@ class VisionDetector(Node):
         self.frame_id = str(self.get_parameter("location_frame_id").value)
         self.location_x = float(self.get_parameter("location_x").value)
         self.location_y = float(self.get_parameter("location_y").value)
+        homography_camera_id = str(
+            self.get_parameter("homography_camera_id").value
+        ).strip()
+        self.homography = (
+            Homography.load(camera_id=homography_camera_id)
+            if homography_camera_id
+            else None
+        )
+        self.event_location = (self.location_x, self.location_y)
+        self.homography_margin = float(
+            self.get_parameter("homography_margin_m").value
+        )
+        if self.homography_margin < 0.0:
+            raise ValueError("homography_margin_m must be non-negative")
         self.crowd_roi = list(self.get_parameter("crowd_roi").value)
         self.crowded_threshold = int(
             self.get_parameter("crowded_person_threshold").value
@@ -187,6 +202,8 @@ class VisionDetector(Node):
         self.declare_parameter("location_frame_id", "map")
         self.declare_parameter("location_x", 0.0)
         self.declare_parameter("location_y", 0.0)
+        self.declare_parameter("homography_camera_id", "")
+        self.declare_parameter("homography_margin_m", 0.15)
         self.declare_parameter("publish_debug_image", True)
         # true이면 추론을 실행하는 노트북에 OpenCV 결과 창을 직접 표시한다.
         self.declare_parameter("show_window", True)
@@ -216,6 +233,7 @@ class VisionDetector(Node):
                 self.first_frame_logged = True
             result = self.pipeline.predict(frame)
             confirmed = self.confirmation.update(bool(result.fallen))
+            target_location = self._target_location(result.fallen, frame.shape)
             self.processed_frames += 1
             if self.processed_frames == 1:
                 self.get_logger().info(
@@ -230,6 +248,7 @@ class VisionDetector(Node):
                 result.person_count,
                 result.crowd_level,
                 result.inference_ms,
+                target_location,
             )
             publish_debug = bool(
                 self.get_parameter("publish_debug_image").value
@@ -241,6 +260,33 @@ class VisionDetector(Node):
         finally:
             self.busy = False
 
+    def _target_location(
+        self, fallen: list[Box], frame_shape
+    ) -> tuple[float, float, str]:
+        """가장 확실한 쓰러진 사람의 바닥 접점을 map 좌표로 변환한다."""
+        fallback = (self.location_x, self.location_y)
+        if self.homography is None or not fallen:
+            return fallback[0], fallback[1], "configured"
+        target = max(fallen, key=lambda box: box.confidence)
+        height, width = frame_shape[:2]
+        x, y = self.homography.box_to_map(
+            target.x1,
+            target.y1,
+            target.x2,
+            target.y2,
+            image_size=(width, height),
+        )
+        if not self.homography.inside_survey_area(
+            x, y, margin=self.homography_margin
+        ):
+            self.get_logger().warning(
+                f"Detected location is outside surveyed area: ({x:.2f}, {y:.2f}); "
+                "using configured fallback",
+                throttle_duration_sec=5.0,
+            )
+            return fallback[0], fallback[1], "configured"
+        return x, y, "homography"
+
     def _publish_outputs(
         self,
         source: CompressedImage,
@@ -250,6 +296,7 @@ class VisionDetector(Node):
         person_count: int,
         crowd_level: str,
         inference_ms: float,
+        target_location: tuple[float, float, str],
     ) -> None:
         """프레임 상태를 발행하고 확정 상태의 상승/하강 에지를 이벤트로 만든다.
 
@@ -273,17 +320,29 @@ class VisionDetector(Node):
             "crowd_level": crowd_level,
             "confirmation_hits": self.confirmation.hit_count,
             "inference_ms": round(inference_ms, 2),
+            "location_x": round(target_location[0], 3),
+            "location_y": round(target_location[1], 3),
+            "location_source": target_location[2],
         }
         self.status_pub.publish(String(data=json.dumps(payload)))
         # 새 사고마다 고유 ID를 만들고 해제 이벤트까지 같은 ID를 유지한다.
         if confirmed and not self.was_confirmed:
             self.event_id = f"{self.camera_id}-{uuid4().hex[:12]}"
+            self.event_location = target_location[:2]
             self._publish_event(
-                source, EmergencyEvent.CONFIRMED, fallen, self.event_id
+                source,
+                EmergencyEvent.CONFIRMED,
+                fallen,
+                self.event_id,
+                self.event_location,
             )
         elif not confirmed and self.was_confirmed:
             self._publish_event(
-                source, EmergencyEvent.CANCELED, fallen, self.event_id
+                source,
+                EmergencyEvent.CANCELED,
+                fallen,
+                self.event_id,
+                self.event_location,
             )
             self.event_id = ""
         self.was_confirmed = confirmed
@@ -294,6 +353,7 @@ class VisionDetector(Node):
         status: int,
         fallen: list[Box],
         event_id: str,
+        location: tuple[float, float],
     ) -> None:
         """기존 EmergencyEvent 형식으로 카메라 기반 응급 이벤트를 발행한다.
 
@@ -304,8 +364,8 @@ class VisionDetector(Node):
         event.detected_at = source.header.stamp
         event.location.header.stamp = source.header.stamp
         event.location.header.frame_id = self.frame_id
-        event.location.point.x = self.location_x
-        event.location.point.y = self.location_y
+        event.location.point.x = location[0]
+        event.location.point.y = location[1]
         event.location.point.z = 0.0
         event.confidence = max(
             (box.confidence for box in fallen), default=0.0

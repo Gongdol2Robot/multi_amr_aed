@@ -4,7 +4,7 @@
 골목 카메라에서는 실제 사람 수를 이용해 통로 혼잡도까지 판단하는 ROS 2
 패키지입니다.
 
-담당: 이현민(구조 대상·사람 검출 및 통합)
+담당: 김지훈(호모그래피·위치 검증), 이현민(구조 대상·사람 검출 및 통합)
 
 ## 카메라 구성
 
@@ -30,6 +30,7 @@
 - 두 모드 모두 파인튜닝 YOLO11n으로 `fallen_person`, `helper` 검출
 - 최근 10프레임 중 6프레임 이상 검출될 때 응급상황 확정
 - 확정/해제 전환 시 `aed_interfaces/EmergencyEvent` 발행
+- 검출 bbox 하단 중앙점을 카메라별 호모그래피로 map 좌표 변환
 - `alley` 모드에서는 COCO YOLO11n으로 ROI 내부 `person` 수 계산
 - COCO가 쓰러진 대상을 person으로 중복 검출하면 bbox IoU를 이용해 인파에서 제외
 - 상태 JSON, 혼잡도, 사람 수, heartbeat, JPEG 디버그 영상 발행
@@ -94,6 +95,8 @@ ros2 launch aed_vision camera_vision.launch.py \
   재부팅 후에도 유지되는 `/dev/v4l/by-id/...` 경로 사용 권장
 - `inference_device`: YOLO 추론 장치 (`"cuda:0"`은 첫 GPU, `"cpu"`는 CPU)
 - `location_x`, `location_y`: 해당 고정 카메라 구조 지점의 map 좌표
+- `homography_camera_id`: 카메라별 측량 설정 ID (`cam1` 또는 `cam2`)
+- `homography_margin_m`: 측량 영역 경계에서 허용할 좌표 여유
 - `crowd_roi`: 골목 영상에서 AMR이 통과해야 하는 영역
 - `crowded_person_threshold`: `CROWDED`로 판단할 최소 사람 수
 - `show_window`: 해당 노트북에 OpenCV 결과 창을 표시할지 여부
@@ -149,3 +152,15 @@ person이 0~1명이면 `CLEAR`, 2명 이상이면 `CROWDED`입니다.
 혼잡도는 골목 카메라에서만 의미가 있으므로 `camera_open`은 항상
 `NOT_APPLICABLE`을 발행합니다. 중앙 Mission Manager는 이 값을 사람 수 0과
 구별해야 합니다.
+
+## 검출 위치 좌표
+
+각 카메라는 `homography_cam1.yaml` 또는 `homography_cam2.yaml`의 현장 측량
+행렬을 사용합니다. 가장 confidence가 높은 `fallen_person` bbox의 하단 중앙점을
+바닥 접점으로 보고 `map` 좌표로 변환하여 `EmergencyEvent.location`에 넣습니다.
+
+입력 영상 해상도가 측량 당시의 640×480과 다르면 픽셀 좌표를 측량 해상도로
+자동 환산합니다. 측량 영역에서 `homography_margin_m`보다 멀리 벗어난 검출은
+외삽 오차를 피하기 위해 `location_x`, `location_y`의 고정 좌표로 대체합니다.
+프레임별 좌표와 변환 방식은 `vision/status` JSON의 `location_x`, `location_y`,
+`location_source`에서 확인할 수 있습니다.
