@@ -17,9 +17,13 @@ import { StatusDot } from '../common/Indicators';
 
 interface Props {
   health: StreamHealth;
+  /** 화면에서 이 타일의 자리 번호. 그대로 단축키 숫자가 된다. */
+  seat: number;
+  focused: boolean;
+  onToggle: () => void;
 }
 
-export function VideoTile({ health }: Props) {
+export function VideoTile({ health, seat, focused, onToggle }: Props) {
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -33,7 +37,11 @@ export function VideoTile({ health }: Props) {
   const tone = health.online ? 'ok' : 'danger';
 
   return (
-    <figure className="tile">
+    <figure
+      className={focused ? 'tile tile--focus' : 'tile'}
+      onClick={onToggle}
+      title={focused ? '눌러서 4분할로 (Esc)' : `눌러서 크게 (숫자키 ${seat})`}
+    >
       <img
         className="tile__image"
         src={source}
@@ -45,6 +53,9 @@ export function VideoTile({ health }: Props) {
       {/* 네 갈래 모두 YOLO 를 돌린다. 검출이 잡힌 타일은 테두리로 즉시
           드러나야 한다. 숫자만으로는 4분할에서 눈에 안 들어온다. */}
       {health.detections > 0 && <div className="tile__alarm" />}
+
+      {/* 어느 숫자키가 이 타일인지 화면에 있어야 외우지 않아도 쓴다. */}
+      <span className="tile__seat mono">{seat}</span>
 
       <figcaption className="tile__bar">
         <span className="tile__name">

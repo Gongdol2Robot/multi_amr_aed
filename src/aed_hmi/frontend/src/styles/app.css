@@ -206,6 +206,41 @@
   color: var(--danger);
 }
 
+.wall__tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wall__keys {
+  display: flex;
+  gap: 3px;
+}
+
+.wall__key {
+  min-width: 22px;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.wall__key:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.wall__key--on {
+  color: var(--bg-base);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 .wall__grid {
   flex: 1;
   min-height: 0;
@@ -216,6 +251,12 @@
   padding: 2px;
 }
 
+/* 한 갈래만 볼 때. 4분할과 같은 격자를 쓰되 칸을 하나로 만든다. */
+.wall__grid--one {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
 .tile {
   position: relative;
   margin: 0;
@@ -223,6 +264,30 @@
   overflow: hidden;
   border-radius: 3px;
   min-height: 0;
+  cursor: pointer;
+}
+
+.tile--focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* 자리 번호. 영상 위에 얹히므로 그림을 가리지 않을 만큼만 밝게 둔다. */
+.tile__seat {
+  position: absolute;
+  top: 4px;
+  left: 5px;
+  padding: 0 5px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 17px;
+  pointer-events: none;
+}
+
+.tile--focus .tile__seat {
+  color: var(--accent);
 }
 
 .tile__image {
