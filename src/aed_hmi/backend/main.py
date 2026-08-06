@@ -9,6 +9,7 @@
 """
 
 import argparse
+import contextlib
 import logging
 import os
 
@@ -21,13 +22,58 @@ from .context import Context, Settings
 LOGGER = logging.getLogger(__name__)
 
 
+def _start(context: Context, settings: Settings) -> None:
+    context.hub.start()
+    if settings.mock:
+        from .mock.frames import MockFrameSource
+        from .mock.simulator import MockSimulator
+
+        context.simulator = MockSimulator(context)
+        context.simulator.start()
+        context.mock_frames = MockFrameSource(context)
+        context.mock_frames.start()
+        LOGGER.warning("MOCK 모드 — ROS 에 붙지 않는다")
+        return
+
+    from .ros.bridge import RosBridge
+
+    context.bridge = RosBridge(
+        on_robot=context.on_robot,
+        on_event=context.on_event,
+        on_mission=context.on_mission,
+        on_frame=context.on_frame,
+        on_person_count=context.on_person_count,
+    )
+    context.bridge.start()
+    if not context.bridge.connected:
+        LOGGER.error(
+            "ROS 노드가 안 떴다. ROS_SUPER_CLIENT=True 와 "
+            "discovery server 설정을 확인하라."
+        )
+
+
+async def _stop(context: Context) -> None:
+    await context.hub.stop()
+    if getattr(context, "mock_frames", None) is not None:
+        context.mock_frames.stop()
+    context.shutdown()
+
+
 def create_app(settings: Settings) -> FastAPI:
+    context = Context(settings)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app: FastAPI):
+        _start(context, settings)
+        yield
+        await _stop(context)
+
     app = FastAPI(
         title="Multi-AMR AED 관제",
         description="AED 전달 AMR 의 상태·영상·이력을 한 화면에서 본다.",
         version="0.1.0",
+        lifespan=lifespan,
     )
-    context = Context(settings)
     app.state.context = context
 
     # 개발 중에는 Vite(5173)가 따로 뜨고 API 는 8000 이라 출처가 다르다.
@@ -42,43 +88,6 @@ def create_app(settings: Settings) -> FastAPI:
     app.include_router(live.router)
     app.include_router(history.router)
     app.include_router(video.router)
-
-    @app.on_event("startup")
-    async def startup() -> None:
-        context.hub.start()
-        if settings.mock:
-            from .mock.frames import MockFrameSource
-            from .mock.simulator import MockSimulator
-
-            context.simulator = MockSimulator(context)
-            context.simulator.start()
-            context.mock_frames = MockFrameSource(context)
-            context.mock_frames.start()
-            LOGGER.warning("MOCK 모드 — ROS 에 붙지 않는다")
-        else:
-            from .ros.bridge import RosBridge
-
-            context.bridge = RosBridge(
-                on_robot=context.on_robot,
-                on_event=context.on_event,
-                on_mission=context.on_mission,
-                on_frame=context.on_frame,
-                on_person_count=context.on_person_count,
-            )
-            context.bridge.start()
-            if not context.bridge.connected:
-                LOGGER.error(
-                    "ROS 노드가 안 떴다. ROS_SUPER_CLIENT=True 와 "
-                    "discovery server 설정을 확인하라."
-                )
-
-    @app.on_event("shutdown")
-    async def shutdown() -> None:
-        await context.hub.stop()
-        if getattr(context, "mock_frames", None) is not None:
-            context.mock_frames.stop()
-        context.shutdown()
-
     return app
 
 
