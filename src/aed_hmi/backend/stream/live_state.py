@@ -12,7 +12,12 @@ import threading
 import time
 from typing import Optional
 
-from ..domain.enums import TERMINAL_MISSION_STATES, EventStatus
+from ..domain import eta
+from ..domain.enums import (
+    TERMINAL_MISSION_STATES,
+    EventStatus,
+    MissionState,
+)
 from ..domain.models import (
     EmergencyEventSnapshot,
     MissionEvent,
@@ -157,11 +162,38 @@ class LiveState:
             detail=f"{age:.0f}초째 상태 수신 없음",
         )
 
+    def _estimate_eta(self, mission: MissionEvent, target: Point2D):
+        """그 임무를 수행 중인 로봇의 현재 상태로 도착 예상을 낸다.
+
+        이동 중이 아닌 상태(배정 직후, 복구 대기 등)에서는 예상을 내지
+        않는다. 아직 출발도 안 했는데 숫자를 보여주면 그것부터 믿게 된다.
+        """
+        if mission.state not in (
+            MissionState.DISPATCHING, MissionState.EN_ROUTE,
+        ):
+            return None
+        robot = self._robots.get(mission.robot_id)
+        if robot is None or target == Point2D(0.0, 0.0):
+            return None
+        return eta.estimate(
+            robot_x=robot.position.x, robot_y=robot.position.y,
+            target_x=target.x, target_y=target.y,
+            speed_mps=robot.speed_mps,
+            path_cost=robot.estimated_path_cost,
+            path_valid=robot.path_valid,
+        )
+
     def _summarize(self, mission: MissionEvent, now: float) -> MissionSummary:
         called_at, target = self._mission_meta.get(
             mission.mission_id, (mission.stamp, Point2D(0.0, 0.0))
         )
+        prediction = self._estimate_eta(mission, target)
         return MissionSummary(
+            eta_seconds=prediction.seconds if prediction else None,
+            eta_distance_m=(
+                round(prediction.distance_m, 2) if prediction else None
+            ),
+            eta_confident=bool(prediction and prediction.confident),
             mission_id=mission.mission_id,
             event_id=mission.event_id,
             robot_id=mission.robot_id,

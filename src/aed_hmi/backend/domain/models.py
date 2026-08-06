@@ -107,12 +107,27 @@ class MissionSummary:
     reassignment_count: int
     failure_reasons: list[str] = field(default_factory=list)
 
+    # 진행 중인 임무에만 채워진다. 끝난 임무는 실제 도착 시각이 있으므로
+    # 추정이 필요 없고, 남겨두면 어느 쪽이 사실인지 헷갈린다.
+    eta_seconds: Optional[float] = None
+    eta_distance_m: Optional[float] = None
+    eta_confident: bool = False
+
     @property
     def response_seconds(self) -> Optional[float]:
         """신고에서 AED 도착까지. 이 시스템의 존재 이유를 재는 값이다."""
         if self.arrived_at is None:
             return None
         return self.arrived_at - self.called_at
+
+    @property
+    def eta_at(self) -> Optional[float]:
+        """도착 예상 시각(epoch). 화면에서 시계로 보여주기 위한 값."""
+        if self.eta_seconds is None:
+            return None
+        import time
+
+        return time.time() + self.eta_seconds
 
 
 @dataclass(frozen=True)

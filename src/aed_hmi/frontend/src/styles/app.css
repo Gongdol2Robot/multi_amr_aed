@@ -510,3 +510,68 @@
     grid-template-rows: minmax(0, 1fr) auto;
   }
 }
+
+/* 도착 예상 ------------------------------------------------------- */
+
+.etapanel {
+  flex: 0 0 auto;
+  text-align: right;
+  min-width: 130px;
+  padding-left: 18px;
+  border-left: 1px solid var(--line);
+}
+
+.etapanel__value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--accent);
+}
+
+/* 가정값이 섞인 추정은 색을 낮춰, 실측값과 같은 무게로 읽히지 않게 한다. */
+.etapanel__value--rough {
+  color: var(--warn);
+}
+
+.etapanel__meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.etapanel--none .etapanel__none-text {
+  font-size: 14px;
+  color: var(--text-faint);
+  margin-top: 6px;
+}
+
+.eta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.eta__label {
+  color: var(--text-faint);
+}
+
+.eta__value {
+  font-weight: 600;
+}
+
+.eta--sure .eta__value {
+  color: var(--accent);
+}
+.eta--rough .eta__value {
+  color: var(--warn);
+}
+
+.eta__rough {
+  font-size: 10px;
+  color: var(--warn);
+  border: 1px solid rgba(245, 181, 68, 0.35);
+  border-radius: 3px;
+  padding: 0 3px;
+  margin-left: 3px;
+}

@@ -49,6 +49,8 @@ def mission_summary(value: MissionSummary) -> dict:
     data["target"] = point(value.target)
     data["final_state"] = value.final_state.value
     data["response_seconds"] = value.response_seconds
+    # 도착 예상 시각. 화면이 매 초 다시 계산하지 않도록 서버가 확정해 준다.
+    data["eta_at"] = value.eta_at
     return data
 
 

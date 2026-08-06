@@ -103,6 +103,15 @@ export interface MissionSummary {
   failure_reasons: string[];
   /** 신고에서 AED 도착까지. 도착 못 했으면 null. */
   response_seconds: number | null;
+
+  /** 도착까지 남은 예상 시간(초). 이동 중인 임무에만 채워진다. */
+  eta_seconds: number | null;
+  /** 도착 예상 시각(epoch 초). 서버가 확정해 준 값이라 화면은 그대로 쓴다. */
+  eta_at: number | null;
+  /** 남은 거리(m). 경로비용이 있으면 실제 주행 거리, 없으면 직선 보정값. */
+  eta_distance_m: number | null;
+  /** 거리·속도가 모두 실측일 때만 true. 추정 표시를 달리하는 근거. */
+  eta_confident: boolean;
 }
 
 export interface MissionEvent {

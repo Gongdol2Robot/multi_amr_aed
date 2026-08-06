@@ -275,6 +275,42 @@ class Repository:
             "max_seconds": row["max_seconds"],
         }
 
+    def travel_time_stats(self) -> dict:
+        """출동 지시부터 도착까지 걸린 시간. ETA 계수를 조정하는 근거다.
+
+        response_time_stats 와 다르다. 저쪽은 신고부터 도착까지라 배정에
+        걸린 시간이 섞여 있다. ETA 는 "지금부터 도착까지"를 예측하므로
+        이동 구간만 떼어내야 비교가 된다.
+        """
+        row = self._connection().execute(
+            """
+            WITH per_mission AS (
+                SELECT
+                    mission_id,
+                    MIN(CASE WHEN state = 'dispatching' THEN stamp END)
+                        AS started_at,
+                    MIN(CASE WHEN state IN ('arrived', 'completed')
+                             THEN stamp END) AS arrived_at
+                FROM mission_events
+                GROUP BY mission_id
+            )
+            SELECT
+                COUNT(*) AS total,
+                AVG(arrived_at - started_at) AS avg_seconds,
+                MIN(arrived_at - started_at) AS min_seconds,
+                MAX(arrived_at - started_at) AS max_seconds
+            FROM per_mission
+            WHERE started_at IS NOT NULL AND arrived_at IS NOT NULL
+              AND arrived_at > started_at
+            """
+        ).fetchone()
+        return {
+            "total": row["total"] or 0,
+            "avg_seconds": row["avg_seconds"],
+            "min_seconds": row["min_seconds"],
+            "max_seconds": row["max_seconds"],
+        }
+
     def robot_track(self, robot_id: str, limit: int = 300) -> list[dict]:
         """최근 이동 궤적. 지도 위에 선으로 그린다."""
         rows = self._connection().execute(

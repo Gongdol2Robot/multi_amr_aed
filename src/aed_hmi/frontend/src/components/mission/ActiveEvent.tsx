@@ -11,6 +11,7 @@ import type {
 } from '../../types/telemetry';
 import { clockText, eventDisplay, missionDisplay } from '../common/status';
 import { Badge } from '../common/Indicators';
+import { EtaBadge, EtaPanel } from './EtaPanel';
 
 interface Props {
   event: EmergencyEventSnapshot | null;
@@ -66,6 +67,8 @@ export function ActiveEvent({ event, missions, now }: Props) {
         </div>
       </div>
 
+      <EtaPanel missions={missions} now={now} />
+
       <div className="alert__right">
         <div className="alert__label">목표 좌표</div>
         <div className="alert__coord mono">
@@ -86,6 +89,7 @@ export function ActiveEvent({ event, missions, now }: Props) {
                       재할당 {mission.reassignment_count}
                     </span>
                   )}
+                  <EtaBadge mission={mission} now={now} />
                 </span>
               );
             })
