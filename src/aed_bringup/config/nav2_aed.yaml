@@ -101,9 +101,10 @@ controller_server:
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: True
-      # 벽/차량에 가까워 전진과 제자리 회전이 모두 막혔을 때 저속으로
-      # 물러나 우회 경로에 다시 진입할 수 있게 한다.
-      min_vel_x: -0.10
+      # DWB의 첫 vx 샘플을 정확히 0으로 만들어 뒤쪽 경로에서는
+      # 제자리 회전한 다음 전진한다. 음수 최솟값과 20개 샘플 조합은
+      # vx=0을 건너뛰어 후방 목표에서 무진행 상태를 만들었다.
+      min_vel_x: 0.0
       min_vel_y: 0.0
       max_vel_x: 0.20
       max_vel_y: 0.0

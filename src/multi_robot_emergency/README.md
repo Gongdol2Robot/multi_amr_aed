@@ -92,6 +92,11 @@ ros2 topic echo /emergency/status
 ros2 topic echo /emergency/selected_robot
 ros2 topic echo /emergency/path_distance/robot1
 ros2 topic echo /emergency/path_distance/robot2
+ros2 topic echo /emergency/eta/predicted/robot1
+ros2 topic echo /emergency/eta/predicted/robot2
+ros2 topic echo /emergency/eta/actual/robot1
+ros2 topic echo /emergency/eta/actual/robot2
+ros2 topic echo /emergency/eta/result
 ```
 
 경로를 계산할 수 없는 로봇의 거리에는 `nan`이 발행됩니다.
@@ -109,3 +114,23 @@ ros2 topic echo /emergency/path_distance/robot2
 
 - `/emergency/candidate_path/robot1`
 - `/emergency/candidate_path/robot2`
+
+## DB 연동용 ETA 토픽
+
+중앙 노드는 DB나 대시보드에서 사용할 수 있도록 ETA를 초 단위로
+발행합니다.
+
+| 토픽 | 타입 | 발행 시점 | 값 |
+|---|---|---|---|
+| `/emergency/eta/predicted/robot1` | `std_msgs/msg/Float32` | Robot1 경로 계산 완료 | Robot1 예상 주행시간(초) |
+| `/emergency/eta/predicted/robot2` | `std_msgs/msg/Float32` | Robot2 경로 계산 완료 | Robot2 예상 주행시간(초) |
+| `/emergency/eta/actual/robot1` | `std_msgs/msg/Float32` | Robot1 정상 도착 | Robot1 실제 주행시간(초) |
+| `/emergency/eta/actual/robot2` | `std_msgs/msg/Float32` | Robot2 정상 도착 | Robot2 실제 주행시간(초) |
+| `/emergency/eta/result` | `std_msgs/msg/String` | 선택 로봇 정상 도착 | 요청별 최종 JSON 레코드 |
+
+새 요청이 시작되면 로봇별 숫자 토픽은 `nan`으로 초기화됩니다. DB 저장은
+요청 ID가 포함된 `/emergency/eta/result`를 기준으로 하는 것이 안전합니다.
+
+```json
+{"actual_arrival_sec":23.5,"error_sec":0.67,"predicted_eta_sec":22.83,"request_id":"emergency-002","robot_id":"robot2","stamp_sec":1786011309.024,"status":"ARRIVED"}
+```

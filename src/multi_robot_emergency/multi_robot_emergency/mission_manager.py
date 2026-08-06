@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+import json
 import math
 import time
 
@@ -29,7 +30,7 @@ from rclpy.qos import (
 from std_msgs.msg import Float32, String
 from visualization_msgs.msg import Marker, MarkerArray
 
-from .assignment import path_length
+from .assignment import path_length, path_motion_cost
 
 
 @dataclass
@@ -57,6 +58,11 @@ class EmergencyMissionManager(Node):
         self.declare_parameter("planning_timeout_sec", 30.0)
         self.declare_parameter("dispatch_retry_timeout_sec", 15.0)
         self.declare_parameter("assignment_ack_timeout_sec", 3.0)
+        self.declare_parameter("nominal_linear_speed_mps", 0.20)
+        self.declare_parameter("nominal_angular_speed_radps", 0.70)
+        self.declare_parameter("slowdown_turn_threshold_deg", 45.0)
+        self.declare_parameter("slowdown_penalty_sec", 4.0)
+        self.declare_parameter("path_simplification_tolerance_m", 0.10)
         self.declare_parameter("planner_id", "GridBased")
         self.declare_parameter("dispatch_enabled", False)
         self.declare_parameter("automatic_request", False)
@@ -92,6 +98,21 @@ class EmergencyMissionManager(Node):
         self.assignment_ack_timeout = float(
             self.get_parameter("assignment_ack_timeout_sec").value
         )
+        self.nominal_linear_speed = float(
+            self.get_parameter("nominal_linear_speed_mps").value
+        )
+        self.nominal_angular_speed = float(
+            self.get_parameter("nominal_angular_speed_radps").value
+        )
+        self.slowdown_turn_threshold = math.radians(
+            float(self.get_parameter("slowdown_turn_threshold_deg").value)
+        )
+        self.slowdown_penalty = float(
+            self.get_parameter("slowdown_penalty_sec").value
+        )
+        self.path_simplification_tolerance = float(
+            self.get_parameter("path_simplification_tolerance_m").value
+        )
         self.planner_id = str(self.get_parameter("planner_id").value)
         self.dispatch_enabled = bool(
             self.get_parameter("dispatch_enabled").value
@@ -104,6 +125,24 @@ class EmergencyMissionManager(Node):
             raise ValueError("dispatch_retry_timeout_sec must be positive")
         if self.assignment_ack_timeout <= 0.0:
             raise ValueError("assignment_ack_timeout_sec must be positive")
+        if self.nominal_linear_speed <= 0.0:
+            raise ValueError("nominal_linear_speed_mps must be positive")
+        if self.nominal_angular_speed <= 0.0:
+            raise ValueError("nominal_angular_speed_radps must be positive")
+        if self.slowdown_turn_threshold < 0.0:
+            raise ValueError(
+                "slowdown_turn_threshold_deg must be non-negative"
+            )
+        if self.slowdown_penalty < 0.0:
+            raise ValueError("slowdown_penalty_sec must be non-negative")
+        if (
+            not math.isfinite(self.path_simplification_tolerance)
+            or self.path_simplification_tolerance < 0.0
+        ):
+            raise ValueError(
+                "path_simplification_tolerance_m must be finite and "
+                "non-negative"
+            )
         if self.docked_start_offset < 0.0:
             raise ValueError("docked_start_offset_m must be non-negative")
 
@@ -141,6 +180,31 @@ class EmergencyMissionManager(Node):
             )
             for robot_id in self.robot_ids
         }
+        self.predicted_eta_publishers = {
+            robot_id: self.create_publisher(
+                Float32,
+                f"/emergency/eta/predicted/{robot_id}",
+                latched_qos,
+            )
+            for robot_id in self.robot_ids
+        }
+        self.actual_eta_publishers = {
+            robot_id: self.create_publisher(
+                Float32,
+                f"/emergency/eta/actual/{robot_id}",
+                latched_qos,
+            )
+            for robot_id in self.robot_ids
+        }
+        eta_result_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.eta_result_publisher = self.create_publisher(
+            String, "/emergency/eta/result", eta_result_qos
+        )
 
         self.observations: dict[str, RobotObservation] = {}
         self.dock_states: dict[str, bool] = {}
@@ -217,7 +281,9 @@ class EmergencyMissionManager(Node):
         self.navigation_active = False
         self.planning_active = False
         self.pending_plans: set[str] = set()
-        self.plan_results: dict[str, tuple[Path, float]] = {}
+        self.plan_results: dict[
+            str, tuple[Path, float, float, float, int]
+        ] = {}
         self.plan_failures: dict[str, str] = {}
         self.planning_target: PoseStamped | None = None
         self.planning_timer = None
@@ -229,6 +295,8 @@ class EmergencyMissionManager(Node):
         self.active_request_id = ""
         self.state = "IDLE"
         self._last_feedback_log = 0.0
+        self.navigation_started_at: float | None = None
+        self.navigation_predicted_eta: float | None = None
         self._automatic_request_timer = None
         if bool(self.get_parameter("automatic_request").value):
             delay = float(
@@ -331,6 +399,8 @@ class EmergencyMissionManager(Node):
         self.plan_failures.clear()
         for robot_id in self.robot_ids:
             self._publish_distance(robot_id, math.nan)
+            self._publish_predicted_eta(robot_id, math.nan)
+            self._publish_actual_eta(robot_id, math.nan)
 
         for robot_id in self.robot_ids:
             client = self.planner_clients[robot_id]
@@ -436,20 +506,53 @@ class EmergencyMissionManager(Node):
             return
 
         try:
-            distance = path_length(
+            points = [
                 (pose.pose.position.x, pose.pose.position.y)
                 for pose in path.poses
+            ]
+            distance = path_length(points)
+            observation = self.observations.get(robot_id)
+            initial_yaw = (
+                self._quaternion_yaw(observation.pose)
+                if observation is not None
+                else None
+            )
+            final_yaw = (
+                self._quaternion_yaw(self.planning_target)
+                if self.planning_target is not None
+                else None
+            )
+            eta, turn_angle, slowdown_count = path_motion_cost(
+                points,
+                linear_speed=self.nominal_linear_speed,
+                angular_speed=self.nominal_angular_speed,
+                slowdown_turn_threshold=self.slowdown_turn_threshold,
+                slowdown_penalty=self.slowdown_penalty,
+                simplification_tolerance=(
+                    self.path_simplification_tolerance
+                ),
+                initial_yaw=initial_yaw,
+                final_yaw=final_yaw,
             )
         except ValueError as error:
             self._record_plan_failure(robot_id, serial, str(error))
             return
 
-        self.plan_results[robot_id] = (path, distance)
+        self.plan_results[robot_id] = (
+            path,
+            distance,
+            eta,
+            turn_angle,
+            slowdown_count,
+        )
         self.path_publishers[robot_id].publish(path)
         self._publish_distance(robot_id, distance)
+        self._publish_predicted_eta(robot_id, eta)
         self.pending_plans.discard(robot_id)
         self.get_logger().info(
-            f"Candidate {robot_id}: Nav2 path distance={distance:.2f}m"
+            f"Candidate {robot_id}: distance={distance:.2f}m, "
+            f"turn={math.degrees(turn_angle):.1f}deg, "
+            f"slowdowns={slowdown_count}, eta={eta:.2f}s"
         )
         if not self.pending_plans:
             self._finish_planning(serial)
@@ -463,6 +566,7 @@ class EmergencyMissionManager(Node):
         self.plan_failures[robot_id] = reason
         self.path_publishers[robot_id].publish(Path())
         self._publish_distance(robot_id, math.nan)
+        self._publish_predicted_eta(robot_id, math.nan)
         self.get_logger().warning(f"Candidate {robot_id} excluded: {reason}")
         if not self.pending_plans:
             self._finish_planning(serial)
@@ -476,6 +580,7 @@ class EmergencyMissionManager(Node):
             )
             self.path_publishers[robot_id].publish(Path())
             self._publish_distance(robot_id, math.nan)
+            self._publish_predicted_eta(robot_id, math.nan)
         self.pending_plans.clear()
         self._finish_planning(serial)
 
@@ -501,7 +606,7 @@ class EmergencyMissionManager(Node):
 
         ranked = sorted(
             (
-                (robot_id, result[1])
+                (robot_id, result[2])
                 for robot_id, result in self.plan_results.items()
             ),
             key=lambda item: (item[1], item[0]),
@@ -510,7 +615,13 @@ class EmergencyMissionManager(Node):
         self.selected_robot = self.ranked_candidates[0]
         self._publish_selected_robot(self.selected_robot)
         detail = ", ".join(
-            f"{robot_id}={distance:.2f}m" for robot_id, distance in ranked
+            (
+                f"{robot_id}={score:.2f}s"
+                f"({self.plan_results[robot_id][1]:.2f}m, "
+                f"{math.degrees(self.plan_results[robot_id][3]):.1f}deg, "
+                f"slow={self.plan_results[robot_id][4]})"
+            )
+            for robot_id, score in ranked
         )
         if self.plan_failures:
             detail += "; excluded: " + ", ".join(
@@ -537,6 +648,8 @@ class EmergencyMissionManager(Node):
         self.assignment_version += 1
         self.selected_robot = robot_id
         self.navigation_active = True
+        self.navigation_started_at = None
+        self.navigation_predicted_eta = self.plan_results[robot_id][2]
         self._publish_selected_robot(robot_id)
         assignment = MissionAssignment()
         assignment.mission_id = f"{self.active_request_id}-aed"
@@ -574,10 +687,27 @@ class EmergencyMissionManager(Node):
             )
             return
         if status.status == MissionStatus.EN_ROUTE:
+            if self.navigation_started_at is None:
+                self.navigation_started_at = time.monotonic()
             self._publish_status("NAVIGATING", f"{status.robot_id} is moving")
             return
         if status.status in (MissionStatus.ARRIVED, MissionStatus.COMPLETED):
             self.navigation_active = False
+            if self.navigation_started_at is not None:
+                actual = time.monotonic() - self.navigation_started_at
+                predicted = self.navigation_predicted_eta
+                if predicted is not None:
+                    self._publish_actual_eta(status.robot_id, actual)
+                    self._publish_eta_result(
+                        status.robot_id, predicted, actual
+                    )
+                    self.get_logger().info(
+                        f"ETA measurement {status.robot_id}: "
+                        f"predicted={predicted:.2f}s, actual={actual:.2f}s, "
+                        f"error={actual - predicted:+.2f}s"
+                    )
+            self.navigation_started_at = None
+            self.navigation_predicted_eta = None
             self._publish_status(
                 "ARRIVED", f"{status.robot_id} reached the emergency"
             )
@@ -630,6 +760,14 @@ class EmergencyMissionManager(Node):
         )
 
     def _reassign_after_failure(self, failed_robot: str, reason: str) -> None:
+        if self.navigation_started_at is not None:
+            elapsed = time.monotonic() - self.navigation_started_at
+            self.get_logger().warning(
+                f"ETA measurement {failed_robot}: aborted after "
+                f"{elapsed:.2f}s ({reason or 'unspecified failure'})"
+            )
+        self.navigation_started_at = None
+        self.navigation_predicted_eta = None
         self.excluded_robots.add(failed_robot)
         next_robot = next(
             (
@@ -747,6 +885,36 @@ class EmergencyMissionManager(Node):
         message.data = float(distance)
         self.distance_publishers[robot_id].publish(message)
 
+    def _publish_predicted_eta(self, robot_id: str, eta: float) -> None:
+        message = Float32()
+        message.data = float(eta)
+        self.predicted_eta_publishers[robot_id].publish(message)
+
+    def _publish_actual_eta(self, robot_id: str, elapsed: float) -> None:
+        message = Float32()
+        message.data = float(elapsed)
+        self.actual_eta_publishers[robot_id].publish(message)
+
+    def _publish_eta_result(
+        self, robot_id: str, predicted: float, actual: float
+    ) -> None:
+        stamp = self.get_clock().now()
+        message = String()
+        message.data = json.dumps(
+            {
+                "request_id": self.active_request_id,
+                "robot_id": robot_id,
+                "predicted_eta_sec": round(predicted, 3),
+                "actual_arrival_sec": round(actual, 3),
+                "error_sec": round(actual - predicted, 3),
+                "status": "ARRIVED",
+                "stamp_sec": round(stamp.nanoseconds / 1e9, 9),
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        self.eta_result_publisher.publish(message)
+
     def _publish_status(self, state: str, detail: str) -> None:
         self.state = state
         message = String()
@@ -770,11 +938,10 @@ class EmergencyMissionManager(Node):
         )
         return all(math.isfinite(value) for value in values)
 
-    def _project_undocked_start(self, pose: PoseStamped) -> PoseStamped:
-        """Move a docked pose backward to the expected post-undock pose."""
-        result = deepcopy(pose)
-        orientation = result.pose.orientation
-        yaw = math.atan2(
+    @staticmethod
+    def _quaternion_yaw(pose: PoseStamped) -> float:
+        orientation = pose.pose.orientation
+        return math.atan2(
             2.0 * (
                 orientation.w * orientation.z
                 + orientation.x * orientation.y
@@ -784,6 +951,11 @@ class EmergencyMissionManager(Node):
                 + orientation.z * orientation.z
             ),
         )
+
+    def _project_undocked_start(self, pose: PoseStamped) -> PoseStamped:
+        """Move a docked pose backward to the expected post-undock pose."""
+        result = deepcopy(pose)
+        yaw = self._quaternion_yaw(result)
         result.pose.position.x -= self.docked_start_offset * math.cos(yaw)
         result.pose.position.y -= self.docked_start_offset * math.sin(yaw)
         return result
