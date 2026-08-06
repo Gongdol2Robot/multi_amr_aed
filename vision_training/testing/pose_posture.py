@@ -2,12 +2,48 @@
 
 from __future__ import annotations
 
+from collections import Counter, deque
 from math import atan2, degrees
 
 
 LEFT_SHOULDER, RIGHT_SHOULDER = 5, 6
 LEFT_HIP, RIGHT_HIP = 11, 12
 LEFT_KNEE, RIGHT_KNEE = 13, 14
+
+
+class PostureHistory:
+    """추적 대상별 최근 자세를 누적해 순간 오검출을 줄인다."""
+
+    def __init__(self, window: int = 10, fallen_hits: int = 6):
+        if not 1 <= fallen_hits <= window:
+            raise ValueError("fallen_hits는 1 이상 window 이하여야 합니다.")
+        self.window = window
+        self.fallen_hits = fallen_hits
+        self._history: dict[int, deque[str]] = {}
+        self._last_seen: dict[int, int] = {}
+
+    def update(self, track_id: int, posture: str, frame_index: int) -> str:
+        history = self._history.setdefault(
+            track_id, deque(maxlen=self.window)
+        )
+        history.append(posture)
+        self._last_seen[track_id] = frame_index
+        if history.count("FALLEN") >= self.fallen_hits:
+            return "FALLEN"
+        reliable = [
+            value for value in history
+            if value not in ("UNKNOWN", "FALLEN")
+        ]
+        return Counter(reliable).most_common(1)[0][0] if reliable else "UNKNOWN"
+
+    def discard_stale(self, frame_index: int, max_age: int = 30) -> None:
+        stale = [
+            track_id for track_id, seen in self._last_seen.items()
+            if frame_index - seen > max_age
+        ]
+        for track_id in stale:
+            self._history.pop(track_id, None)
+            self._last_seen.pop(track_id, None)
 
 
 def _center(keypoints, first: int, second: int, threshold: float):
