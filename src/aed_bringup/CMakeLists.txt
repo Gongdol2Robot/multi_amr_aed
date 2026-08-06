@@ -8,4 +8,11 @@ install(DIRECTORY config launch
   PATTERN "__pycache__" EXCLUDE
 )
 
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../maps/
+  DESTINATION share/${PROJECT_NAME}/maps
+  FILES_MATCHING
+  PATTERN "*.yaml"
+  PATTERN "*.pgm"
+)
+
 ament_package()

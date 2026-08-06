@@ -22,12 +22,17 @@ venv/
 # Runtime output
 bags/
 captures/
+tools/survey/*.jpg
 data/
 datasets/
 runs/
 *.db
 *.sqlite
 *.sqlite3
+
+# slam_toolbox 직렬화 결과는 수백 MB가 될 수 있어 로컬에만 둔다.
+maps/*.posegraph
+maps/*.data
 
 # Large/generated ML artifacts
 models/*.engine
@@ -37,4 +42,3 @@ models/*.pth
 
 # Keep directory placeholders
 !models/.gitkeep
-

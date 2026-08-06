@@ -11,6 +11,11 @@ aedenv() {
   source "$AED_WS/install/setup.bash"
 }
 
+aedbuild() {
+  (cd "$AED_WS" && source /opt/ros/humble/setup.bash && \
+    PYTHONNOUSERSITE=1 colcon build --symlink-install "$@")
+}
+
 roskill() {
   local uid workspace_pattern
   uid="$(id -u)"
@@ -101,17 +106,41 @@ dock() {
   ros2 action send_goal /robot$n/dock irobot_create_msgs/action/Dock "{}"
 }
 
+slam() {
+  local n=${1:-1}
+  ros2 launch turtlebot4_navigation slam.launch.py namespace:=/robot$n
+}
+
+drive() {
+  local n=${1:-1}
+  ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args \
+    -r /cmd_vel:=/robot$n/cmd_vel
+}
+
+explore() {
+  "$AED_WS/tools/explore.sh" "${1:-1}"
+}
+
+savemap() {
+  local n=${1:-1} name=${2:-map}
+  mkdir -p "$AED_WS/maps"
+  ros2 run nav2_map_server map_saver_cli \
+    -f "$AED_WS/maps/$name" -t "/robot$n/map" \
+    --ros-args -p save_map_timeout:=15.0 || return 1
+  ros2 service call /robot$n/slam_toolbox/serialize_map \
+    slam_toolbox/srv/SerializePoseGraph "{filename: '$AED_WS/maps/$name'}"
+}
+
 loc() {
-  local n=${1:-1} map=${2:-$AED_WS/maps/map1.yaml}
+  local n=${1:-1} map=${2:-$AED_WS/maps/map.yaml}
   ros2 launch turtlebot4_navigation localization.launch.py \
     namespace:=/robot$n map:="$map"
 }
 
 initpose() {
   local n=${1:-1}
-  ros2 topic pub --times 3 /robot$n/initialpose \
-    geometry_msgs/msg/PoseWithCovarianceStamped \
-    "{header: {frame_id: 'map'}, pose: {pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}, covariance: [0.25,0,0,0,0,0, 0,0.25,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0.0685]}}"
+  shift 2>/dev/null || true
+  python3 "$AED_WS/tools/initpose.py" "$n" "$@"
 }
 
 nav() {
@@ -130,6 +159,13 @@ rv() {
   ros2 launch turtlebot4_viz view_robot.launch.py namespace:=/robot$n
 }
 
+mapnav() {
+  local n=${1:-1}
+  aedenv
+  ros2 launch turtlebot4_map_navigation map_navigation.launch.py \
+    namespace:="robot$n" rviz:=true
+}
+
 vision() {
   local dev=${1:-0}
   ros2 run aed_vision webcam_publisher --ros-args -p device:="$dev"
@@ -137,6 +173,14 @@ vision() {
 
 manager() {
   ros2 run mission_manager mission_manager
+}
+
+# a1inteli에서 이관한 단일 중앙 노드: RViz 클릭마다 두 Nav2 경로를 직접 비교한다.
+central() {
+  local dispatch=${1:-false}
+  aedenv
+  ros2 launch multi_robot_emergency central_dispatch.launch.py \
+    dispatch_enabled:="$dispatch"
 }
 
 executor() {
