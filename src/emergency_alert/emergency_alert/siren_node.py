@@ -1,4 +1,4 @@
-"""Publish a configurable emergency siren on a TurtleBot4 audio topic."""
+"""TurtleBot4에 설정 가능한 단발 긴급 경보음을 발행한다."""
 
 import rclpy
 from irobot_create_msgs.msg import AudioNote, AudioNoteVector
@@ -6,9 +6,15 @@ from rclpy.node import Node
 
 
 class SirenNode(Node):
-    """Play one emergency siren sequence and exit."""
+    """높은 음과 낮은 음의 단발 경보 시퀀스를 재생하는 ROS 2 노드.
+
+    출동 내내 반복되는 경보는 ``AlertMissionExecutor``가 담당한다. 이 노드는
+    스피커 연결 확인이나 독립적인 경보 시험에 사용하고, 한 번 발행한 뒤
+    자동으로 종료한다.
+    """
 
     def __init__(self) -> None:
+        """음 길이와 반복 횟수를 읽고 cmd_audio publisher를 준비한다."""
         super().__init__("emergency_siren")
         self.declare_parameter("audio_topic", "cmd_audio")
         self.declare_parameter("repeat", 2)
@@ -24,6 +30,7 @@ class SirenNode(Node):
         self.timer = self.create_timer(0.5, self._play_once)
 
     def _play_once(self) -> None:
+        """설정된 횟수만큼 1000 Hz와 440 Hz 음계를 묶어 한 번 발행한다."""
         message = AudioNoteVector()
         message.append = False
         seconds = int(self.duration)
@@ -44,6 +51,7 @@ class SirenNode(Node):
 
 
 def main(args=None) -> None:
+    """ROS를 초기화하고 단발 경보 발행이 끝날 때까지 노드를 실행한다."""
     rclpy.init(args=args)
     node = SirenNode()
     try:
@@ -58,4 +66,3 @@ def main(args=None) -> None:
 
 if __name__ == "__main__":
     main()
-
