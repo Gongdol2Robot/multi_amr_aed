@@ -101,11 +101,11 @@ class RosBridge:
         node = self._node
         node.create_subscription(
             RobotState, topics.ROBOT_STATE_TOPIC,
-            self._handle_robot_state, topics.STATE_QOS,
+            self._handle_robot_state, topics.state_qos(),
         )
         node.create_subscription(
             MissionStatus, topics.MISSION_STATUS_TOPIC,
-            self._handle_mission_status, topics.STATE_QOS,
+            self._handle_mission_status, topics.state_qos(),
         )
 
         # 이벤트는 두 경로로 온다.
@@ -115,13 +115,13 @@ class RosBridge:
         # 둘 다 구독해 두면 나중에 연결되어도 화면은 그대로 동작한다.
         node.create_subscription(
             EmergencyEvent, topics.AGGREGATE_EVENT_TOPIC,
-            self._handle_emergency_event, topics.STATE_QOS,
+            self._handle_emergency_event, topics.state_qos(),
         )
         for camera_id in topics.VISION_CAMERA_IDS:
             node.create_subscription(
                 EmergencyEvent,
                 topics.vision_topic(camera_id, "emergency_event"),
-                self._handle_emergency_event, topics.STATE_QOS,
+                self._handle_emergency_event, topics.state_qos(),
             )
             # 화면에 몇 명 잡혔는지 띄우기 위한 값. EmergencyEvent 는 확정
             # 전후로만 오지만 person_count 는 매 프레임 나온다.
@@ -129,7 +129,7 @@ class RosBridge:
                 UInt32, topics.vision_topic(camera_id, "person_count"),
                 lambda message, stream_id=camera_id:
                     self._on_person_count(stream_id, int(message.data)),
-                topics.STATE_QOS,
+                topics.state_qos(),
             )
 
         # 예상과 실제를 재는 쪽이 내는 결과. 이 토픽만 std_msgs/String 에
@@ -138,7 +138,7 @@ class RosBridge:
         # 경고도 없이 아무것도 안 온다.
         node.create_subscription(
             String, topics.ETA_RESULT_TOPIC,
-            self._handle_eta_result, topics.LATCHED_QOS,
+            self._handle_eta_result, topics.latched_qos(),
         )
 
         for source in self._streams:
@@ -148,7 +148,7 @@ class RosBridge:
                 CompressedImage, source.topic,
                 lambda message, stream_id=source.stream_id:
                     self._on_frame(stream_id, bytes(message.data)),
-                topics.IMAGE_QOS,
+                topics.image_qos(),
             )
 
     # ------------------------------------------------------------------

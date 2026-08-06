@@ -4,10 +4,14 @@
 
 관제실 화면 하나로 다음을 봅니다.
 
-- 진행 중인 응급 상황과 경과 시간
-- 카메라 4갈래 영상 (고정 웹캠 2대 + 로봇 OAK-D 2대)
+- 진행 중인 응급 상황과 경과 시간, 도착 예상 시간
+- 카메라 4갈래 영상 (고정 웹캠 2대 + 로봇 OAK-D 2대). 검출이 잡히면 테두리로 알린다
 - 로봇별 속도·배터리·위치·통신 상태
 - 신고에서 AED 도착까지 걸린 시간과 그 이력
+- 도착 예상이 실제와 얼마나 달랐나
+
+영상 타일은 **숫자키 1~4** 로 하나만 크게 볼 수 있습니다. 같은 키나 Esc 로
+4분할로 돌아옵니다. 타일을 눌러도 되고 머리글의 버튼으로도 됩니다.
 
 ## 실행
 
@@ -45,8 +49,12 @@ python3 -m backend.main --mock
 ## 필요한 것
 
 ```bash
-pip install fastapi "uvicorn[standard]" websockets
+pip install -r src/aed_hmi/requirements.txt
 ```
+
+**`--mock` 은 ROS 없이 돕니다.** rclpy 도 aed_interfaces 도 없는 PC 에서
+이 목록만 설치하면 4분할 영상과 이력까지 그대로 뜹니다(rclpy 없는
+가상환경에서 확인). ROS 에 붙일 때만 `colcon build` 가 필요합니다.
 
 Node는 18 이상이 필요합니다(Vite 요구). 없으면 sudo 없이 설치할 수 있습니다.
 
@@ -54,6 +62,32 @@ Node는 18 이상이 필요합니다(Vite 요구). 없으면 sudo 없이 설치�
 curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
 nvm install 20
 ```
+
+### 다른 PC 에서 처음 받았다면
+
+```bash
+git clone git@github.com:Gongdol2Robot/multi_amr_aed.git
+cd multi_amr_aed
+
+pip install -r src/aed_hmi/requirements.txt
+cd src/aed_hmi/frontend && npm install && cd -
+
+# 터미널 1
+cd src/aed_hmi && python3 -m backend.main --mock
+# 터미널 2
+cd src/aed_hmi/frontend && npm run dev      # http://localhost:5173
+```
+
+시연 영상(`docs/videos/`)도 저장소에 들어 있어 따로 받을 것이 없습니다.
+
+ROS 에 붙일 때 `aed_interfaces` 빌드가 이 오류로 막히면,
+
+```
+canonicalize_version() got an unexpected keyword argument 'strip_trailing_zero'
+```
+
+setuptools 와 packaging 의 조합 문제입니다. `pip install -U "packaging>=24"`
+로 풀립니다.
 
 ## 구조
 
@@ -91,7 +125,7 @@ frontend/src/
 | `RobotState` | 로봇 카드 전체. 속도만 백엔드가 pose로 계산한다 |
 | `MissionStatus` | 임무 상태 14종. 이력 표와 배너 |
 | `EmergencyEvent` | 경보 배너, 검출 표시, 응답 시간 기준 시각 |
-| `MissionAssignment` | 목표 좌표와 재할당 횟수 |
+| `MissionAssignment` | 목표 좌표와 재할당 횟수. `DeliverAed` action 으로 바뀔 예정 |
 
 ## 구독하는 토픽
 
@@ -103,7 +137,11 @@ frontend/src/
 /{camera_id}/vision/person_count            UInt32           (vision_detector)
 /{camera_id}/vision/debug/compressed        CompressedImage  (검출 표시된 영상)
 /{robot_id}/oakd/rgb/image_raw/compressed   CompressedImage
+/emergency/eta/result                       String (JSON)    (multi_robot_emergency)
 ```
+
+마지막 것만 QoS 가 다릅니다(`TRANSIENT_LOCAL`). 보내는 쪽과 맞추지 않으면
+ROS 2 는 연결을 아예 안 맺고 경고도 없습니다.
 
 `camera_id`는 `camera_open`, `camera_alley`입니다(`aed_vision/config/*.yaml`).
 토픽은 환경변수로 바꿔 끼울 수 있습니다.
@@ -122,3 +160,8 @@ AED_HMI_STREAM_ROBOT1=/robot1/vision/debug/compressed python3 -m backend.main
 - **로봇 OAK-D는 검출을 하지 않습니다.** 영상만 나옵니다.
 - **영상은 MJPEG입니다.** 지연이 문제가 되면 WebRTC로 바꿔야 하고, 그때
   고칠 곳은 `api/video.py`와 `components/video/VideoTile.tsx`뿐입니다.
+- **`robot_state_monitor`가 아직 뼈대입니다.** 그것이 `RobotState`를 내기
+  전까지 실제 모드에서는 로봇 카드가 빈칸입니다.
+
+인터페이스별 구현 상태와 DB 대응은 [../../docs/db_interfaces.md](../../docs/db_interfaces.md),
+키·쿼리 설계는 [../../docs/db_queries.md](../../docs/db_queries.md) 에 있습니다.

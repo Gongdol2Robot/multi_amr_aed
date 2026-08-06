@@ -7,47 +7,66 @@
   고정 웹캠 검출 : aed_vision/vision_detector.py  (camera_id 별 절대 토픽)
   로봇 상태/임무 : mission_manager, robot_missions (/aed/... 공용 토픽)
   로봇 카메라   : turtlebot4 기본 OAK-D
+  ETA 측정      : multi_robot_emergency/mission_manager.py
+
+**이 파일은 rclpy 없이도 import 되어야 한다.** context.py 가 화면 구성을
+얻으려고 여기를 읽는데, 그때 rclpy 를 끌어오면 ROS 가 없는 PC 에서는
+--mock 조차 못 뜬다. 화면만 만드는 사람이 ROS 를 깔아야 할 이유는 없다.
+그래서 QoS 는 모듈을 읽을 때가 아니라 실제로 구독할 때 만든다.
 """
 
 import os
 from dataclasses import dataclass
 
-from rclpy.qos import (
-    DurabilityPolicy,
-    HistoryPolicy,
-    QoSProfile,
-    ReliabilityPolicy,
-)
 
-# 상태·이벤트는 놓치면 안 되므로 신뢰성 있게 받는다.
-STATE_QOS = QoSProfile(
-    history=HistoryPolicy.KEEP_LAST,
-    depth=20,
-    reliability=ReliabilityPolicy.RELIABLE,
-    durability=DurabilityPolicy.VOLATILE,
-)
+def state_qos():
+    """상태·이벤트용. 놓치면 안 되므로 신뢰성 있게 받는다."""
+    from rclpy.qos import (
+        DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy,
+    )
+    return QoSProfile(
+        history=HistoryPolicy.KEEP_LAST,
+        depth=20,
+        reliability=ReliabilityPolicy.RELIABLE,
+        durability=DurabilityPolicy.VOLATILE,
+    )
 
-# 영상은 최신 프레임만 의미가 있다. 밀리면 버리는 편이 낫다.
-# vision_detector 의 CAMERA_QOS 와 맞춘다. 다르면 구독이 아예 안 붙는다.
-IMAGE_QOS = QoSProfile(
-    history=HistoryPolicy.KEEP_LAST,
-    depth=1,
-    reliability=ReliabilityPolicy.BEST_EFFORT,
-    durability=DurabilityPolicy.VOLATILE,
-)
 
-# ETA 측정 결과용. multi_robot_emergency/mission_manager.py 의
-# eta_result_qos 와 같아야 한다. durability 가 다르면 ROS 2 는 연결을
-# 아예 안 맺고, 경고도 없이 아무것도 안 온다.
-#
-# TRANSIENT_LOCAL 이라 관제가 나중에 떠도 최근 10건을 받는다. 도착은
-# 몇 분에 한 번뿐이라 놓치면 다음 것을 한참 기다려야 하므로 이 편이 맞다.
-LATCHED_QOS = QoSProfile(
-    history=HistoryPolicy.KEEP_LAST,
-    depth=10,
-    reliability=ReliabilityPolicy.RELIABLE,
-    durability=DurabilityPolicy.TRANSIENT_LOCAL,
-)
+def image_qos():
+    """영상용. 최신 프레임만 의미가 있어 밀리면 버린다.
+
+    vision_detector 의 CAMERA_QOS 와 맞춘다. 다르면 구독이 아예 안 붙는다.
+    """
+    from rclpy.qos import (
+        DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy,
+    )
+    return QoSProfile(
+        history=HistoryPolicy.KEEP_LAST,
+        depth=1,
+        reliability=ReliabilityPolicy.BEST_EFFORT,
+        durability=DurabilityPolicy.VOLATILE,
+    )
+
+
+def latched_qos():
+    """ETA 측정 결과용.
+
+    multi_robot_emergency/mission_manager.py 의 eta_result_qos 와 같아야
+    한다. durability 가 다르면 ROS 2 는 연결을 아예 안 맺고, 경고도 없이
+    아무것도 안 온다.
+
+    TRANSIENT_LOCAL 이라 관제가 나중에 떠도 최근 10건을 받는다. 도착은
+    몇 분에 한 번뿐이라 놓치면 다음 것을 한참 기다려야 한다.
+    """
+    from rclpy.qos import (
+        DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy,
+    )
+    return QoSProfile(
+        history=HistoryPolicy.KEEP_LAST,
+        depth=10,
+        reliability=ReliabilityPolicy.RELIABLE,
+        durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    )
 
 # mission_manager 가 보는 공용 토픽.
 ROBOT_STATE_TOPIC = "/aed/robot_state"

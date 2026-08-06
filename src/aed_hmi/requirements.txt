@@ -1,0 +1,23 @@
+# 관제 서버(backend)가 쓰는 파이썬 패키지.
+#
+#   pip install -r requirements.txt
+#
+# ROS 쪽(rclpy, aed_interfaces, sensor_msgs, std_msgs)은 여기 없다. 그것들은
+# /opt/ros/humble 과 colcon build 로 들어오지 pip 으로 넣는 것이 아니다.
+# 그래서 이 목록만 설치하면 --mock 은 ROS 없이 그대로 뜬다.
+#
+# 버전을 하한만 적는 이유: 팀원마다 배포판 파이썬이 달라 정확히 고정하면
+# 누군가는 설치가 막힌다. 상한을 안 두는 대신, 큰 버전이 올라 깨지면
+# 그때 하한을 올린다.
+
+fastapi>=0.110
+uvicorn[standard]>=0.27
+
+# 화면과 주고받는 WebSocket. uvicorn[standard] 가 끌어오지만, 그쪽이
+# 빼더라도 깨지지 않게 직접 적는다.
+websockets>=12.0
+
+# --mock 이 영상 프레임을 만들 때 쓴다. ROS 에 붙여 쓸 때는 시스템에 이미
+# 깔린 python3-opencv 를 그대로 써도 된다.
+opencv-python>=4.8
+numpy>=1.24
