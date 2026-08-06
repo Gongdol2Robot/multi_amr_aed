@@ -14,7 +14,13 @@
      그 자리에 없을 때만 넣는다. 같은 말을 두 번 적으면 라벨만 길어진다.
      원본에 없는 것은 Topic 인지 Service 인지 Action 인지, 그리고 누가
      발행하고 누가 구독하는지다. 눈이 화살표를 떠나지 않게 거기 적는다.
-  2. main 에 실제로 도는 코드인지 표시한다. 29줄 뼈대뿐인 패키지는 그렇게
+  2. 오른쪽의 참조표를 걷어낸다. 원본은 흐름 옆에 IDL·QoS 정본(G),
+     상태전이·판단 기준(H), DB DDL·배포·시험(I) 표를 따로 두었다. 흐름을
+     따라가다 눈을 옆으로 돌려 표를 찾아야 하는 구조다. 표에 있던 판단
+     기준은 그 판단을 하는 흐름 상자 안으로 옮기고, 표는 지운다.
+     지운 것은 문서(docs/interfaces.md · db_queries.md)에 남아 있다.
+
+  3. main 에 실제로 도는 코드인지 표시한다. 29줄 뼈대뿐인 패키지는 그렇게
      적는다. 그림이 실제보다 앞서 보이면 리뷰에서 바로 어긋난다.
 
 사용:
@@ -112,6 +118,43 @@ STATUS = [
     ("helper_mission", "뼈대"),
     ("event_logger", "뼈대"),
     ("multi_robot_emergency", "main 에 없음"),
+]
+
+# 오른쪽 참조표가 시작되는 x. **원본 좌표 기준**이다. 그래서 지우는 일은
+# 반드시 확대하기 전에 해야 한다. 확대 뒤에 이 값을 쓰면 3배 왼쪽에서
+# 잘려 흐름까지 날아간다.
+#   G. 네트워크 인터페이스 IDL·QoS 정본   x≈6720
+#   H. 전체 상태전이·판단 기준            x≈8640
+#   I. DB DDL·배포·보안·수용시험          x≈10160
+REFERENCE_X = 6600
+
+# H 표에 있던 판단 기준 → 그 판단을 하는 흐름 상자.
+# 상자를 찾는 실마리(키워드)와 붙일 글이다.
+DECISIONS = [
+    ("후보별 최종 ETA",
+     "후보 tie: final_eta 오름차순 → robot_id 사전순. "
+     "planner 실패·빈 Path 후보는 제외"),
+    ("MissionAssignment 수신",
+     "Goal reject: 해당 로봇 5초 제외 · 같은 version 재사용 금지 · "
+     "200ms 안에 차순위로 version+1"),
+    ("정확 위치로 단일 로봇 이동",
+     "Feedback 끊김: 2초 경고 · 5초 취소(NETWORK). "
+     "heartbeat 도 5초 넘으면 로봇이 스스로 정지"),
+    ("상태 집계 · 감시",
+     "LiDAR 이상 판정: 공백 0.5초 초과 OR 유효점 30% 미만 OR "
+     "같은 CRC 3회. 3회 걸리면 degraded"),
+    ("활성 로봇 실패 감지",
+     "재가입: 모든 health 가 5초 연속 참이고 state_age 1초 이하일 때만. "
+     "옛 Goal 은 절대 재개하지 않고 새 generation 으로만"),
+    ("신고·이벤트 Transaction",
+     "동시 신고: 같은 report 는 기존 event 로 · 다른 active 면 409/Goal 0 · "
+     "CCTV 는 SUPPRESSED_ACTIVE 로 감사만"),
+    ("Safety Watchdog",
+     "Cancel 판정: ack 1초 초과 OR 0.5초 시점 속도 0.02 초과면 E-stop. "
+     "barrier 전에는 새 motion 금지"),
+    ("EMERGENCY_STOP",
+     "해제 조건: admin JWT + 각 로봇 physical_reset_counter 증가 + "
+     "health 5초 연속. 수동 우선순위 ESTOP3 > MANUAL lease2 > AUTONOMOUS1"),
 ]
 
 SHORT = {"구현": "구현", "뼈대": "뼈대", "main 에 없음": "없음"}
@@ -219,17 +262,70 @@ def mark_status(model: ET.Element) -> int:
     return changed
 
 
-def drop_legend(model: ET.Element) -> int:
-    """범례 상자를 뺀다. 정보를 화살표에 넣었으므로 찾아볼 일이 없다."""
+def merge_decisions(model: ET.Element) -> int:
+    """참조표에 있던 판단 기준을 그 판단을 하는 흐름 상자로 옮긴다."""
+    changed = 0
+    for cell in model.iter("mxCell"):
+        if cell.get("vertex") != "1":
+            continue
+        value = cell.get("value")
+        if not value:
+            continue
+        geometry = cell.find("mxGeometry")
+        if geometry is None or geometry.get("x") is None:
+            continue
+        if float(geometry.get("x")) >= REFERENCE_X:
+            continue          # 표 자신에는 붙이지 않는다
+        plain = re.sub(r"<[^>]+>", " ", value)
+        for key, note in DECISIONS:
+            if key in plain and note not in value:
+                cell.set("value", value + "<br>▸ " + note)
+                changed += 1
+                break
+    return changed
+
+
+def drop_reference(model: ET.Element) -> tuple:
+    """범례와 오른쪽 참조표를 뺀다.
+
+    흐름을 따라가다 옆으로 눈을 돌려 표를 찾게 만들지 않는다. 표에 있던
+    판단 기준은 merge_decisions 가 이미 흐름 상자로 옮겼고, 나머지(IDL 전문,
+    DB DDL, 배포, 수용시험)는 그림이 아니라 문서에 있을 내용이다.
+    """
     root = model.find("root")
-    dropped = 0
+    legend = 0
+    reference = 0
+    keep_ids = set()
+
     for cell in list(root):
         value = cell.get("value") or ""
         plain = re.sub(r"<[^>]+>", " ", value)
+        geometry = cell.find("mxGeometry")
+
         if "통신 범례" in plain:
             root.remove(cell)
-            dropped += 1
-    return dropped
+            legend += 1
+            continue
+
+        if cell.get("vertex") == "1" and geometry is not None \
+                and geometry.get("x") is not None \
+                and float(geometry.get("x")) >= REFERENCE_X:
+            root.remove(cell)
+            reference += 1
+            continue
+
+        keep_ids.add(cell.get("id"))
+
+    # 지운 상자에 걸려 있던 화살표도 같이 뺀다. 안 그러면 허공을 가리킨다.
+    for cell in list(root):
+        if cell.get("edge") != "1":
+            continue
+        source, target = cell.get("source"), cell.get("target")
+        if (source and source not in keep_ids) or \
+                (target and target not in keep_ids):
+            root.remove(cell)
+            reference += 1
+    return legend, reference
 
 
 def main() -> int:
@@ -250,15 +346,38 @@ def main() -> int:
     model = tree.getroot().find(".//mxGraphModel")
 
     before = (model.get("pageWidth"), model.get("pageHeight"))
-    scale_geometry(model, args.scale)
-    for key in ("pageWidth", "pageHeight"):
-        if model.get(key):
-            model.set(key, str(round(float(model.get(key)) * args.scale)))
 
+    # 순서가 중요하다. 지우고 옮기는 일은 **원본 좌표**에서 해야 한다.
+    # 확대한 뒤에 하면 REFERENCE_X 가 3배 왼쪽을 가리켜 흐름까지 지운다.
+    merged = merge_decisions(model)
+    legend, reference = drop_reference(model)
+
+    scale_geometry(model, args.scale)
     fonts = scale_fonts(model, args.scale)
     edges = enrich_edges(model)
     nodes = mark_status(model)
-    legend = drop_legend(model)
+
+    # 참조표를 뺐으니 그만큼 화면을 줄인다. 오른쪽이 텅 빈 채로 두면
+    # 열자마자 축소돼 글자가 다시 작아진다.
+    right = bottom = 0.0
+    for cell in model.iter("mxCell"):
+        geometry = cell.find("mxGeometry")
+        if geometry is None:
+            continue
+        # 화살표는 x/y 가 없고 mxPoint 로만 위치를 잡는 경우가 있다.
+        if geometry.get("x") is not None:
+            right = max(right, float(geometry.get("x"))
+                        + float(geometry.get("width") or 0))
+        if geometry.get("y") is not None:
+            bottom = max(bottom, float(geometry.get("y"))
+                         + float(geometry.get("height") or 0))
+        for point in geometry.iter("mxPoint"):
+            if point.get("x") is not None:
+                right = max(right, float(point.get("x")))
+            if point.get("y") is not None:
+                bottom = max(bottom, float(point.get("y")))
+    model.set("pageWidth", str(round(right + 200)))
+    model.set("pageHeight", str(round(bottom + 200)))
 
     tree.write(out, encoding="utf-8", xml_declaration=False)
 
@@ -268,7 +387,9 @@ def main() -> int:
     print(f"  글자 키운 셀   {fonts}개")
     print(f"  자료형 박은 화살표 {edges}개")
     print(f"  상태 표시한 노드  {nodes}개")
+    print(f"  흐름으로 옮긴 판단 {merged}개")
     print(f"  뺀 범례        {legend}개")
+    print(f"  뺀 참조표 셀    {reference}개")
     print(f"저장: {out}")
     return 0
 
