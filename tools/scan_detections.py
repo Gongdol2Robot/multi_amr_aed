@@ -45,6 +45,13 @@ DEFAULT_WEIGHTS = os.path.join(
 
 CLASSES = ("fallen_person", "helper")
 
+# 가중치 안의 이름은 helper_rc_car 인데 vision_detector 는 화면에 helper 로
+# 줄여 쓴다. 여기서도 화면과 같은 이름으로 센다.
+DISPLAY_NAMES = {
+    "fallen_person": "fallen_person",
+    "helper_rc_car": "helper",
+}
+
 # ultralytics 기본 팔레트. 클래스 0 은 파랑, 클래스 1 은 청록이다. BGR.
 BOX_COLOURS = {
     "fallen_person": lambda b, g, r: (b > 180) & (g < 120) & (r < 100),
@@ -90,7 +97,8 @@ def count_from_model(model, frame, conf: float, device: str) -> dict:
     names = model.names
     counts = {name: 0 for name in CLASSES}
     for box in boxes:
-        label = names[int(box.cls[0])]
+        raw = names[int(box.cls[0])]
+        label = DISPLAY_NAMES.get(raw, raw)
         if label in counts:
             counts[label] += 1
     return counts

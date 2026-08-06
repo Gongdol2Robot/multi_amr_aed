@@ -25,6 +25,14 @@ DEFAULT_WEIGHTS = os.path.join(
     REPO_ROOT, "src", "aed_vision", "models", "rescue_yolo11n.pt"
 )
 
+# 가중치 안의 클래스 이름은 helper_rc_car 인데, vision_detector 는 화면에
+# helper 로 줄여 쓴다(DISPLAY_NAMES). 두 화면이 같아 보여야 하므로 여기서도
+# 같게 줄인다.
+DISPLAY_NAMES = {
+    "fallen_person": "fallen_person",
+    "helper_rc_car": "helper",
+}
+
 # vision_detector 의 debug 영상과 같은 색을 쓴다. BGR 이다.
 COLOURS = {
     "fallen_person": (255, 100, 60),   # 파랑 계열
@@ -36,7 +44,8 @@ DEFAULT_COLOUR = (0, 200, 255)
 def draw(frame, boxes, names, fps_text: str) -> None:
     fallen = helper = 0
     for box in boxes:
-        cls = names[int(box.cls[0])]
+        raw = names[int(box.cls[0])]
+        cls = DISPLAY_NAMES.get(raw, raw)
         conf = float(box.conf[0])
         x1, y1, x2, y2 = (int(v) for v in box.xyxy[0])
         colour = COLOURS.get(cls, DEFAULT_COLOUR)

@@ -34,9 +34,17 @@ REPO_ROOT = os.path.abspath(
 VIDEO_DIR = "docs/videos"
 
 # stream_id -> (영상 파일, 재생 시작 지점 비율)
+#
+# 로봇 시점은 "출발 → 이동 → 발견"이 한 번에 담긴 26초를 쓴다. 주행
+# 전체(robot1_oakd_demo.mp4)는 벽만 보이는 구간이 길고, 뒤쪽에서 다른
+# 터틀봇을 쓰러진 사람으로 잘못 잡는 대목이 있다. 관제 화면에 띄울
+# 그림으로는 못 쓴다.
+#
+# 두 로봇이 같은 파일을 쓰므로 시작 위치를 벌린다. 한 대가 이동 중일 때
+# 다른 한 대는 이미 발견한 상태라, 화면이 같은 그림 둘로 보이지 않는다.
 VIDEO_SOURCES = {
-    "robot1": ("robot1_oakd_yolo.mp4", 0.00),
-    "robot2": ("robot1_oakd_yolo.mp4", 0.45),
+    "robot1": ("robot_approach_yolo.mp4", 0.00),
+    "robot2": ("robot_approach_yolo.mp4", 0.45),
     "camera_open": ("camera_open_demo.mp4", 0.00),
     "camera_alley": ("camera_alley_demo.mp4", 0.00),
 }
