@@ -3,7 +3,7 @@
 <package format="3">
   <name>aed_vision</name>
   <version>0.1.0</version>
-  <description>Camera input and map-coordinate utilities for AED emergency detection.</description>
+  <description>Camera-based AED emergency and crowd detection.</description>
   <maintainer email="team@example.com">multi_amr_aed team</maintainer>
   <license>Apache-2.0</license>
 
@@ -13,7 +13,6 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
-  <exec_depend>python3-yaml</exec_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>

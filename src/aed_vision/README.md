@@ -4,7 +4,7 @@
 골목 카메라에서는 실제 사람 수를 이용해 통로 혼잡도까지 판단하는 ROS 2
 패키지입니다.
 
-담당: 김지훈(호모그래피·위치 검증), 이현민(구조 대상·사람 검출 및 통합)
+담당: 이현민(구조 대상·사람 검출 및 통합)
 
 ## 카메라 구성
 
@@ -38,9 +38,7 @@
 한 프레임을 처리하는 동안 새 프레임이 도착하면 큐 깊이 1의 best-effort QoS를
 사용해 오래된 프레임을 쌓지 않습니다.
 
-`webcam_publisher` 실행 파일은 단독 카메라 토픽 시험용으로 남겨 두었지만,
-`camera_vision.launch.py`에서는 사용하지 않습니다. 실행 launch는 카메라별
-`vision_detector` 노드 하나만 시작합니다.
+실행 launch는 카메라별 `vision_detector` 노드 하나만 시작합니다.
 
 ## 설치
 
@@ -151,10 +149,3 @@ person이 0~1명이면 `CLEAR`, 2명 이상이면 `CROWDED`입니다.
 혼잡도는 골목 카메라에서만 의미가 있으므로 `camera_open`은 항상
 `NOT_APPLICABLE`을 발행합니다. 중앙 Mission Manager는 이 값을 사람 수 0과
 구별해야 합니다.
-
-## 좌표 변환 라이브러리
-
-`aed_vision.homography.Homography`는 bbox 하단 중앙점을 map 좌표로 변환합니다.
-현재 검출 노드는 고정 카메라별 `location_x`, `location_y`를 이벤트 위치로
-사용합니다. 실제 측량이 완료되면 `config/homography.example.yaml` 형식의
-행렬을 이용한 개별 검출 위치 계산으로 확장할 수 있습니다.
