@@ -1,4 +1,4 @@
-"""Launch only the central two-robot Nav2 path comparison manager."""
+"""Launch the central path manager and the two mission executors."""
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -38,6 +38,9 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "dispatch_retry_timeout_sec", default_value="15.0"
+            ),
+            DeclareLaunchArgument(
+                "assignment_ack_timeout_sec", default_value="3.0"
             ),
             DeclareLaunchArgument("planner_id", default_value="GridBased"),
             DeclareLaunchArgument(
@@ -87,6 +90,10 @@ def generate_launch_description() -> LaunchDescription:
                             LaunchConfiguration("dispatch_retry_timeout_sec"),
                             value_type=float,
                         ),
+                        "assignment_ack_timeout_sec": ParameterValue(
+                            LaunchConfiguration("assignment_ack_timeout_sec"),
+                            value_type=float,
+                        ),
                         "planner_id": LaunchConfiguration("planner_id"),
                         "automatic_request": ParameterValue(
                             LaunchConfiguration("automatic_request"),
@@ -110,6 +117,36 @@ def generate_launch_description() -> LaunchDescription:
                         ),
                     }
                 ],
+            ),
+            Node(
+                package="robot_missions",
+                executable="mission_executor",
+                name="robot1_mission_executor",
+                output="screen",
+                parameters=[{
+                    "robot_id": "robot1",
+                    "assignment_topic": "/robot1/mission_assignment",
+                    "navigate_action": "/robot1/navigate_to_pose",
+                    "dispatch_retry_timeout_sec": ParameterValue(
+                        LaunchConfiguration("dispatch_retry_timeout_sec"),
+                        value_type=float,
+                    ),
+                }],
+            ),
+            Node(
+                package="robot_missions",
+                executable="mission_executor",
+                name="robot2_mission_executor",
+                output="screen",
+                parameters=[{
+                    "robot_id": "robot2",
+                    "assignment_topic": "/robot2/mission_assignment",
+                    "navigate_action": "/robot2/navigate_to_pose",
+                    "dispatch_retry_timeout_sec": ParameterValue(
+                        LaunchConfiguration("dispatch_retry_timeout_sec"),
+                        value_type=float,
+                    ),
+                }],
             ),
         ]
     )

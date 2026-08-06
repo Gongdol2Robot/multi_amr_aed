@@ -8,9 +8,14 @@ import math
 import time
 
 from action_msgs.msg import GoalStatus
-from geometry_msgs.msg import PointStamped, PoseStamped, PoseWithCovarianceStamped
+from aed_interfaces.msg import MissionAssignment, MissionStatus, RobotState
+from geometry_msgs.msg import (
+    PointStamped,
+    PoseStamped,
+    PoseWithCovarianceStamped,
+)
 from irobot_create_msgs.msg import DockStatus
-from nav2_msgs.action import ComputePathToPose, NavigateToPose
+from nav2_msgs.action import ComputePathToPose
 from nav_msgs.msg import Path
 import rclpy
 from rclpy.action import ActionClient
@@ -51,6 +56,7 @@ class EmergencyMissionManager(Node):
         self.declare_parameter("docked_start_offset_m", 0.35)
         self.declare_parameter("planning_timeout_sec", 30.0)
         self.declare_parameter("dispatch_retry_timeout_sec", 15.0)
+        self.declare_parameter("assignment_ack_timeout_sec", 3.0)
         self.declare_parameter("planner_id", "GridBased")
         self.declare_parameter("dispatch_enabled", False)
         self.declare_parameter("automatic_request", False)
@@ -83,6 +89,9 @@ class EmergencyMissionManager(Node):
         self.dispatch_retry_timeout = float(
             self.get_parameter("dispatch_retry_timeout_sec").value
         )
+        self.assignment_ack_timeout = float(
+            self.get_parameter("assignment_ack_timeout_sec").value
+        )
         self.planner_id = str(self.get_parameter("planner_id").value)
         self.dispatch_enabled = bool(
             self.get_parameter("dispatch_enabled").value
@@ -93,6 +102,8 @@ class EmergencyMissionManager(Node):
             raise ValueError("planning_timeout_sec must be positive")
         if self.dispatch_retry_timeout <= 0.0:
             raise ValueError("dispatch_retry_timeout_sec must be positive")
+        if self.assignment_ack_timeout <= 0.0:
+            raise ValueError("assignment_ack_timeout_sec must be positive")
         if self.docked_start_offset < 0.0:
             raise ValueError("docked_start_offset_m must be non-negative")
 
@@ -133,14 +144,20 @@ class EmergencyMissionManager(Node):
 
         self.observations: dict[str, RobotObservation] = {}
         self.dock_states: dict[str, bool] = {}
-        self.navigation_clients = {
-            robot_id: ActionClient(
-                self,
-                NavigateToPose,
-                f"/{robot_id}/navigate_to_pose",
+        self.assignment_publishers = {
+            robot_id: self.create_publisher(
+                MissionAssignment,
+                f"/{robot_id}/mission_assignment",
+                10,
             )
             for robot_id in self.robot_ids
         }
+        self.mission_status_subscription = self.create_subscription(
+            MissionStatus,
+            "/aed/mission_status",
+            self._on_mission_status,
+            20,
+        )
         self.planner_clients = {
             robot_id: ActionClient(
                 self,
@@ -197,11 +214,6 @@ class EmergencyMissionManager(Node):
         self.marker_timer = self.create_timer(0.5, self._publish_robot_markers)
 
         self.request_serial = 0
-        self.goal_serial = 0
-        self.goal_handle = None
-        self.pending_dispatch: tuple[str, PoseStamped] | None = None
-        self.dispatch_retry_deadline = 0.0
-        self.dispatch_retry_timer = None
         self.navigation_active = False
         self.planning_active = False
         self.pending_plans: set[str] = set()
@@ -210,6 +222,10 @@ class EmergencyMissionManager(Node):
         self.planning_target: PoseStamped | None = None
         self.planning_timer = None
         self.selected_robot = ""
+        self.ranked_candidates: list[str] = []
+        self.excluded_robots: set[str] = set()
+        self.assignment_version = 0
+        self.assignment_ack_timer = None
         self.active_request_id = ""
         self.state = "IDLE"
         self._last_feedback_log = 0.0
@@ -230,7 +246,8 @@ class EmergencyMissionManager(Node):
             "y: 2.4}, orientation: {w: 1.0}}}'"
         )
         self.get_logger().info(
-            f"Dispatch enabled: {self.dispatch_enabled}; robots={self.robot_ids}"
+            f"Dispatch enabled: {self.dispatch_enabled}; "
+            f"robots={self.robot_ids}"
         )
         self.get_logger().info(
             "RViz Publish Point topics: " + ", ".join(click_topics)
@@ -239,7 +256,10 @@ class EmergencyMissionManager(Node):
     def _on_pose(
         self, robot_id: str, message: PoseWithCovarianceStamped
     ) -> None:
-        if message.header.frame_id and message.header.frame_id != self.map_frame:
+        if (
+            message.header.frame_id
+            and message.header.frame_id != self.map_frame
+        ):
             self.get_logger().warning(
                 f"Ignoring {robot_id} pose in frame "
                 f"{message.header.frame_id!r}; expected {self.map_frame!r}"
@@ -269,7 +289,9 @@ class EmergencyMissionManager(Node):
             )
             return
         if not self._finite_pose(request):
-            self._publish_status("FAILED", "request pose contains non-finite data")
+            self._publish_status(
+                "FAILED", "request pose contains non-finite data"
+            )
             return
         if self.planning_active or self.navigation_active:
             self.get_logger().warning(
@@ -278,6 +300,9 @@ class EmergencyMissionManager(Node):
             return
 
         self.request_serial += 1
+        self.assignment_version = 0
+        self.ranked_candidates.clear()
+        self.excluded_robots.clear()
         request.header.stamp = self.get_clock().now().to_msg()
         self.active_request_id = f"emergency-{self.request_serial:03d}"
         self._publish_status("EMERGENCY_RECEIVED", self.active_request_id)
@@ -362,7 +387,8 @@ class EmergencyMissionManager(Node):
             return
         self.planning_timer = self.create_timer(
             self.planning_timeout,
-            lambda serial=self.request_serial: self._on_planning_timeout(serial),
+            lambda serial=self.request_serial:
+            self._on_planning_timeout(serial),
         )
 
     def _on_plan_response(self, robot_id: str, serial: int, future) -> None:
@@ -371,10 +397,14 @@ class EmergencyMissionManager(Node):
         try:
             handle = future.result()
         except Exception as error:
-            self._record_plan_failure(robot_id, serial, f"request error: {error}")
+            self._record_plan_failure(
+                robot_id, serial, f"request error: {error}"
+            )
             return
         if not handle.accepted:
-            self._record_plan_failure(robot_id, serial, "planner rejected goal")
+            self._record_plan_failure(
+                robot_id, serial, "planner rejected goal"
+            )
             return
         handle.get_result_async().add_done_callback(
             lambda result, rid=robot_id: self._on_plan_result(
@@ -390,7 +420,9 @@ class EmergencyMissionManager(Node):
             path = wrapped_result.result.path
             status = int(wrapped_result.status)
         except Exception as error:
-            self._record_plan_failure(robot_id, serial, f"result error: {error}")
+            self._record_plan_failure(
+                robot_id, serial, f"result error: {error}"
+            )
             return
         if status != GoalStatus.STATUS_SUCCEEDED:
             self._record_plan_failure(
@@ -398,7 +430,9 @@ class EmergencyMissionManager(Node):
             )
             return
         if not path.poses:
-            self._record_plan_failure(robot_id, serial, "planner returned empty path")
+            self._record_plan_failure(
+                robot_id, serial, "planner returned empty path"
+            )
             return
 
         try:
@@ -472,7 +506,8 @@ class EmergencyMissionManager(Node):
             ),
             key=lambda item: (item[1], item[0]),
         )
-        self.selected_robot = ranked[0][0]
+        self.ranked_candidates = [robot_id for robot_id, _ in ranked]
+        self.selected_robot = self.ranked_candidates[0]
         self._publish_selected_robot(self.selected_robot)
         detail = ", ".join(
             f"{robot_id}={distance:.2f}m" for robot_id, distance in ranked
@@ -492,131 +527,130 @@ class EmergencyMissionManager(Node):
                 "the selected robot."
             )
             return
+        self._publish_assignment(self.selected_robot)
+
+    def _publish_assignment(self, robot_id: str) -> None:
         if self.planning_target is None:
+            self.navigation_active = False
             self._publish_status("FAILED", "planning target was lost")
             return
+        self.assignment_version += 1
+        self.selected_robot = robot_id
         self.navigation_active = True
-        self.pending_dispatch = (
-            self.selected_robot,
-            deepcopy(self.planning_target),
-        )
-        self.dispatch_retry_deadline = (
-            time.monotonic() + self.dispatch_retry_timeout
-        )
-        self._dispatch_goal(self.selected_robot, self.planning_target)
-
-    def _dispatch_goal(self, robot_id: str, target: PoseStamped) -> None:
-        client = self.navigation_clients[robot_id]
-        if not client.wait_for_server(timeout_sec=2.0):
-            self._retry_dispatch_or_fail(
-                f"/{robot_id}/navigate_to_pose is unavailable"
-            )
-            return
-        self.goal_serial += 1
-        serial = self.goal_serial
-        goal = NavigateToPose.Goal()
-        goal.pose = deepcopy(target)
-        goal.pose.header.stamp = self.get_clock().now().to_msg()
-        future = client.send_goal_async(
-            goal,
-            feedback_callback=lambda feedback: self._on_feedback(
-                robot_id, serial, feedback
-            ),
-        )
-        future.add_done_callback(
-            lambda response: self._on_goal_response(robot_id, serial, response)
+        self._publish_selected_robot(robot_id)
+        assignment = MissionAssignment()
+        assignment.mission_id = f"{self.active_request_id}-aed"
+        assignment.event_id = self.active_request_id
+        assignment.robot_id = robot_id
+        assignment.role = RobotState.ROLE_AED_DELIVERY
+        assignment.target = deepcopy(self.planning_target)
+        assignment.assigned_at = self.get_clock().now().to_msg()
+        assignment.assignment_version = self.assignment_version
+        assignment.cancel_previous = True
+        self.assignment_publishers[robot_id].publish(assignment)
+        self._start_assignment_ack_timer(
+            self.active_request_id,
+            robot_id,
+            self.assignment_version,
         )
         self._publish_status(
-            "ASSIGNED", f"goal sent only to {robot_id}"
+            "DISPATCHING",
+            f"assignment v{self.assignment_version} published to {robot_id}",
         )
 
-    def _on_goal_response(self, robot_id: str, serial: int, future) -> None:
-        if serial != self.goal_serial:
+    def _on_mission_status(self, status: MissionStatus) -> None:
+        if status.event_id != self.active_request_id:
             return
-        try:
-            handle = future.result()
-        except Exception as error:
+        if status.robot_id != self.selected_robot:
+            return
+        if status.assignment_version != self.assignment_version:
+            return
+
+        self._cancel_assignment_ack_timer()
+
+        if status.status == MissionStatus.DISPATCHING:
+            self._publish_status(
+                "DISPATCHING", status.reason or status.robot_id
+            )
+            return
+        if status.status == MissionStatus.EN_ROUTE:
+            self._publish_status("NAVIGATING", f"{status.robot_id} is moving")
+            return
+        if status.status in (MissionStatus.ARRIVED, MissionStatus.COMPLETED):
             self.navigation_active = False
-            self._publish_status("FAILED", f"goal send error: {error}")
-            return
-        if not handle.accepted:
-            self._retry_dispatch_or_fail(
-                f"{robot_id} navigator rejected the goal while starting"
+            self._publish_status(
+                "ARRIVED", f"{status.robot_id} reached the emergency"
             )
+            self._publish_status("COMPLETED", self.active_request_id)
             return
-        self.pending_dispatch = None
-        self._cancel_dispatch_retry_timer()
-        self.goal_handle = handle
-        self._publish_status("NAVIGATING", f"{robot_id} is moving")
-        handle.get_result_async().add_done_callback(
-            lambda result: self._on_navigation_result(robot_id, serial, result)
+        if status.status not in {
+            MissionStatus.CANCELED,
+            MissionStatus.BLOCKED,
+            MissionStatus.NETWORK_LOST,
+            MissionStatus.NAVIGATION_ERROR,
+        }:
+            return
+
+        self._reassign_after_failure(status.robot_id, status.reason)
+
+    def _start_assignment_ack_timer(
+        self, event_id: str, robot_id: str, assignment_version: int
+    ) -> None:
+        self._cancel_assignment_ack_timer()
+        self.assignment_ack_timer = self.create_timer(
+            self.assignment_ack_timeout,
+            lambda: self._on_assignment_ack_timeout(
+                event_id, robot_id, assignment_version
+            ),
         )
 
-    def _retry_dispatch_or_fail(self, reason: str) -> None:
-        """Retry while Nav2 lifecycle nodes finish activating."""
-        if (
-            self.pending_dispatch is not None
-            and time.monotonic() < self.dispatch_retry_deadline
-        ):
-            self.get_logger().warning(f"{reason}; retrying in 0.5s")
-            self._cancel_dispatch_retry_timer()
-            self.dispatch_retry_timer = self.create_timer(
-                0.5, self._retry_pending_dispatch
-            )
+    def _cancel_assignment_ack_timer(self) -> None:
+        if self.assignment_ack_timer is None:
             return
-        self.pending_dispatch = None
-        self.navigation_active = False
-        self._cancel_dispatch_retry_timer()
-        self._publish_status("FAILED", reason)
-
-    def _retry_pending_dispatch(self) -> None:
-        pending = self.pending_dispatch
-        self._cancel_dispatch_retry_timer()
-        if pending is None:
-            return
-        robot_id, target = pending
-        self._dispatch_goal(robot_id, target)
-
-    def _cancel_dispatch_retry_timer(self) -> None:
-        if self.dispatch_retry_timer is None:
-            return
-        timer = self.dispatch_retry_timer
-        self.dispatch_retry_timer = None
+        timer = self.assignment_ack_timer
+        self.assignment_ack_timer = None
         timer.cancel()
         self.destroy_timer(timer)
 
-    def _on_feedback(self, robot_id: str, serial: int, feedback) -> None:
-        if serial != self.goal_serial:
+    def _on_assignment_ack_timeout(
+        self, event_id: str, robot_id: str, assignment_version: int
+    ) -> None:
+        self._cancel_assignment_ack_timer()
+        if (
+            event_id != self.active_request_id
+            or robot_id != self.selected_robot
+            or assignment_version != self.assignment_version
+            or not self.navigation_active
+        ):
             return
-        now = time.monotonic()
-        if now - self._last_feedback_log < 2.0:
-            return
-        self._last_feedback_log = now
-        remaining = float(feedback.feedback.distance_remaining)
-        self.get_logger().info(
-            f"{robot_id} navigating: remaining={remaining:.2f}m"
+        self._reassign_after_failure(
+            robot_id,
+            f"mission executor did not acknowledge within "
+            f"{self.assignment_ack_timeout:.1f}s",
         )
 
-    def _on_navigation_result(self, robot_id: str, serial: int, future) -> None:
-        if serial != self.goal_serial:
-            return
-        self.goal_handle = None
-        self.navigation_active = False
-        try:
-            status = int(future.result().status)
-        except Exception as error:
-            self._publish_status("FAILED", f"result error: {error}")
-            return
-        if status == GoalStatus.STATUS_SUCCEEDED:
-            self._publish_status("ARRIVED", f"{robot_id} reached the emergency")
-            self._publish_status("COMPLETED", self.active_request_id)
-            return
-        if status == GoalStatus.STATUS_CANCELED:
-            self._publish_status("FAILED", f"{robot_id} goal was canceled")
+    def _reassign_after_failure(self, failed_robot: str, reason: str) -> None:
+        self.excluded_robots.add(failed_robot)
+        next_robot = next(
+            (
+                robot_id
+                for robot_id in self.ranked_candidates
+                if robot_id not in self.excluded_robots
+            ),
+            None,
+        )
+        if next_robot is None:
+            self.navigation_active = False
+            self._publish_status(
+                "FAILED",
+                f"all candidates failed; last={failed_robot}: {reason}",
+            )
             return
         self._publish_status(
-            "FAILED", f"{robot_id} Nav2 result status={status}"
+            "REASSIGNING",
+            f"exclude {failed_robot}; assigning {next_robot}",
         )
+        self._publish_assignment(next_robot)
 
     def _publish_automatic_request(self) -> None:
         if self._automatic_request_timer is None:
