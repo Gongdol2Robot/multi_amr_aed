@@ -66,3 +66,6 @@ vision_training/caterpillar_fall_pose_best.pt
 
 # 데모 실행 중 남는 로그와 pid
 var/
+
+# 설계도 원본(drawio)은 각자 관리한다
+docs/*.drawio
