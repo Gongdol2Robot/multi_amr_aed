@@ -17,6 +17,7 @@ DEFAULT_PERSON_WEIGHTS = ROOT / "models" / "yolo11n.pt"
 DEFAULT_CAPTURE_DIR = ROOT / "test_captures"
 RESCUE_WINDOW = "Fine-tuned Rescue Model"
 PERSON_WINDOW = "YOLO11n COCO Person"
+RESCUE_DISPLAY_NAMES = {0: "fallen_person", 1: "helper"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -149,7 +150,7 @@ def put_status(frame, text: str) -> None:
 def main() -> int:
     """동일한 영상 프레임을 두 모델로 추론하여 별도 창에 실시간 표시한다.
 
-    첫 창은 파인튜닝 구조 모델의 fallen_person/helper_rc_car 검출 결과를,
+    첫 창은 파인튜닝 구조 모델의 fallen_person/helper 검출 결과를,
     둘째 창은 기본 COCO YOLO11n의 person 검출 결과를 보여준다. S 키로 두
     화면을 동시에 저장할 수 있으며 Q 또는 ESC로 종료한다.
     """
@@ -234,6 +235,10 @@ def main() -> int:
             )[0]
             person_ms = (perf_counter() - started) * 1000
 
+            # 학습 클래스명 helper_rc_car는 가중치 검증과 개수 집계에 유지하되,
+            # 사용자 화면의 bbox에는 역할을 나타내는 helper로 짧게 표시한다.
+            rescue_result.names = RESCUE_DISPLAY_NAMES
+
             # result.plot()은 원본 프레임을 보존한 채 bbox가 그려진 이미지를 만든다.
             rescue_frame = rescue_result.plot()
             person_frame = person_result.plot()
@@ -249,7 +254,7 @@ def main() -> int:
             put_status(
                 rescue_frame,
                 f"fallen: {rescue_counts['fallen_person']} | "
-                f"helper RC: {rescue_counts['helper_rc_car']} | {rescue_ms:.1f} ms",
+                f"helper: {rescue_counts['helper_rc_car']} | {rescue_ms:.1f} ms",
             )
             put_status(
                 person_frame,

@@ -80,4 +80,3 @@ class Homography:
                 if x < intersection:
                     inside = not inside
         return inside
-
