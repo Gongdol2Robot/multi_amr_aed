@@ -22,12 +22,19 @@ venv/
 # Runtime output
 bags/
 captures/
+tools/survey/*.jpg
 data/
 datasets/
 runs/
 *.db
 *.sqlite
 *.sqlite3
+
+# slam_toolbox 직렬화 결과. 스캔을 통째로 담아 수백 MB가 나온다.
+# 지도 자체는 map.pgm/map.yaml로 충분하고, posegraph는 이어서 매핑할
+# 사람만 로컬에 두면 된다.
+maps/*.posegraph
+maps/*.data
 
 # Large/generated ML artifacts
 models/*.engine

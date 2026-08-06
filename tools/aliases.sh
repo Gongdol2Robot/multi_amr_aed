@@ -57,17 +57,52 @@ dock() {
   ros2 action send_goal /robot$n/dock irobot_create_msgs/action/Dock "{}"
 }
 
+slam() {
+  local n=${1:-1}
+  ros2 launch turtlebot4_navigation slam.launch.py namespace:=/robot$n
+}
+
+drive() {
+  local n=${1:-1}
+  ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args \
+    -r /cmd_vel:=/robot$n/cmd_vel
+}
+
+# SLAM과 Nav2가 떠 있어야 한다. 미탐색 경계로 갈 목표만 Nav2에 던진다.
+explore() {
+  "$AED_WS/tools/explore.sh" "${1:-1}"
+}
+
+# 지도는 slam_toolbox가 살아 있는 동안에만 저장할 수 있다. SLAM 터미널을
+# 먼저 끄면 그때까지 돈 것이 전부 사라진다.
+#
+# slam_toolbox의 save_map 서비스는 쓰지 않는다. 내부에서 map_saver를 띄우는데
+# 대기 시간이 2초로 고정이라 discovery server 환경에서는 지도를 못 받고
+# result=255로 실패한다. map_saver_cli를 직접 부르고 시간을 넉넉히 준다.
+savemap() {
+  local n=${1:-1} name=${2:-map}
+  mkdir -p "$AED_WS/maps"
+  ros2 run nav2_map_server map_saver_cli \
+    -f "$AED_WS/maps/$name" -t "/robot$n/map" \
+    --ros-args -p save_map_timeout:=15.0 || return 1
+  # posegraph는 이어서 매핑할 때만 필요하다. 수백 MB라 git에는 올리지 않는다.
+  ros2 service call /robot$n/slam_toolbox/serialize_map \
+    slam_toolbox/srv/SerializePoseGraph "{filename: '$AED_WS/maps/$name'}"
+}
+
 loc() {
   local n=${1:-1} map=${2:-$AED_WS/maps/map.yaml}
   ros2 launch turtlebot4_navigation localization.launch.py \
     namespace:=/robot$n map:="$map"
 }
 
+# 두 로봇이 지도는 공유하지만 Dock 위치가 달라 초기 위치는 각자 다르다.
+# 좌표는 src/aed_bringup/config/dock_poses.yaml 에서 읽는다.
+#   initpose 2            robot2 의 Dock 위치를 발행
+#   initpose 1 --record   현재 위치를 robot1 항목에 기록
 initpose() {
-  local n=${1:-1}
-  ros2 topic pub --times 3 /robot$n/initialpose \
-    geometry_msgs/msg/PoseWithCovarianceStamped \
-    "{header: {frame_id: 'map'}, pose: {pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}, covariance: [0.25,0,0,0,0,0, 0,0.25,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0.0685]}}"
+  local n=${1:-1}; shift 2>/dev/null || true
+  python3 "$AED_WS/tools/initpose.py" "$n" "$@"
 }
 
 nav() {

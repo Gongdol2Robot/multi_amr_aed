@@ -1,0 +1,48 @@
+# explore_lite 자동 탐사 설정 (SLAM 매핑용)
+#
+# explore_lite 기본 params.yaml은 루트 키가 `explore_node:`라서 네임스페이스가
+# 붙은 /robot2/explore_node 에는 적용되지 않는다. 파라미터가 조용히 무시되고
+# 기본값으로 도는 것을 막기 위해 `/**:` 로 둔다.
+#
+# 사용:
+#   ros2 launch explore_lite explore.launch.py namespace:=/robot2 \
+#     use_sim_time:=false
+#   (이 파일을 쓰려면 explore.launch.py 대신 tools/explore.sh 를 쓴다.
+#    launch 파일이 params 인자를 받지 않기 때문이다.)
+/**:
+  ros__parameters:
+    use_sim_time: false
+    robot_base_frame: base_link
+
+    # Nav2 global_costmap이 아니라 slam_toolbox 원본 지도를 본다.
+    # 프론티어 탐색은 비용이 정확히 0인 셀만 자유 공간으로 인정하고 그 셀만
+    # 밟고 퍼져나간다. global_costmap은 inflation 때문에 벽 근처 자유 공간의
+    # 비용이 0이 아니라서, 문틈을 통과하지 못하고 탐색이 갇힌 채
+    # "No frontiers found"로 조기 종료한다. 실제로 그렇게 실패했다.
+    # 네임스페이스 안에서 도는 노드라 상대 경로로 둔다.
+    costmap_topic: map
+    costmap_updates_topic: map_updates
+
+    visualize: true
+
+    # 목표 재계산 주기. 너무 높이면 discovery server가 느린 환경에서
+    # goal이 계속 갈려 로봇이 제자리에서 흔들린다.
+    planner_frequency: 0.15
+
+    # 한 목표에서 진전이 없을 때 포기하고 다음 프론티어로 넘어가는 시간.
+    # TurtleBot4는 회전이 느려 기본 30초로는 성급하게 포기하는 경우가 있다.
+    progress_timeout: 45.0
+
+    potential_scale: 3.0
+    orientation_scale: 0.0
+    gain_scale: 1.0
+    transform_tolerance: 0.3
+
+    # 이보다 작은 미탐색 경계는 무시한다. 값이 작으면 가구 틈새 같은
+    # 자잘한 구멍을 쫓아다니느라 탐사가 안 끝나고, 크면 문 하나 폭짜리
+    # 입구가 통째로 걸러져 방을 통으로 빠뜨린다.
+    min_frontier_size: 0.5
+
+    # 탐사가 끝나면 시작 지점으로 복귀한다. 도크 근처에서 시작했다면
+    # 그대로 dock 을 부르기 좋다.
+    return_to_init: true
