@@ -61,6 +61,20 @@ async def travel_time(request: Request):
     return stats
 
 
+@router.get("/stats/eta-accuracy")
+async def eta_accuracy(request: Request, limit: int = 20):
+    """예상이 실제와 얼마나 달랐나.
+
+    /stats/travel-time 은 우리가 잰 주행 시간이고, 이쪽은 주행 전에 낸
+    예상과 실제를 한 쌍으로 비교한 것이다. 예상 계수를 고칠 근거는
+    이쪽에서만 나온다.
+    """
+    repository = request.app.state.context.repository
+    stats = repository.eta_accuracy_stats()
+    stats["recent"] = repository.recent_eta_records(limit)
+    return stats
+
+
 @router.get("/robots/{robot_id}/track")
 async def robot_track(
     robot_id: str,

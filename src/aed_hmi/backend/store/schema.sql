@@ -86,3 +86,28 @@ CREATE TABLE IF NOT EXISTS robot_samples (
 
 CREATE INDEX IF NOT EXISTS idx_robot_samples
     ON robot_samples (robot_id, stamp DESC);
+
+-- 도착 예상과 실제를 한 쌍으로 잰 결과. 출동 한 건이 끝날 때 한 줄 생긴다.
+--
+-- mission_events 와 따로 두는 이유: 저쪽은 "무슨 일이 있었나"를 남기는
+-- 이력이고 이건 "예상이 얼마나 맞았나"를 재는 측정값이다. 성격이 달라서
+-- 섞으면 둘 다 읽기 어려워진다.
+--
+-- 외래키를 걸지 않는다. 이 값은 multi_robot_emergency 가 자기 request_id
+-- 로 보내는데, 그쪽 신고가 관제 DB 를 거쳐 들어왔다는 보장이 없다.
+-- 측정값을 신고 기록에 종속시키면 신고를 못 받은 구간의 측정까지 잃는다.
+CREATE TABLE IF NOT EXISTS eta_records (
+    request_id          TEXT NOT NULL,
+    robot_id            TEXT NOT NULL,
+    predicted_sec       REAL NOT NULL,
+    actual_sec          REAL NOT NULL,
+    error_sec           REAL NOT NULL,
+    status              TEXT NOT NULL DEFAULT '',
+    stamp               REAL NOT NULL,
+    -- 재할당되면 로봇마다 한 줄씩 남는다. 같은 로봇이 같은 요청을 두 번
+    -- 도착할 일은 없으므로 이 둘이면 한 건이 특정된다.
+    PRIMARY KEY (request_id, robot_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_eta_records_stamp
+    ON eta_records (stamp DESC);

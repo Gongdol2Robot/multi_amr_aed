@@ -151,3 +151,29 @@ export interface ResponseTimeStats {
   min_seconds: number | null;
   max_seconds: number | null;
 }
+
+/** 출동 한 건의 예상 대 실제. 백엔드 domain/models.py 의 EtaRecord 와 1:1. */
+export interface EtaRecord {
+  request_id: string;
+  robot_id: string;
+  predicted_sec: number;
+  actual_sec: number;
+  /** 양수면 예상보다 늦게 도착했다는 뜻. */
+  error_sec: number;
+  status: string;
+  stamp: number;
+}
+
+export interface EtaAccuracyStats {
+  total: number;
+  /** 평균 오차. 부호가 상쇄되므로 이것만 보면 안 된다. */
+  avg_error_sec: number | null;
+  /** 절대 오차 평균. 실제 정확도는 이쪽이다. */
+  avg_abs_error_sec: number | null;
+  max_abs_error_sec: number | null;
+  avg_predicted_sec: number | null;
+  avg_actual_sec: number | null;
+  /** 예상보다 늦은 건수. 관제에서 문제가 되는 것은 이쪽뿐이다. */
+  late_count: number;
+  recent: EtaRecord[];
+}

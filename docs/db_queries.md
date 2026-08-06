@@ -1,6 +1,6 @@
 # DB 설계와 쿼리
 
-표 네 개의 키·인덱스를 왜 그렇게 잡았고, 화면이 부르는 쿼리를 어떻게
+표 다섯 개의 키·인덱스를 왜 그렇게 잡았고, 화면이 부르는 쿼리를 어떻게
 짰는지 적는다. 어떤 값이 어느 인터페이스에서 오는지는
 [db_interfaces.md](db_interfaces.md) 에 있다.
 
@@ -39,6 +39,7 @@
 | `mission_assignments` | `(mission_id, assignment_version)` **복합키** | 재할당이 같은 임무의 다른 판이다 |
 | `mission_events` | `id` (INTEGER AUTOINCREMENT) **대리키** | 같은 임무·같은 상태가 여러 번 올 수 있다 |
 | `robot_samples` | `id` (INTEGER AUTOINCREMENT) **대리키** | 표본에는 자연키가 없다 |
+| `eta_records` | `(request_id, robot_id)` **복합키** | 재할당되면 로봇마다 한 건씩 남는다 |
 
 ### 왜 `event_id` 는 자연키인가
 
@@ -83,6 +84,11 @@ mission_assignments.event_id  →  emergency_events.event_id
 **외래키는 이 하나뿐이다.** 배정은 반드시 신고가 있어야 생긴다. 신고
 없는 배정이 들어오면 그 자체가 버그이므로 DB 가 막는 편이 낫다.
 
+`eta_records` 에도 걸지 않았다. 그 값은 `multi_robot_emergency` 가 자기
+`request_id` 로 보내는데, 그쪽 신고가 관제 DB 를 거쳐 들어왔다는 보장이
+없다. 측정값을 신고 기록에 종속시키면 신고를 못 받은 구간의 측정까지
+잃는다. 측정은 그 자체로 값이 있다.
+
 `mission_events` 에는 외래키를 걸지 않았다. 이력은 **들어온 그대로 남기는
 것이 목적**이라, 신고 기록이 유실됐다고 해서 그 뒤의 상태 전이까지 버리면
 "무슨 일이 있었는지"를 더 모르게 된다. 대신 `recent_missions` 가
@@ -119,6 +125,7 @@ connection.execute("PRAGMA foreign_keys = ON")
 | `idx_mission_events_mission` | `mission_events (mission_id, stamp)` | 임무 하나의 이력을 시각순으로 |
 | `idx_mission_events_stamp` | `mission_events (stamp DESC)` | 최근 전이부터 |
 | `idx_robot_samples` | `robot_samples (robot_id, stamp DESC)` | 로봇 하나의 최근 궤적 |
+| `idx_eta_records_stamp` | `eta_records (stamp DESC)` | 최근 측정부터 |
 
 복합 인덱스의 **열 순서**가 중요하다. `(mission_id, stamp)` 는
 "임무를 고른 뒤 시각순"에 쓰이고, `(stamp, mission_id)` 였다면 그 질의에
@@ -220,6 +227,36 @@ SELECT COUNT(*), AVG(arrived_at - called_at), MIN(...), MAX(...) FROM per_missio
 어긋난 기록(로봇 시계가 튀거나 전이가 뒤집혀 들어온 경우)이 평균을
 음수로 끌고 가는 것을 막는다.
 
+### `eta_accuracy_stats()` — 예상이 얼마나 맞았나
+
+```sql
+SELECT COUNT(*)                                       AS total,
+       AVG(error_sec)                                 AS avg_error_sec,
+       AVG(ABS(error_sec))                            AS avg_abs_error_sec,
+       MAX(ABS(error_sec))                            AS max_abs_error_sec,
+       SUM(CASE WHEN error_sec > 0 THEN 1 ELSE 0 END) AS late_count
+FROM eta_records
+```
+
+**평균 오차와 절대 오차를 따로 내는 것**이 이 쿼리의 요점이다. 30초 늦고
+30초 빠른 두 건은 `AVG(error_sec)` 이 0 이라 "정확하다"로 보이지만 실제로는
+둘 다 30초씩 틀렸다. 부호가 상쇄되지 않는 `AVG(ABS(error_sec))` 이 함께
+있어야 정확도를 읽을 수 있다. 화면에는 절대 오차를 띄운다.
+
+실측이 이 차이를 그대로 보여준다.
+
+```
+avg_error_sec      0.06   ← 이것만 보면 거의 완벽해 보인다
+avg_abs_error_sec  0.94   ← 실제로는 건당 1초 가까이 틀렸다
+```
+
+`late_count` 는 예상보다 **늦은** 건수다. 관제에서 문제가 되는 것은 늦는
+쪽뿐이다. 빨리 도착하는 것에는 아무도 항의하지 않는다.
+
+`travel_time_stats()` 와 다르다. 저쪽은 우리가 사후에 잰 주행 시간이고,
+이쪽은 **주행 전에 낸 예상**과 실제를 한 쌍으로 비교한 것이다. 예상 계수
+(`domain/eta.py` 의 순항 속도·우회 계수)를 고칠 근거는 이쪽에서만 나온다.
+
 ### `robot_track()` — 궤적
 
 ```sql
@@ -242,6 +279,7 @@ ORDER BY stamp DESC LIMIT ?
 | `mission_assignments` | `INSERT OR IGNORE` | 같은 배정이 두 번 와도 조용히 넘어간다 |
 | `mission_events` | `INSERT` | 이력은 무조건 덧붙인다 |
 | `robot_samples` | `INSERT` | 1초에 한 번만 |
+| `eta_records` | `INSERT ... ON CONFLICT DO UPDATE` | 아래 |
 
 `upsert_event` 의 `DO UPDATE` 에서 **`called_at` 은 건드리지 않는다.**
 
@@ -257,6 +295,11 @@ ON CONFLICT (event_id) DO UPDATE SET
 
 상태가 바뀔 때마다 신고 시각이 밀리면 응답 시간이 계속 줄어들어
 통계가 무의미해진다. **접수 시각은 최초 1회만 쓴다.**
+
+`eta_records` 가 덮어쓰기인 이유는 QoS 때문이다. 그 토픽은
+`TRANSIENT_LOCAL` 이라 관제가 다시 뜨면 지난 결과가 한 번 더 온다.
+`INSERT` 만 하면 그때마다 UNIQUE 위반이 나고, `INSERT OR IGNORE` 로 두면
+값이 고쳐졌을 때 반영이 안 된다. 덮어쓰면 양쪽을 다 막는다.
 
 `robot_samples` 는 10Hz 로 오는 것을 **1초에 한 번만** 남긴다
 (`Settings.robot_sample_interval_s`). 그대로 넣으면 로봇 2대에 하루

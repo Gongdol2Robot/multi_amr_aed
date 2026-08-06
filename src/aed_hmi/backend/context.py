@@ -77,6 +77,13 @@ class Context:
         """vision_detector 가 매 프레임 내는 사람 수. 검출 표시의 근거다."""
         self.live.put_person_count(stream_id, count)
 
+    def on_eta_record(self, record) -> None:
+        """도착 예상·실제 한 쌍. 통계로만 쓰므로 화면 상태에는 안 넣는다."""
+        try:
+            self.repository.upsert_eta_record(record)
+        except Exception:
+            LOGGER.exception("ETA 기록 저장 실패: %s", record.request_id)
+
     def on_assignment(
         self, mission_id: str, version: int, event_id: str, robot_id: str,
         role: str, target: Point2D, assigned_at: float,

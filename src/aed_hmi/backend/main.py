@@ -43,6 +43,7 @@ def _start(context: Context, settings: Settings) -> None:
         on_mission=context.on_mission,
         on_frame=context.on_frame,
         on_person_count=context.on_person_count,
+        on_eta_record=context.on_eta_record,
     )
     context.bridge.start()
     if not context.bridge.connected:

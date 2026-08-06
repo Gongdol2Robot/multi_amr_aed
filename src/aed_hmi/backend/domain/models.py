@@ -131,6 +131,101 @@ class MissionSummary:
 
 
 @dataclass(frozen=True)
+class EtaRecord:
+    """도착 예상과 실제를 한 쌍으로 잰 결과.
+
+    출동 한 건이 끝날 때 한 번 생긴다. 예상이 얼마나 맞았는지는 이 값을
+    쌓아야만 알 수 있고, 그래야 예상에 쓰는 계수(순항 속도, 우회 계수)를
+    근거를 갖고 고칠 수 있다.
+
+    `request_id` 는 보내는 쪽의 이벤트 식별자다. 임무 식별자는 거기에
+    `-aed` 를 붙인 것이라 따로 싣지 않는다.
+    """
+
+    request_id: str
+    robot_id: str
+    predicted_sec: float
+    actual_sec: float
+    status: str
+    stamp: float
+
+    @property
+    def mission_id(self) -> str:
+        return f"{self.request_id}-aed"
+
+    @property
+    def error_sec(self) -> float:
+        """양수면 예상보다 늦게 도착했다는 뜻이다.
+
+        보내는 쪽도 error_sec 을 실어 보내지만 다시 계산한다. 두 값이
+        다르면 어느 쪽이 맞는지 알 수 없고, 여기서 세 수를 모두 갖고
+        있으므로 굳이 남의 뺄셈을 믿을 이유가 없다.
+        """
+        return self.actual_sec - self.predicted_sec
+
+    @classmethod
+    def from_json(cls, payload: str) -> Optional["EtaRecord"]:
+        """`/emergency/eta/result` 의 JSON 문자열을 읽는다.
+
+        이 값만 `std_msgs/String` 에 JSON 으로 온다. 다른 토픽은 .msg 가
+        칸과 형을 보장하지만 여기는 보내는 쪽이 무엇을 넣든 통과한다.
+        그래서 받는 자리에서 한 번 검사한다. **이 시스템에서 형이 보장되지
+        않은 값이 들어오는 유일한 통로다.**
+
+        깨진 것이 오면 None 을 준다. 통계 한 건을 잃는 것이 관제 화면을
+        끄는 것보다 낫다.
+
+        ROS 를 모르는 자리에 두는 이유: 받는 것이 문자열이라 ROS 타입이
+        필요 없고, 목업도 같은 함수를 거쳐야 실제와 같은 경로가 된다.
+        """
+        import json
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            data = json.loads(payload)
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("ETA 결과가 JSON 이 아니다: %.120s", payload)
+            return None
+        if not isinstance(data, dict):
+            logger.warning("ETA 결과가 객체가 아니다: %.120s", payload)
+            return None
+
+        required = ("request_id", "robot_id", "predicted_eta_sec",
+                    "actual_arrival_sec", "stamp_sec")
+        missing = [key for key in required if key not in data]
+        if missing:
+            logger.warning("ETA 결과에 빠진 칸: %s", ", ".join(missing))
+            return None
+
+        try:
+            record = cls(
+                request_id=str(data["request_id"]),
+                robot_id=str(data["robot_id"]),
+                predicted_sec=float(data["predicted_eta_sec"]),
+                actual_sec=float(data["actual_arrival_sec"]),
+                status=str(data.get("status", "")),
+                stamp=float(data["stamp_sec"]),
+            )
+        except (TypeError, ValueError):
+            logger.warning("ETA 결과의 숫자 칸을 못 읽었다: %.120s", payload)
+            return None
+
+        if not record.request_id:
+            logger.warning("ETA 결과에 request_id 가 비었다")
+            return None
+        # 음수 시간은 시계가 어긋났다는 뜻이다. 평균을 끌고 가므로 버린다.
+        if record.predicted_sec < 0 or record.actual_sec < 0:
+            logger.warning(
+                "ETA 결과의 시간이 음수다: %s predicted=%.3f actual=%.3f",
+                record.request_id, record.predicted_sec, record.actual_sec,
+            )
+            return None
+        return record
+
+
+@dataclass(frozen=True)
 class StreamHealth:
     """영상 한 갈래의 상태. 화면 타일 하나에 대응한다."""
 

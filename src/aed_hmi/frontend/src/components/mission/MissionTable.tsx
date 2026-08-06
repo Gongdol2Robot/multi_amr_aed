@@ -7,8 +7,16 @@
 
 import { useEffect, useState } from 'react';
 
-import { fetchMissions, fetchResponseStats } from '../../api/http';
-import type { MissionSummary, ResponseTimeStats } from '../../types/telemetry';
+import {
+  fetchEtaAccuracy,
+  fetchMissions,
+  fetchResponseStats,
+} from '../../api/http';
+import type {
+  EtaAccuracyStats,
+  MissionSummary,
+  ResponseTimeStats,
+} from '../../types/telemetry';
 import { clockText, durationText, missionDisplay } from '../common/status';
 import { Badge, Metric } from '../common/Indicators';
 
@@ -17,6 +25,7 @@ const REFRESH_MS = 5000;
 export function MissionTable() {
   const [missions, setMissions] = useState<MissionSummary[]>([]);
   const [stats, setStats] = useState<ResponseTimeStats | null>(null);
+  const [eta, setEta] = useState<EtaAccuracyStats | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -24,13 +33,15 @@ export function MissionTable() {
 
     const load = async () => {
       try {
-        const [items, summary] = await Promise.all([
+        const [items, summary, accuracy] = await Promise.all([
           fetchMissions(30),
           fetchResponseStats(),
+          fetchEtaAccuracy(1),
         ]);
         if (cancelled) return;
         setMissions(items);
         setStats(summary);
+        setEta(accuracy);
         setError(null);
       } catch (cause) {
         if (!cancelled) setError((cause as Error).message);
@@ -67,6 +78,28 @@ export function MissionTable() {
           />
           <Metric label="최단" value={durationText(stats.min_seconds)} />
           <Metric label="최장" value={durationText(stats.max_seconds)} />
+
+          {/* 예상이 얼마나 맞았나. 평균 오차는 늦은 건과 빠른 건이 서로
+              지워버리므로, 정확도로 보여줄 값은 절대 오차 쪽이다. */}
+          {eta && eta.total > 0 && (
+            <>
+              <Metric
+                label="예상 오차"
+                value={durationText(eta.avg_abs_error_sec)}
+                tone={
+                  (eta.avg_abs_error_sec ?? 0) <= 5 ? 'ok' : 'warn'
+                }
+              />
+              <Metric
+                label="예상보다 늦음"
+                value={`${eta.late_count}/${eta.total}`}
+                unit="건"
+                tone={
+                  eta.late_count * 2 <= eta.total ? 'ok' : 'warn'
+                }
+              />
+            </>
+          )}
         </div>
       )}
 

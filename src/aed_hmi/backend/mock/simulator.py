@@ -8,6 +8,7 @@
 기준이라, 화면의 지도 배치가 실제와 어긋나지 않는다.
 """
 
+import json
 import math
 import random
 import threading
@@ -16,6 +17,7 @@ import time
 from ..domain.enums import EventStatus, MissionState, RobotAvailability, RobotRole
 from ..domain.models import (
     EmergencyEventSnapshot,
+    EtaRecord,
     MissionEvent,
     Point2D,
     RobotSnapshot,
@@ -33,6 +35,10 @@ TICK_S = 0.2
 CRUISE_SPEED = 0.22          # nav2_aed.yaml 의 max_vel_x 와 맞춘다
 
 EVENT_PREFIX = "evt"
+
+# 예상이 늘 맞으면 화면의 오차 칸이 0 으로만 차서, 그 칸이 도는지 알 수
+# 없다. 실제 주행도 이 정도는 어긋난다.
+ETA_ERROR_RANGE_S = (-3.5, 6.0)
 
 
 class MockSimulator:
@@ -118,6 +124,7 @@ class MockSimulator:
 
         # 3) 이동
         self._emit_mission(mission_id, event_id, chosen, MissionState.EN_ROUTE)
+        departed_at = time.time()
         arrived = self._drive(positions, chosen, target, mission_id)
         if self._stop.is_set():
             return
@@ -133,10 +140,12 @@ class MockSimulator:
             )
             self._emit_mission(mission_id, event_id, other,
                                MissionState.EN_ROUTE, version=2)
+            departed_at = time.time()
             self._drive(positions, other, target, mission_id, force=True)
             chosen = other
 
         self._emit_mission(mission_id, event_id, chosen, MissionState.ARRIVED)
+        self._emit_eta_result(event_id, chosen, departed_at)
         self._idle(positions, seconds=3.0)
 
         # 5) 복귀
@@ -162,6 +171,34 @@ class MockSimulator:
             assignment_version=version, state=state, stamp=time.time(),
             reason=reason,
         ))
+
+    def _emit_eta_result(
+        self, event_id: str, robot_id: str, departed_at: float
+    ) -> None:
+        """multi_robot_emergency 가 내는 것과 같은 JSON 을 만들어 넘긴다.
+
+        딕셔너리를 바로 만들지 않고 JSON 문자열을 거치는 이유: 실제 경로가
+        std_msgs/String 이라 파서를 통과해야 한다. 목업이 그 단계를 건너뛰면
+        정작 파서가 깨져 있어도 여기서는 멀쩡해 보인다.
+        """
+        actual = time.time() - departed_at
+        predicted = max(actual - random.uniform(*ETA_ERROR_RANGE_S), 0.5)
+        payload = json.dumps(
+            {
+                "request_id": event_id,
+                "robot_id": robot_id,
+                "predicted_eta_sec": round(predicted, 3),
+                "actual_arrival_sec": round(actual, 3),
+                "error_sec": round(actual - predicted, 3),
+                "status": "ARRIVED",
+                "stamp_sec": round(time.time(), 9),
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        record = EtaRecord.from_json(payload)
+        if record is not None:
+            self._context.on_eta_record(record)
 
     def _idle(self, positions: dict, seconds: float) -> None:
         end = time.time() + seconds

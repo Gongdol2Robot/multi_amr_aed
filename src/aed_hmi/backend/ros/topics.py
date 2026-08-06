@@ -36,10 +36,29 @@ IMAGE_QOS = QoSProfile(
     durability=DurabilityPolicy.VOLATILE,
 )
 
+# ETA 측정 결과용. multi_robot_emergency/mission_manager.py 의
+# eta_result_qos 와 같아야 한다. durability 가 다르면 ROS 2 는 연결을
+# 아예 안 맺고, 경고도 없이 아무것도 안 온다.
+#
+# TRANSIENT_LOCAL 이라 관제가 나중에 떠도 최근 10건을 받는다. 도착은
+# 몇 분에 한 번뿐이라 놓치면 다음 것을 한참 기다려야 하므로 이 편이 맞다.
+LATCHED_QOS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=10,
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+)
+
 # mission_manager 가 보는 공용 토픽.
 ROBOT_STATE_TOPIC = "/aed/robot_state"
 MISSION_STATUS_TOPIC = "/aed/mission_status"
 AGGREGATE_EVENT_TOPIC = "/aed/emergency_event"
+
+# 예상과 실제를 함께 재는 쪽(multi_robot_emergency)이 내는 토픽.
+# 로봇별 Float32 도 있지만 그건 안 받는다. 어느 요청의 값인지가 안 실려
+# 있어서, 두 요청이 겹치면 어느 쪽 값인지 가릴 수 없다. 요청 id 가 들어
+# 있는 result 하나만 받는다.
+ETA_RESULT_TOPIC = "/emergency/eta/result"
 
 # vision_detector 가 카메라마다 따로 내는 토픽. 노트북 두 대가 같은
 # ROS_DOMAIN_ID 를 써도 섞이지 않도록 절대 경로를 쓴다.

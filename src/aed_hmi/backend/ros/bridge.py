@@ -12,7 +12,12 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 
-from ..domain.models import EmergencyEventSnapshot, MissionEvent, RobotSnapshot
+from ..domain.models import (
+    EmergencyEventSnapshot,
+    EtaRecord,
+    MissionEvent,
+    RobotSnapshot,
+)
 from . import topics
 from .converters import (
     SpeedEstimator,
@@ -36,6 +41,7 @@ class RosBridge:
         on_mission: Callable[[MissionEvent], None],
         on_frame: Callable[[str, bytes], None],
         on_person_count: Callable[[str, int], None],
+        on_eta_record: Callable[[EtaRecord], None],
         streams=topics.DEFAULT_STREAMS,
     ) -> None:
         self._on_robot = on_robot
@@ -43,6 +49,7 @@ class RosBridge:
         self._on_mission = on_mission
         self._on_frame = on_frame
         self._on_person_count = on_person_count
+        self._on_eta_record = on_eta_record
         self._streams = streams
         self._speeds: dict[str, SpeedEstimator] = {}
         self._node: Optional[Node] = None
@@ -89,7 +96,7 @@ class RosBridge:
     def _subscribe(self) -> None:
         from aed_interfaces.msg import EmergencyEvent, MissionStatus, RobotState
         from sensor_msgs.msg import CompressedImage
-        from std_msgs.msg import UInt32
+        from std_msgs.msg import String, UInt32
 
         node = self._node
         node.create_subscription(
@@ -125,6 +132,15 @@ class RosBridge:
                 topics.STATE_QOS,
             )
 
+        # 예상과 실제를 재는 쪽이 내는 결과. 이 토픽만 std_msgs/String 에
+        # JSON 이라 형이 보장되지 않으므로, converters 에서 한 번 검사한다.
+        # QoS 도 다르다. TRANSIENT_LOCAL 로 맞추지 않으면 연결이 안 맺어지고
+        # 경고도 없이 아무것도 안 온다.
+        node.create_subscription(
+            String, topics.ETA_RESULT_TOPIC,
+            self._handle_eta_result, topics.LATCHED_QOS,
+        )
+
         for source in self._streams:
             # 기본 인자로 stream_id 를 묶는다. 안 하면 모든 콜백이 마지막
             # 반복의 값을 보게 된다.
@@ -138,6 +154,14 @@ class RosBridge:
     # ------------------------------------------------------------------
     # 콜백. ROS 스레드에서 불린다.
     # ------------------------------------------------------------------
+
+    def _handle_eta_result(self, message) -> None:
+        # 이 토픽만 형이 보장되지 않는다. 검사는 EtaRecord.from_json 이
+        # 하고, 깨진 것은 로그를 남기고 None 이 온다. 통계 한 건을 잃는
+        # 것이 관제를 끄는 것보다 낫다.
+        record = EtaRecord.from_json(message.data)
+        if record is not None:
+            self._on_eta_record(record)
 
     def _handle_robot_state(self, message) -> None:
         estimator = self._speeds.setdefault(message.robot_id, SpeedEstimator())

@@ -119,3 +119,4 @@ def to_mission_event(message) -> MissionEvent:
         stamp=ros_time_to_epoch(message.stamp),
         reason=message.reason,
     )
+

@@ -43,6 +43,9 @@ ROS 인터페이스  →  ros/converters.py  →  domain 모델  →  store/repo
 | `/{camera_id}/vision/heartbeat` | `aed_interfaces/Heartbeat` | `vision_detector` | `recovery_manager` | 동작 | 안 남김 |
 | `/{robot_id}/sensor_health` | `aed_interfaces/SensorHealth` | `sensor_health_monitor` | `mission_manager`, `aed_hmi_bridge` | **사양만** | 안 남김 |
 | `/{robot_id}/cmd_vel` | `geometry_msgs/Twist` | `sensor_health_monitor` (대체 주행) | Create3 | **사양만** | 안 남김 |
+| `/emergency/eta/result` | `std_msgs/String` (JSON) | `multi_robot_emergency` | `aed_hmi_bridge` | 동작 | `eta_records` |
+| `/emergency/eta/predicted/{robot_id}` | `std_msgs/Float32` | `multi_robot_emergency` | (안 받음) | 동작 | 안 남김 |
+| `/emergency/eta/actual/{robot_id}` | `std_msgs/Float32` | `multi_robot_emergency` | (안 받음) | 동작 | 안 남김 |
 
 `camera_id` 는 `camera_open`, `camera_alley`, `robot1`, `robot2` 다.
 
@@ -145,6 +148,52 @@ recovery_resumed / helper_requested / helper_en_route / helper_arrived`.
 `DeliverAed` 의 Feedback·Result 도 같은 상태값을 쓴다. Action 은 요청한
 쪽만 결과를 보므로, 화면과 로그가 모든 임무를 보려면 `MissionStatus`
 topic 이 따로 있어야 한다.
+
+### `eta_records` — 도착 예상과 실제
+
+`multi_robot_emergency` 가 출동 한 건이 끝날 때 내는 값이다. **이 토픽만
+`std_msgs/String` 에 JSON 이라 자료형이 없다.**
+
+```json
+{"actual_arrival_sec":23.5,"error_sec":0.67,"predicted_eta_sec":22.83,
+ "request_id":"emergency-002","robot_id":"robot2","stamp_sec":1786011309.024,
+ "status":"ARRIVED"}
+```
+
+| 컬럼 | SQLite 형 | JSON 칸 |
+|---|---|---|
+| `request_id` | TEXT PK¹ | `request_id` |
+| `robot_id` | TEXT PK¹ | `robot_id` |
+| `predicted_sec` | REAL | `predicted_eta_sec` |
+| `actual_sec` | REAL | `actual_arrival_sec` |
+| `error_sec` | REAL | (**다시 계산한다**) |
+| `status` | TEXT | `status` |
+| `stamp` | REAL | `stamp_sec` |
+
+¹ `(request_id, robot_id)` 복합 기본키.
+
+`error_sec` 은 JSON 에도 있지만 `actual - predicted` 로 다시 계산한다.
+두 값이 어긋나면 어느 쪽이 맞는지 알 수 없고, 세 수를 모두 갖고 있으므로
+남의 뺄셈을 믿을 이유가 없다.
+
+`request_id` 는 저쪽의 이벤트 식별자이고, 임무 식별자는 거기에 `-aed` 를
+붙인 것이다(`mission_manager.py` 가 그렇게 만든다). 우리 규칙과 같아서
+매핑 표가 필요 없다.
+
+**받는 자리에서 한 번 검사한다.** `.msg` 는 칸과 형을 보장하지만 JSON 은
+보내는 쪽이 무엇을 넣든 통과한다. `EtaRecord.from_json()` 이 이 시스템에서
+형이 보장되지 않은 값이 들어오는 **유일한 통로**이고, 거기서 빠진 칸·숫자가
+아닌 값·음수 시간을 걸러 낸다. 깨진 것은 로그를 남기고 버린다. 통계 한
+건을 잃는 편이 관제 화면을 끄는 것보다 낫다.
+
+로봇별 `Float32` 두 갈래는 **받지 않는다.** 어느 요청의 값인지가 안 실려
+있어서, 두 요청이 겹치면 가릴 수 없다. 요청 id 가 들어 있는 `result`
+하나만 받는다.
+
+**QoS 를 맞춰야 한다.** 저쪽은 `TRANSIENT_LOCAL`, 우리 기본 `STATE_QOS`
+는 `VOLATILE` 이다. durability 가 다르면 ROS 2 는 연결을 아예 안 맺고
+경고도 없다. `topics.LATCHED_QOS` 로 맞췄다. 덕분에 관제가 나중에 떠도
+최근 10건을 받는다.
 
 ### `robot_samples` — 로봇 상태 표본
 

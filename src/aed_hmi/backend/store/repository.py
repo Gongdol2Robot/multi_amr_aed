@@ -131,6 +131,31 @@ class Repository:
              target.x, target.y, assigned_at),
         )
 
+    def upsert_eta_record(self, record) -> None:
+        """도착 예상·실제 한 쌍. 같은 건이 다시 오면 덮어쓴다.
+
+        TRANSIENT_LOCAL 토픽이라 관제가 다시 뜨면 지난 결과가 한 번 더
+        온다. INSERT 만 하면 그때마다 UNIQUE 위반이 나고, 무시하면 값이
+        고쳐졌을 때 반영이 안 된다. 덮어쓰는 편이 양쪽을 다 막는다.
+        """
+        self._connection().execute(
+            """
+            INSERT INTO eta_records (
+                request_id, robot_id, predicted_sec, actual_sec,
+                error_sec, status, stamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (request_id, robot_id) DO UPDATE SET
+                predicted_sec = excluded.predicted_sec,
+                actual_sec    = excluded.actual_sec,
+                error_sec     = excluded.error_sec,
+                status        = excluded.status,
+                stamp         = excluded.stamp
+            """,
+            (record.request_id, record.robot_id, record.predicted_sec,
+             record.actual_sec, record.error_sec, record.status,
+             record.stamp),
+        )
+
     def insert_mission_event(self, event: MissionEvent) -> None:
         self._connection().execute(
             """
@@ -334,6 +359,51 @@ class Repository:
             "min_seconds": row["min_seconds"],
             "max_seconds": row["max_seconds"],
         }
+
+    def eta_accuracy_stats(self) -> dict:
+        """예상이 얼마나 맞았나. ETA 계수를 고칠 근거다.
+
+        평균 오차(bias)와 절대 오차(정확도)를 따로 낸다. 30초 늦고 30초
+        빠른 두 건은 평균이 0 이라 "정확하다"로 보이지만 실제로는 둘 다
+        30초씩 틀렸다. 부호가 상쇄되지 않는 값이 함께 있어야 한다.
+
+        늦은 건수도 센다. 관제에서 문제가 되는 것은 예상보다 **늦는** 쪽
+        뿐이다. 빨리 도착하는 것은 아무도 항의하지 않는다.
+        """
+        row = self._connection().execute(
+            """
+            SELECT
+                COUNT(*)                                   AS total,
+                AVG(error_sec)                             AS avg_error_sec,
+                AVG(ABS(error_sec))                        AS avg_abs_error_sec,
+                MAX(ABS(error_sec))                        AS max_abs_error_sec,
+                AVG(predicted_sec)                         AS avg_predicted_sec,
+                AVG(actual_sec)                            AS avg_actual_sec,
+                SUM(CASE WHEN error_sec > 0 THEN 1 ELSE 0 END) AS late_count
+            FROM eta_records
+            """
+        ).fetchone()
+        total = row["total"] or 0
+        return {
+            "total": total,
+            "avg_error_sec": row["avg_error_sec"],
+            "avg_abs_error_sec": row["avg_abs_error_sec"],
+            "max_abs_error_sec": row["max_abs_error_sec"],
+            "avg_predicted_sec": row["avg_predicted_sec"],
+            "avg_actual_sec": row["avg_actual_sec"],
+            "late_count": row["late_count"] or 0,
+        }
+
+    def recent_eta_records(self, limit: int = 20) -> list[dict]:
+        rows = self._connection().execute(
+            """
+            SELECT request_id, robot_id, predicted_sec, actual_sec,
+                   error_sec, status, stamp
+            FROM eta_records ORDER BY stamp DESC LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def robot_track(self, robot_id: str, limit: int = 300) -> list[dict]:
         """최근 이동 궤적. 지도 위에 선으로 그린다."""
