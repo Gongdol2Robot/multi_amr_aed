@@ -121,11 +121,6 @@ rv() {
   ros2 launch turtlebot4_viz view_robot.launch.py namespace:=/robot$n
 }
 
-vision() {
-  local dev=${1:-0}
-  ros2 run aed_vision webcam_publisher --ros-args -p device:="$dev"
-}
-
 manager() {
   ros2 run mission_manager mission_manager
 }
@@ -146,12 +141,6 @@ recover() {
   "$AED_WS/tools/nav_recovery.sh" "${1:-1}"
 }
 
-survey() {
-  local label=${1:?"사용: survey <라벨> [로봇번호]"} n=${2:-1}
-  ROBOT_NS="/robot$n" python3 "$AED_WS/tools/survey_point.py" "$label" \
-    --ros-args -r /tf:=/robot$n/tf -r /tf_static:=/robot$n/tf_static
-}
-
 bagrec() {
   local n=${1:-1}
   mkdir -p "$AED_WS/bags"
@@ -162,6 +151,5 @@ bagrec() {
     /robot$n/mission_status /aed/emergency_event /aed/robot_state
 }
 
-alias detect='vision'
 alias mstate='ros2 topic echo /aed/robot_state'
 alias estate='ros2 topic echo /aed/emergency_event'

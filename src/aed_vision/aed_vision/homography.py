@@ -1,6 +1,7 @@
 """Convert points between a fixed camera image and a ROS map."""
 
 import os
+from math import hypot
 
 import numpy as np
 import yaml
@@ -68,9 +69,17 @@ class Homography:
         point = self.inverse @ np.array([x, y, 1.0])
         return float(point[0] / point[2]), float(point[1] / point[2])
 
-    def box_to_map(self, x1: float, y1: float, x2: float, y2: float):
-        """Use the lower-center of a detection box as its floor contact."""
-        return self.pixel_to_map((x1 + x2) / 2.0, y2)
+    def box_to_map(
+        self, x1: float, y1: float, x2: float, y2: float,
+        image_size=None,
+    ):
+        """검출 박스 하단 중앙점을 측량 해상도에 맞춰 map 좌표로 바꾼다."""
+        u, v = (x1 + x2) / 2.0, y2
+        if image_size and self.camera:
+            width, height = image_size
+            u *= float(self.camera.get("width", width)) / width
+            v *= float(self.camera.get("height", height)) / height
+        return self.pixel_to_map(u, v)
 
     def survey_polygon(self):
         """측량 영역의 경계. 안쪽 측량점은 꼭짓점이 아니므로 껍질을 우선한다."""
@@ -78,7 +87,9 @@ class Homography:
             return [tuple(point) for point in self.survey_area]
         return [tuple(item["map"]) for item in self.correspondences]
 
-    def inside_survey_area(self, x: float, y: float) -> bool:
+    def inside_survey_area(
+        self, x: float, y: float, margin: float = 0.0
+    ) -> bool:
         polygon = self.survey_polygon()
         if len(polygon) < 3:
             return True
@@ -89,7 +100,25 @@ class Homography:
                 intersection = (x2 - x1) * (y - y1) / (y2 - y1) + x1
                 if x < intersection:
                     inside = not inside
-        return inside
+        if inside or margin <= 0.0:
+            return inside
+        for index, start in enumerate(polygon):
+            end = polygon[(index + 1) % len(polygon)]
+            dx, dy = end[0] - start[0], end[1] - start[1]
+            length_squared = dx * dx + dy * dy
+            ratio = 0.0 if length_squared == 0.0 else max(
+                0.0,
+                min(
+                    1.0,
+                    ((x - start[0]) * dx + (y - start[1]) * dy)
+                    / length_squared,
+                ),
+            )
+            nearest_x = start[0] + ratio * dx
+            nearest_y = start[1] + ratio * dy
+            if hypot(x - nearest_x, y - nearest_y) <= margin:
+                return True
+        return False
 
 
 def load_all() -> dict:

@@ -30,6 +30,7 @@
 - 두 모드 모두 파인튜닝 YOLO11n으로 `fallen_person`, `helper` 검출
 - 최근 10프레임 중 6프레임 이상 검출될 때 응급상황 확정
 - 확정/해제 전환 시 `aed_interfaces/EmergencyEvent` 발행
+- 검출 bbox 하단 중앙점을 카메라별 호모그래피로 map 좌표 변환
 - `alley` 모드에서는 COCO YOLO11n으로 ROI 내부 `person` 수 계산
 - COCO가 쓰러진 대상을 person으로 중복 검출하면 bbox IoU를 이용해 인파에서 제외
 - 상태 JSON, 혼잡도, 사람 수, heartbeat, JPEG 디버그 영상 발행
@@ -38,9 +39,7 @@
 한 프레임을 처리하는 동안 새 프레임이 도착하면 큐 깊이 1의 best-effort QoS를
 사용해 오래된 프레임을 쌓지 않습니다.
 
-`webcam_publisher` 실행 파일은 단독 카메라 토픽 시험용으로 남겨 두었지만,
-`camera_vision.launch.py`에서는 사용하지 않습니다. 실행 launch는 카메라별
-`vision_detector` 노드 하나만 시작합니다.
+실행 launch는 카메라별 `vision_detector` 노드 하나만 시작합니다.
 
 ## 설치
 
@@ -96,6 +95,8 @@ ros2 launch aed_vision camera_vision.launch.py \
   재부팅 후에도 유지되는 `/dev/v4l/by-id/...` 경로 사용 권장
 - `inference_device`: YOLO 추론 장치 (`"cuda:0"`은 첫 GPU, `"cpu"`는 CPU)
 - `location_x`, `location_y`: 해당 고정 카메라 구조 지점의 map 좌표
+- `homography_camera_id`: 카메라별 측량 설정 ID (`cam1` 또는 `cam2`)
+- `homography_margin_m`: 측량 영역 경계에서 허용할 좌표 여유
 - `crowd_roi`: 골목 영상에서 AMR이 통과해야 하는 영역
 - `crowded_person_threshold`: `CROWDED`로 판단할 최소 사람 수
 - `show_window`: 해당 노트북에 OpenCV 결과 창을 표시할지 여부
@@ -111,6 +112,7 @@ ros2 launch aed_vision camera_vision.launch.py \
 | `/<camera_id>/vision/status` | `std_msgs/String` | 전체 검출 상태 JSON |
 | `/<camera_id>/vision/crowd_level` | `std_msgs/String` | `NOT_APPLICABLE`, `CLEAR`, `CROWDED` |
 | `/<camera_id>/vision/person_count` | `std_msgs/UInt32` | 골목 ROI 내 유효 person 수 |
+| `/<camera_id>/vision/fallen_location` | `geometry_msgs/PointStamped` | 호모그래피로 계산한 구조 대상 map 좌표 |
 | `/<camera_id>/vision/heartbeat` | `aed_interfaces/Heartbeat` | 초당 노드 생존 신호 |
 | `/<camera_id>/vision/debug/compressed` | `sensor_msgs/CompressedImage` | bbox와 ROI가 표시된 JPEG |
 
@@ -152,9 +154,26 @@ person이 0~1명이면 `CLEAR`, 2명 이상이면 `CROWDED`입니다.
 `NOT_APPLICABLE`을 발행합니다. 중앙 Mission Manager는 이 값을 사람 수 0과
 구별해야 합니다.
 
-## 좌표 변환 라이브러리
+## 검출 위치 좌표
 
-`aed_vision.homography.Homography`는 bbox 하단 중앙점을 map 좌표로 변환합니다.
-현재 검출 노드는 고정 카메라별 `location_x`, `location_y`를 이벤트 위치로
-사용합니다. 실제 측량이 완료되면 `config/homography.example.yaml` 형식의
-행렬을 이용한 개별 검출 위치 계산으로 확장할 수 있습니다.
+각 카메라는 `homography_cam1.yaml` 또는 `homography_cam2.yaml`의 현장 측량
+행렬을 사용합니다. 가장 confidence가 높은 `fallen_person` bbox의 하단 중앙점을
+바닥 접점으로 보고 `map` 좌표로 변환하여 `EmergencyEvent.location`에 넣습니다.
+
+입력 영상 해상도가 측량 당시의 640×480과 다르면 픽셀 좌표를 측량 해상도로
+자동 환산합니다. 측량 영역에서 `homography_margin_m`보다 멀리 벗어난 검출은
+측량 영역 밖의 검출도 폐기하지 않고 외삽 좌표로 발행합니다. 프레임별 좌표와
+변환 방식은 `vision/status` JSON의 `location_x`, `location_y`,
+`location_source`에서 확인할 수 있습니다. 측량 영역 안은 `homography`, 밖은
+정확도가 낮을 수 있는 `homography_extrapolated`로 표시됩니다.
+
+호모그래피 좌표는 검출 프레임마다 다음 토픽으로도 발행합니다.
+
+```bash
+ros2 topic echo /camera_open/vision/fallen_location
+ros2 topic echo /camera_alley/vision/fallen_location
+```
+
+메시지 타입은 `geometry_msgs/msg/PointStamped`, `frame_id`는 `map`입니다.
+측량 신뢰 영역 밖의 좌표도 외삽값으로 발행하므로 이동에 사용할 때는 오차를
+감안해야 합니다.

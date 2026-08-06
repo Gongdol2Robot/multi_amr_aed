@@ -4,8 +4,7 @@
 
 | New component | Legacy source | Decision |
 |---|---|---|
-| `aed_vision.webcam_publisher` | `mini_proj.webcam_publisher` | AED 공통 토픽과 장치 기본값으로 변경 |
-| `aed_vision.homography` | `mini_proj.homography` | 패키지 경로 변경, 현장 보정값 제거 |
+| `aed_vision.homography` | `mini_proj.homography` | 카메라별 현장 측량값으로 map 좌표 변환 |
 | `emergency_alert.siren_node` | `turtlebot4_beep.beep_node` | `/robot2` 하드코딩 제거, 토픽·반복·음 길이 파라미터화 |
 | `robot_missions.mission_executor` | `mini_proj.mission_controller` | RC카 추종을 제거하고 취소 가능한 공통 Nav2 미션 실행기로 분리 |
 | `mission_manager` | 신규 분리 | 로봇 위치 비교와 AED·길안내 역할 배정을 중앙 관리자 책임으로 분리 |

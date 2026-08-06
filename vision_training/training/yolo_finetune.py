@@ -10,7 +10,7 @@ from pathlib import Path
 from yolo_train import REQUIRED_NAMES, validate_data_yaml
 
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA = ROOT / "data.yaml"
 DEFAULT_BASE_RUNS = ROOT / "runs"
 DEFAULT_RUNS = ROOT / "finetune_runs"

@@ -10,7 +10,7 @@ import re
 import shutil
 
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE = ROOT / "hard_negatives" / "images"
 DEFAULT_SOURCE_LABELS = ROOT / "hard_negatives" / "labels"
 DEFAULT_DATASET = ROOT / "datasets" / "rescue"

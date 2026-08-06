@@ -33,6 +33,9 @@
     location_frame_id: map
     location_x: 0.0
     location_y: 0.0
+    # camera 2 측량값으로 fallen_person bbox 하단을 map 좌표로 변환한다.
+    homography_camera_id: cam2
+    homography_margin_m: 0.15
     publish_debug_image: true
     show_window: true
     debug_jpeg_quality: 80
