@@ -1,0 +1,41 @@
+/camera_alley/vision_detector:
+  ros__parameters:
+    direct_camera: true
+    # 두 번째 노트북에 연결한 USB 웹캠 경로에 맞게 변경한다.
+    camera_device: /dev/video2
+    width: 640
+    height: 480
+    fps: 15.0
+    frame_id: camera_alley_optical_frame
+    jpeg_quality: 85
+    camera_id: camera_alley
+    zone_id: alley_zone
+    mode: alley
+    image_topic: /camera_alley/image_raw/compressed
+    # 패키지와 함께 설치되는 구조 검출 및 COCO person 가중치이다.
+    rescue_weights: package://aed_vision/models/rescue_yolo11n.pt
+    person_weights: package://aed_vision/models/coco_yolo11n.pt
+    rescue_conf: 0.25
+    person_conf: 0.25
+    iou: 0.5
+    imgsz: 640
+    inference_device: "cuda:0"
+    confirmation_window: 10
+    confirmation_hits: 6
+    # 영상 우상단은 1번 터틀봇이 구조 현장으로 진입하는 골목 경로이다.
+    # 이 영역의 인파가 임계값 이상이면 1번 터틀봇 경로가 막힌 상황으로 본다.
+    # [left, top, right, bottom], 영상 크기에 대한 0.0~1.0 비율이다.
+    crowd_roi: [0.375, 0.0, 1.0, 0.5]
+    # fallen_person과 겹치는 검출을 제외한 실제 사람이 2명 이상이면 혼잡이다.
+    crowded_person_threshold: 2
+    # 쓰러진 대상을 COCO person이 다시 검출했을 때 인파 수에서 제외한다.
+    fallen_person_overlap_iou: 0.4
+    location_frame_id: map
+    location_x: 0.0
+    location_y: 0.0
+    # camera 2 측량값으로 fallen_person bbox 하단을 map 좌표로 변환한다.
+    homography_camera_id: cam2
+    homography_margin_m: 0.15
+    publish_debug_image: true
+    show_window: true
+    debug_jpeg_quality: 80

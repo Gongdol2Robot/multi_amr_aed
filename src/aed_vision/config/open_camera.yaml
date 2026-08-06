@@ -1,0 +1,37 @@
+/camera_open/vision_detector:
+  ros__parameters:
+    direct_camera: true
+    # 노트북 내장 카메라가 아니라 연결한 USB 웹캠 장치이다.
+    camera_device: /dev/video2
+    width: 640
+    height: 480
+    fps: 15.0
+    frame_id: camera_open_optical_frame
+    jpeg_quality: 85
+    camera_id: camera_open
+    zone_id: open_zone
+    mode: open
+    image_topic: /camera_open/image_raw/compressed
+    # 패키지와 함께 설치되는 파인튜닝 구조 검출 가중치이다.
+    rescue_weights: package://aed_vision/models/rescue_yolo11n.pt
+    person_weights: ""
+    rescue_conf: 0.25
+    iou: 0.5
+    imgsz: 640
+    inference_device: "cuda:0"
+    confirmation_window: 10
+    confirmation_hits: 6
+    # open 모드에서는 혼잡도 관련 값이 사용되지 않는다.
+    crowd_roi: [0.0, 0.0, 1.0, 1.0]
+    crowded_person_threshold: 3
+    fallen_person_overlap_iou: 0.4
+    location_frame_id: map
+    # 고정 카메라가 담당하는 구조 지점의 실제 map 좌표로 변경한다.
+    location_x: 0.0
+    location_y: 0.0
+    # camera 1 측량값으로 fallen_person bbox 하단을 map 좌표로 변환한다.
+    homography_camera_id: cam1
+    homography_margin_m: 0.15
+    publish_debug_image: true
+    show_window: true
+    debug_jpeg_quality: 80
