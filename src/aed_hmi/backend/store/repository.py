@@ -92,6 +92,24 @@ class Repository:
             ),
         )
 
+    def last_event_sequence(self, prefix: str) -> int:
+        """`prefix-0007` 같은 id 들 중 가장 큰 번호. 없으면 0.
+
+        시뮬레이터가 매 실행마다 1 번부터 다시 세면, 지난 실행의 임무와
+        id 가 겹쳐 이력이 한 줄에 뒤섞인다. 시연 도중 서버를 한 번 껐다
+        켜면 바로 드러난다. 이어서 세도록 마지막 번호를 알려준다.
+        """
+        row = self._connection().execute(
+            "SELECT event_id FROM emergency_events WHERE event_id LIKE ?",
+            (f"{prefix}-%",),
+        ).fetchall()
+        best = 0
+        for (event_id,) in row:
+            tail = event_id.rsplit("-", 1)[-1]
+            if tail.isdigit():
+                best = max(best, int(tail))
+        return best
+
     def insert_assignment(
         self, mission_id: str, version: int, event_id: str, robot_id: str,
         role: str, target: Point2D, assigned_at: float,

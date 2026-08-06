@@ -32,6 +32,8 @@ SCENE_TARGETS = (Point2D(1.99, 2.30), Point2D(-2.44, 1.84))
 TICK_S = 0.2
 CRUISE_SPEED = 0.22          # nav2_aed.yaml 의 max_vel_x 와 맞춘다
 
+EVENT_PREFIX = "evt"
+
 
 class MockSimulator:
     """한 건의 출동 시나리오를 반복 재생한다."""
@@ -40,7 +42,9 @@ class MockSimulator:
         self._context = context
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        self._sequence = 0
+        # 1 번부터 다시 세면 지난 실행의 임무와 id 가 겹쳐, 서로 다른
+        # 출동이 이력에서 한 줄로 합쳐진다. 남아 있는 번호를 이어받는다.
+        self._sequence = context.repository.last_event_sequence(EVENT_PREFIX)
 
     def start(self) -> None:
         self._thread = threading.Thread(
@@ -65,7 +69,7 @@ class MockSimulator:
 
     def _play_one_scenario(self) -> None:
         self._sequence += 1
-        event_id = f"evt-{self._sequence:04d}"
+        event_id = f"{EVENT_PREFIX}-{self._sequence:04d}"
         mission_id = f"{event_id}-aed"
         target = random.choice(SCENE_TARGETS)
         now = time.time()

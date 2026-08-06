@@ -51,7 +51,11 @@ ROBOT_STREAMS = ("robot1", "robot2")
 STREAM_ORDER = ("robot1", "robot2", "camera_open", "camera_alley")
 
 FPS = 10.0
-FRAME_SIZE = (640, 480)
+
+# 사진으로 떨어질 때만 쓰는 크기. 영상은 원본 해상도 그대로 내보낸다.
+# OAK-D 는 704x704, 웹캠은 640x480 이라 한 크기로 맞추면 한쪽이 늘어난다.
+# 화면 쪽은 타일에 맞춰 비율을 지켜 넣으므로 여기서 건드릴 이유가 없다.
+STILL_SIZE = (640, 480)
 
 
 class _DetectionTrack:
@@ -130,7 +134,7 @@ class _VideoLoop:
             if not got:
                 return None
             self.index = 1
-        return cv2.resize(frame, FRAME_SIZE)
+        return frame
 
     def release(self) -> None:
         if self.ok:
@@ -138,7 +142,7 @@ class _VideoLoop:
 
 
 def _placeholder(text: str) -> np.ndarray:
-    image = np.full((FRAME_SIZE[1], FRAME_SIZE[0], 3), 40, np.uint8)
+    image = np.full((STILL_SIZE[1], STILL_SIZE[0], 3), 40, np.uint8)
     cv2.putText(image, text, (150, 250), cv2.FONT_HERSHEY_SIMPLEX,
                 1.0, (80, 80, 200), 2)
     return image
@@ -178,7 +182,7 @@ class MockFrameSource:
             image = (cv2.imread(os.path.join(REPO_ROOT, relative))
                      if relative else None)
             self._stills[stream_id] = (
-                cv2.resize(image, FRAME_SIZE) if image is not None
+                cv2.resize(image, STILL_SIZE) if image is not None
                 else _placeholder("NO VIDEO")
             )
 
@@ -227,22 +231,23 @@ class MockFrameSource:
         return (still.copy() if still is not None else None), 0
 
     def _annotate(self, frame, stream_id: str, now: float) -> None:
-        """어느 갈래의 언제 그림인지만 덧그린다.
+        """녹화본이라는 표시만 남긴다.
 
-        검출 상자는 그리지 않는다. 영상에 vision_detector 가 그린 진짜
-        상자가 이미 들어 있어서, 가짜 상자를 겹쳐 그리면 어느 쪽이 진짜인지
-        구분되지 않는다.
+        갈래 이름·시각·fps 는 화면이 타일 라벨로 이미 보여준다. 그림 위에
+        또 쓰면 라벨과 겹쳐 둘 다 안 읽힌다. 여기서는 실시간이 아니라는
+        것만 알리면 된다.
+
+        검출 상자도 그리지 않는다. 영상에 vision_detector 가 그린 진짜
+        상자가 이미 들어 있어서, 가짜를 겹치면 어느 쪽이 진짜인지 구분되지
+        않는다.
         """
-        height, width = frame.shape[:2]
-        clock = time.strftime("%H:%M:%S", time.localtime(now))
-        source = "OAK-D" if stream_id in ROBOT_STREAMS else "WEBCAM"
-        cv2.rectangle(frame, (0, height - 26), (width, height), (0, 0, 0), -1)
-        cv2.putText(frame, f"{stream_id}  {source}  {clock}  MOCK",
-                    (8, height - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
-                    (255, 255, 255), 1)
+        width = frame.shape[1]
+        cv2.rectangle(frame, (width - 62, 8), (width - 8, 30), (0, 0, 0), -1)
+        cv2.putText(frame, "MOCK", (width - 56, 24),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (120, 120, 255), 1)
 
         if stream_id in ROBOT_STREAMS:
-            centre_x, centre_y = width // 2, height // 2
+            centre_x, centre_y = width // 2, frame.shape[0] // 2
             cv2.line(frame, (centre_x - 18, centre_y),
                      (centre_x + 18, centre_y), (120, 200, 120), 1)
             cv2.line(frame, (centre_x, centre_y - 18),
