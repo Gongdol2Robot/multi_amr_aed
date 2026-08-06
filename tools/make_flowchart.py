@@ -1,48 +1,70 @@
 #!/usr/bin/env python3
-"""main 기준 실제 배선을 큰 그림 한 장으로 그린다.
+"""시스템 아키텍처 + 기능 플로우를 큰 그림 한 장으로 그린다.
 
-왜 손으로 안 그리고 이 스크립트로 만드나
-----------------------------------------
-화살표가 서로 겹치거나 글자 위를 지나가면 그림이 쓸모없어진다. 좌표를
-눈대중으로 찍으면 반드시 그렇게 된다. 그래서 배치 규칙을 코드로 강제한다.
+형태
+----
+세로 칸(레인) = 기계 한 대.  가로 띠 = 시나리오 단계.
+기계 사이를 건너는 화살표에 **토픽 이름·메시지 타입·QoS·주기를 글로 바로
+얹는다.** 상자에 담아 옆에 두지 않는다. 눈이 화살표를 떠날 일이 없어야 한다.
 
-  1. 세로 흐름은 x 축 한 자리(SPINE_X)만 쓴다.
-  2. 세로 화살표의 설명 상자는 화살표 오른쪽 빈 칸에만 놓는다.
-     선과 상자가 x 로 갈라져 있어 서로 지나갈 수 없다.
-  3. 관제로 가는 가로 화살표는 **저마다 다른 높이**를 쓴다.
-     순수한 가로선이라 높이가 다르면 겹칠 수가 없다.
-  4. 가로 화살표의 설명 상자는 두 기둥 사이 빈 칸(GUTTER)에만 놓는다.
+겹치지 않는 이유
+----------------
+  1. 가로 화살표는 저마다 자기 높이 하나만 쓴다. 높이가 다르면 겹칠 수 없다.
+  2. 글은 그 화살표 바로 위에만 놓는다. 다음 화살표까지의 간격을 글 높이보다
+     크게 잡아, 아래 화살표의 글이 위 화살표에 닿지 않게 한다.
+  3. 레인 안에서 도는 화살표는 그 레인 폭 안에서만 움직인다.
 
-정보는 범례를 찾아보지 않아도 되게 화살표마다 다 적는다.
-토픽 이름 · 메시지 타입 · QoS · 주기를 한 자리에 둔다.
+좌표를 눈대중으로 찍으면 반드시 어긋나므로 간격을 코드가 계산하고,
+결과는 tools/check_flowchart.py 가 좌표로 다시 확인한다.
 
-구현 상태는 테두리 모양과 글자 양쪽으로 적는다. 한쪽만 보고도 알 수 있어야
-범례를 안 찾는다.
-
-  실선 + [구현]  실제로 도는 코드
-  점선 + [뼈대]  패키지와 노드는 있으나 콜백이 비었다(29줄 scaffold)
-  빨간 + [끊김]  발행자가 없어 이 자리에서 흐름이 멈춘다
+내용은 main 에 있는 것만 적는다. 아직 콜백이 빈 뼈대는 그렇게 적는다.
+그림이 실제보다 앞서 보이면 리뷰에서 바로 어긋난다.
 
 사용:
-  python3 tools/make_flowchart.py            docs/system_flow.html 생성
+  python3 tools/make_flowchart.py     docs/system_flow.{html,drawio} 생성
 """
 import html
 import os
 import sys
 
-# ── 배치 상수 ────────────────────────────────────────────────────────────
-W = 2040                     # 전체 폭
-LEFT_X, LEFT_W = 48, 860     # ROS 기둥
-GUT_X, GUT_W = 940, 520      # 가로 화살표 설명이 들어가는 빈 칸
-RIGHT_X, RIGHT_W = 1500, 500  # 관제 기둥
+# ── 기계(레인) ──────────────────────────────────────────────────────────
+LANES = [
+    ("웹캠 노트북 ×2", [
+        "camera_open (개방구역) · camera_alley (골목)",
+        "vision_detector — USB 카메라를 직접 읽는다",
+        "YOLO11n rescue_yolo11n.pt (fallen_person · helper)",
+    ], "구현"),
+    ("중앙 관제 PC  192.168.107.122", [
+        "Fast DDS Discovery Server :11811",
+        "mission_manager · location_mapper(뼈대)",
+        "aed_hmi — FastAPI :8000 + SQLite + aed_hmi_bridge",
+    ], "일부"),
+    ("로봇 제어 PC ×2", [
+        "mission_executor · robot_state_monitor(뼈대)",
+        "Nav2 — bt_navigator · planner · controller · AMCL",
+        "turtlebot4_navigation nav2.launch.py namespace:=/robotN",
+    ], "일부"),
+    ("TurtleBot4 ×2", [
+        "Create3 + Raspberry Pi",
+        "RPLIDAR · OAK-D Pro · 배터리 · Dock",
+        "AED 적재",
+    ], "하드웨어"),
+    ("운영자 브라우저", [
+        "React + TypeScript :5173",
+        "ROS 미설치",
+    ], "구현"),
+]
 
-SPINE_X = LEFT_X + 120       # 세로 화살표가 지나는 단 하나의 x
-NOTE_X = SPINE_X + 60        # 세로 화살표 설명 상자의 왼쪽. 선과 겹치지 않는다
-NOTE_W = LEFT_X + LEFT_W - NOTE_X
+LANE_X = [60, 620, 1240, 1860, 2400]
+LANE_W = [500, 560, 560, 480, 400]
 
-TOP = 150
-GAP = 168                    # 박스 사이 간격. 설명 상자가 들어갈 높이
-LINE = 21                    # 글줄 높이
+W = 2860
+HEAD_Y, HEAD_H = 120, 118
+BODY_TOP = HEAD_Y + HEAD_H + 44
+
+LINE = 20            # 글줄 높이
+GAP_AFTER = 40       # 화살표 아래로 두는 여유
+PHASE_PAD = 22
 
 
 def esc(text: str) -> str:
@@ -50,35 +72,19 @@ def esc(text: str) -> str:
 
 
 class Canvas:
-    """그린 것을 SVG 조각과 배치 목록 양쪽으로 남긴다.
-
-    좌표 계산은 한 번만 하고, 그 결과를 SVG 로도 drawio 로도 뽑는다.
-    둘을 따로 계산하면 언젠가 서로 어긋난다.
-    """
+    """SVG 조각과 배치 목록을 같이 남긴다. 좌표 계산은 한 번만 한다."""
 
     def __init__(self) -> None:
         self.parts: list[str] = []
-        self.shapes: list[dict] = []   # drawio 로 뽑을 상자
-        self.lines: list[dict] = []    # drawio 로 뽑을 선
+        self.shapes: list[dict] = []
+        self.lines: list[dict] = []
         self.bottom = 0
 
     def add(self, svg: str) -> None:
         self.parts.append(svg)
 
-    def record_box(self, x, y, w, h, lines, style="solid", accent=None,
-                   title=None, tag=None, size=14) -> None:
-        self.shapes.append({
-            "x": x, "y": y, "w": w, "h": h, "lines": list(lines),
-            "style": style, "accent": accent, "title": title, "tag": tag,
-            "size": size,
-        })
-
-    def record_line(self, x1, y1, x2, y2, accent=None, arrow=True) -> None:
-        self.lines.append({"x1": x1, "y1": y1, "x2": x2, "y2": y2,
-                           "accent": accent, "arrow": arrow})
-
-    def text(self, x, y, s, size=15, weight="400", fill="currentColor",
-             anchor="start", opacity=1.0, mono=False):
+    def svg_text(self, x, y, s, size=15, weight="400", fill="currentColor",
+                 anchor="start", opacity=1.0, mono=False):
         family = ' font-family="ui-monospace,monospace"' if mono else ""
         self.add(
             f'<text x="{x}" y="{y}" font-size="{size}" font-weight="{weight}"'
@@ -86,386 +92,525 @@ class Canvas:
             f'{family}>{esc(s)}</text>'
         )
 
-    def box(self, x, y, w, h, style="solid", accent=None):
-        dash = ' stroke-dasharray="7 5"' if style == "dashed" else ""
+    def svg_box(self, x, y, w, h, style="solid", accent=None, fill=0.04):
+        dash = ' stroke-dasharray="8 5"' if style == "dashed" else ""
         stroke = accent or "currentColor"
-        width = 2.5 if accent else 1.8
         self.add(
-            f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="6"'
-            f' fill="currentColor" fill-opacity="0.04"'
-            f' stroke="{stroke}" stroke-width="{width}"{dash}/>'
+            f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="7"'
+            f' fill="currentColor" fill-opacity="{fill}"'
+            f' stroke="{stroke}" stroke-width="2"{dash}/>'
         )
 
+    # 아래 셋은 같은 배치를 drawio 로 다시 뽑기 위한 기록이다.
+    def keep_box(self, x, y, w, h, title=None, tag=None, lines=(),
+                 style="solid", accent=None, size=13, container=False):
+        self.shapes.append({
+            "kind": "box", "x": x, "y": y, "w": w, "h": h, "title": title,
+            "tag": tag, "lines": list(lines), "style": style,
+            "accent": accent, "size": size, "container": container,
+        })
 
-def node(canvas: Canvas, y: int, title: str, status: str, lines: list[str],
-         accent=None) -> int:
-    """왼쪽 기둥의 상자 하나. 아래쪽 y 를 돌려준다."""
-    height = 46 + LINE * len(lines) + 14
-    style = "dashed" if status in ("뼈대", "끊김") else "solid"
-    canvas.box(LEFT_X, y, LEFT_W, height, style, accent)
-    tag_text = {"구현": "[구현]", "뼈대": "[뼈대 · 콜백 없음]",
-                "끊김": "[끊김]", "하드웨어": "[하드웨어]"}[status]
-    canvas.record_box(LEFT_X, y, LEFT_W, height, lines, style, accent,
-                      title=title, tag=tag_text, size=16)
-    canvas.text(LEFT_X + 20, y + 30, title, size=19, weight="700",
-                fill=accent or "currentColor")
+    def keep_label(self, x, y, w, h, lines, accent=None, size=13):
+        """테두리도 채움도 없는 글. 화살표 위에 얹는 설명이다."""
+        self.shapes.append({
+            "kind": "text", "x": x, "y": y, "w": w, "h": h, "title": None,
+            "tag": None, "lines": list(lines), "style": "none",
+            "accent": accent, "size": size, "container": False,
+        })
 
-    tag = {"구현": "[구현]", "뼈대": "[뼈대 · 콜백 없음]",
-           "끊김": "[끊김]", "하드웨어": "[하드웨어]"}[status]
-    canvas.text(LEFT_X + LEFT_W - 20, y + 30, tag, size=14, weight="700",
-                fill=accent or "currentColor", anchor="end", opacity=0.9)
-    for i, line in enumerate(lines):
-        canvas.text(LEFT_X + 20, y + 58 + LINE * i, line, size=14,
-                    opacity=0.85, mono=line.startswith("/"))
-    return y + height
-
-
-def down(canvas: Canvas, y_from: int, lines: list[str], accent=None) -> int:
-    """세로 화살표 하나 + 오른쪽 설명 상자. 다음 상자의 y 를 돌려준다."""
-    y_to = y_from + GAP
-    stroke = accent or "currentColor"
-    canvas.add(
-        f'<line x1="{SPINE_X}" y1="{y_from}" x2="{SPINE_X}" y2="{y_to - 6}"'
-        f' stroke="{stroke}" stroke-width="2.5" marker-end="url(#a)"/>'
-    )
-    height = 16 + LINE * len(lines) + 10
-    top = y_from + (GAP - height) // 2
-    canvas.box(NOTE_X, top, NOTE_W, height, accent=accent)
-    canvas.record_box(NOTE_X, top, NOTE_W, height, lines, accent=accent)
-    canvas.record_line(SPINE_X, y_from, SPINE_X, y_to, accent)
-    for i, line in enumerate(lines):
-        bold = "700" if i == 0 else "400"
-        canvas.text(NOTE_X + 16, top + 26 + LINE * i, line, size=14,
-                    weight=bold, fill=stroke if i == 0 else "currentColor",
-                    opacity=1.0 if i == 0 else 0.85,
-                    mono=line.startswith("/") or line.startswith("aed_"))
-    return y_to
+    def keep_line(self, x1, y1, x2, y2, accent=None, arrow=True,
+                  dashed=False, guide=False) -> None:
+        self.lines.append({"x1": x1, "y1": y1, "x2": x2, "y2": y2,
+                           "accent": accent, "arrow": arrow,
+                           "dashed": dashed, "guide": guide})
 
 
-def across(canvas: Canvas, y: int, lines: list[str], accent=None) -> None:
-    """관제로 가는 가로 화살표. 높이 y 는 이 화살표만 쓴다.
+def lane_mid(i: int) -> int:
+    return LANE_X[i] + LANE_W[i] // 2
 
-    선을 설명 상자 앞뒤로 끊는다. 한 줄로 그으면 상자를 뚫고 지나가는데,
-    상자가 불투명해 가려질 뿐 도형이 겹친 상태다. drawio 로 열어 상자를
-    옮기면 그 선이 드러난다.
+
+def label_height(lines) -> int:
+    return LINE * len(lines) + 8
+
+
+def arrow(c: Canvas, top: int, src: int, dst: int, lines, accent=None,
+          dashed=False) -> int:
+    """레인 src → dst 가로 화살표. 글은 선 바로 위에 얹는다.
+
+    받는 top 은 이 화살표가 쓸 세로 공간의 **위끝**이다. 선 위치를 받으면
+    글이 위로 자라 앞 단계를 침범하는데, 부르는 쪽이 그 높이를 미리 알 수
+    없어 매번 어긋난다. 위끝을 받으면 그 계산을 여기서 한다.
+
+    돌려주는 값은 다음 블록의 위끝이다.
     """
     stroke = accent or "currentColor"
-    height = 16 + LINE * len(lines) + 10
-    top = y - height // 2
+    height = label_height(lines)
+    y = top + height + 8
+    # 레인 가장자리끼리 이으면 붙어 있는 레인 사이가 60px 밖에 안 돼,
+    # 글이 화살표 밖으로 한참 삐져나간다. 중심에서 중심으로 긋는다.
+    # 레인 몸통은 이 띠 안에서 비어 있으므로 지나가도 가리는 것이 없다.
+    right = dst > src
+    x1, x2 = lane_mid(src), lane_mid(dst)
 
-    # 왼쪽 기둥 → 설명 상자
-    canvas.add(
-        f'<line x1="{LEFT_X + LEFT_W}" y1="{y}" x2="{GUT_X}" y2="{y}"'
-        f' stroke="{stroke}" stroke-width="2.5"/>'
+    dash = ' stroke-dasharray="7 5"' if dashed else ""
+    head_x = x2 - 7 if right else x2 + 7
+    c.add(
+        f'<line x1="{x1}" y1="{y}" x2="{head_x}" y2="{y}" stroke="{stroke}"'
+        f' stroke-width="2.6" marker-end="url(#a)"{dash}/>'
     )
-    canvas.record_line(LEFT_X + LEFT_W, y, GUT_X, y, accent, arrow=False)
+    c.keep_line(x1, y, x2, y, accent, dashed=dashed)
 
-    canvas.box(GUT_X, top, GUT_W, height, accent=accent)
-    canvas.record_box(GUT_X, top, GUT_W, height, lines, accent=accent)
-
-    # 설명 상자 → 관제 기둥
-    canvas.add(
-        f'<line x1="{GUT_X + GUT_W}" y1="{y}" x2="{RIGHT_X - 6}" y2="{y}"'
-        f' stroke="{stroke}" stroke-width="2.5" marker-end="url(#a)"/>'
-    )
-    canvas.record_line(GUT_X + GUT_W, y, RIGHT_X, y, accent)
+    text_x = min(x1, x2) + 16
     for i, line in enumerate(lines):
-        bold = "700" if i == 0 else "400"
-        canvas.text(GUT_X + 16, top + 26 + LINE * i, line, size=14,
-                    weight=bold, fill=stroke if i == 0 else "currentColor",
-                    opacity=1.0 if i == 0 else 0.85,
-                    mono=line.startswith("/"))
+        c.svg_text(text_x, top + 16 + LINE * i, line, size=14,
+                   weight="700" if i == 0 else "400",
+                   fill=stroke if i == 0 else "currentColor",
+                   opacity=1.0 if i == 0 else 0.82,
+                   mono=line.startswith("/"))
+    c.keep_label(text_x, top, abs(x2 - x1) - 32, height, lines, accent)
+
+    return y + GAP_AFTER
 
 
-def build() -> str:
+def inside(c: Canvas, top: int, lane: int, lines, accent=None) -> int:
+    """레인 안에서 도는 일. 짧은 세로 화살표와 그 오른쪽 글.
+
+    arrow 와 같이 top 은 이 블록의 위끝이다.
+    """
+    stroke = accent or "currentColor"
+    x = lane_mid(lane)
+    height = label_height(lines)
+    y = top + height + 8
+    c.add(
+        f'<line x1="{x}" y1="{top}" x2="{x}" y2="{y - 7}"'
+        f' stroke="{stroke}" stroke-width="2.6" marker-end="url(#a)"/>'
+    )
+    c.keep_line(x, top, x, y, accent)
+    for i, line in enumerate(lines):
+        c.svg_text(x + 22, top + 16 + LINE * i, line, size=14,
+                   weight="700" if i == 0 else "400",
+                   fill=stroke if i == 0 else "currentColor",
+                   opacity=1.0 if i == 0 else 0.82,
+                   mono=line.startswith("/"))
+    c.keep_label(x + 22, top, LANE_W[lane] // 2 + 200, height, lines, accent)
+    return y + GAP_AFTER
+
+
+def build():
     c = Canvas()
-    RED, DIM = "var(--red)", "var(--dim)"
+    RED = "var(--red)"
 
-    # ── 제목 ────────────────────────────────────────────────────────────
-    c.text(LEFT_X, 54, "Multi-AMR AED — main 기준 실제 배선", size=27,
-           weight="700")
-    c.text(LEFT_X, 84,
-           "토픽 이름·메시지 타입·QoS 를 화살표마다 적었습니다. 범례를 "
-           "따로 찾아볼 필요가 없습니다.", size=15, opacity=0.75)
-    c.text(LEFT_X, 110,
-           "테두리가 점선이면 아직 콜백이 빈 뼈대이고, 빨간 것은 발행자가 "
-           "없어 흐름이 멈추는 자리입니다.", size=15, opacity=0.75)
+    c.svg_text(60, 56, "Multi-AMR AED — 기계 구성과 시나리오 흐름", size=30,
+               weight="700")
+    c.svg_text(60, 92,
+               "세로 칸은 기계 한 대, 가로 띠는 시나리오 단계입니다. "
+               "화살표 위의 글이 그 화살표로 오가는 것입니다 — "
+               "토픽 이름 · 메시지 타입 · QoS · 주기.", size=16, opacity=0.75)
 
-    y = TOP
+    # ── 레인 머리 ───────────────────────────────────────────────────────
+    for i, (name, lines, status) in enumerate(LANES):
+        c.svg_box(LANE_X[i], HEAD_Y, LANE_W[i], HEAD_H, fill=0.09)
+        c.svg_text(LANE_X[i] + 18, HEAD_Y + 30, name, size=18, weight="700")
+        tag = {"구현": "[구현]", "일부": "[일부 구현]",
+               "하드웨어": "[하드웨어]"}[status]
+        c.svg_text(LANE_X[i] + LANE_W[i] - 18, HEAD_Y + 30, tag, size=13,
+                   weight="700", anchor="end", opacity=0.75)
+        for j, line in enumerate(lines):
+            c.svg_text(LANE_X[i] + 18, HEAD_Y + 58 + 21 * j, line, size=13,
+                       opacity=0.8)
+        c.keep_box(LANE_X[i], HEAD_Y, LANE_W[i], HEAD_H, title=name,
+                   tag=tag, lines=lines, size=14)
 
-    # ── ① 고정 웹캠 ─────────────────────────────────────────────────────
-    y = node(c, y, "① 고정 웹캠 ×2  ·  천장 USB 카메라", "하드웨어", [
-        "camera_open (개방구역) · camera_alley (골목)",
-        "640×480 JPEG. 같은 노트북 안에서 도는 노드가 직접 읽는다",
-        "(direct_camera=true — 영상을 DDS 로 왕복시키지 않는다)",
+    # ── 단계 띠 ─────────────────────────────────────────────────────────
+    phases: list[list] = []
+    y = BODY_TOP
+
+    def phase(title: str, note: str) -> int:
+        phases.append([title, note, y, None])
+        return y + 56                     # 띠 제목 아래에서 시작한다
+
+    def close(cursor: int) -> int:
+        phases[-1][3] = cursor - GAP_AFTER + PHASE_PAD
+        return phases[-1][3] + 30
+
+    # P0 대기 ───────────────────────────────────────────────────────────
+    y = phase("P0  대기", "로봇은 Dock 에서 AED 를 싣고 기다린다")
+    y = arrow(c, y, 3, 2, [
+        "/{robot_id}/odom  ·  /battery_state  ·  /dock_status  ·  /scan",
+        "nav_msgs/Odometry · sensor_msgs/BatteryState · "
+        "irobot_create_msgs/DockStatus · sensor_msgs/LaserScan",
+        "BEST_EFFORT depth 10 — 센서는 최신값만 의미가 있어 밀리면 버린다",
     ])
-    y = down(c, y, [
-        "프로세스 안에서 직접 전달 · DDS 안 거침",
-        "cv2.VideoCapture → numpy BGR uint8[480,640,3]",
-        "15 Hz",
+    y = arrow(c, y, 2, 1, [
+        "/aed/robot_state    ← 발행하는 노드가 없다",
+        "aed_interfaces/RobotState · RELIABLE depth 20 · 2 Hz 예정",
+        "robot_state_monitor 가 29줄 뼈대라 관제의 로봇 카드가 빈칸으로 남는다",
+    ], accent=RED, dashed=True)
+    y = arrow(c, y, 1, 4, [
+        "WebSocket  ws://호스트:8000/ws/live",
+        "SystemSnapshot JSON · 0.25초마다 · 로봇·사건·임무·영상 상태 한 장",
     ])
+    y = close(y)
 
-    # ── ② vision_detector ───────────────────────────────────────────────
-    y_vision = y
-    y = node(c, y, "② vision_detector ×2  ·  aed_vision", "구현", [
-        "YOLO11n 파인튜닝(rescue_yolo11n.pt) — fallen_person · helper",
-        "확정 규칙: 최근 10프레임 중 6프레임 이상 검출되면 CONFIRMED",
-        "신뢰도 문턱 rescue_conf = 0.25",
-        "혼잡도는 alley 카메라만 계산한다 (open 은 mode=open)",
-        "호모그래피로 픽셀→map 변환은 아직 안 붙었다 (좌표가 0,0)",
+    # P1 감지 ───────────────────────────────────────────────────────────
+    y = phase("P1  감지", "쓰러진 사람을 웹캠이 본다")
+    y = inside(c, y, 0, [
+        "USB 카메라 → vision_detector   같은 프로세스 · DDS 안 거침",
+        "cv2.VideoCapture → numpy BGR uint8[480,640,3] · 15 Hz",
+        "확정 규칙: 최근 10프레임 중 6프레임 이상 검출 · rescue_conf 0.25",
     ])
-    y = down(c, y, [
+    y = arrow(c, y, 0, 1, [
         "/{camera_id}/vision/emergency_event",
         "aed_interfaces/EmergencyEvent · RELIABLE depth 10",
-        "상태가 바뀔 때만 (DETECTED→CONFIRMED→RESOLVED)",
+        "상태가 바뀔 때만 (DETECTED → CONFIRMED → RESOLVED)",
+        "location.point 는 아직 0,0 — 호모그래피 변환이 안 붙었다",
     ])
-
-    # ── ③ location_mapper (끊김) ────────────────────────────────────────
-    y = node(c, y, "③ location_mapper  ·  카메라별 → 공용 토픽 중계",
-             "뼈대", [
-        "패키지와 노드는 있으나 콜백이 비어 있다 (29줄 scaffold)",
-        "이것이 없어서 검출이 출동으로 이어지지 않는다",
-    ], accent=RED)
-    y = down(c, y, [
-        "/aed/emergency_event  ← 발행하는 노드가 없다",
-        "aed_interfaces/EmergencyEvent · RELIABLE depth 10",
-        "mission_manager 는 이 토픽을 듣고 있으나 아무것도 안 온다",
-    ], accent=RED)
-
-    # ── ④ mission_manager ───────────────────────────────────────────────
-    y_manager = y
-    y = node(c, y, "④ mission_manager  ·  후보 순위와 배정", "구현", [
-        "구독 /aed/emergency_event (10) · /aed/robot_state (20)",
-        "        /aed/mission_status (20)",
-        "가용 조건: availability=AVAILABLE ∧ network_ok ∧ nav2_ok ∧ path_valid",
-        "순위: rank_candidates() — estimated_path_cost 오름차순",
-        "재할당: 실패 로봇을 빼고 assignment_version 을 올려 다시 배정",
+    y = arrow(c, y, 0, 1, [
+        "/{camera_id}/vision/debug/compressed   ·   /vision/person_count",
+        "sensor_msgs/CompressedImage · BEST_EFFORT depth 1 · 15 Hz",
+        "std_msgs/UInt32 · RELIABLE depth 10 — 화면 타일의 검출 표시",
     ])
-    y = down(c, y, [
+    y = close(y)
+
+    # P2 확정·배정 ──────────────────────────────────────────────────────
+    y = phase("P2  확정 · 배정", "중앙이 후보를 세우고 한 대만 보낸다")
+    y = inside(c, y, 1, [
+        "location_mapper   ← 29줄 뼈대. 여기서 흐름이 끊긴다",
+        "카메라별 토픽을 /aed/emergency_event 로 중계해야 한다",
+        "mission_manager 는 그 토픽을 듣고 있으나 아무것도 안 온다",
+    ], accent=RED)
+    y = inside(c, y, 1, [
+        "mission_manager._assign_next()",
+        "가용: availability=AVAILABLE ∧ network_ok ∧ nav2_ok ∧ path_valid",
+        "순위: rank_candidates() — estimated_path_cost 오름차순 · 1대만 배정",
+    ])
+    y = arrow(c, y, 1, 2, [
         "/{robot_id}/mission_assignment",
         "aed_interfaces/MissionAssignment · RELIABLE depth 10",
-        "목표 좌표는 이 메시지에만 실린다 (MissionStatus 에는 상태만)",
-        "cancel_previous=true 면 받는 쪽이 기존 goal 을 취소한다",
+        "목표 좌표는 이 메시지에만 실린다 (MissionStatus 에는 상태만 있다)",
+        "cancel_previous=true 면 받는 쪽이 기존 Nav2 goal 을 취소한다",
     ])
-
-    # ── ⑤ mission_executor ──────────────────────────────────────────────
-    y = node(c, y, "⑤ mission_executor ×2  ·  robot_missions", "구현", [
-        "배정을 Nav2 goal 로 옮긴다. goal_serial 로 늦게 온 결과를 버린다",
-        "cancel_previous 면 기존 goal 을 cancel_goal_async() 로 취소",
-        "발행 /aed/mission_status · RELIABLE depth 10",
-    ])
-    y = down(c, y, [
-        "/{robot_id}/navigate_to_pose",
-        "nav2_msgs/action/NavigateToPose  (Topic 아님 · Action)",
-        "goal: PoseStamped(map) / feedback: 남은 거리 / result: 성공·실패",
-    ])
-
-    # ── ⑥ Nav2 + TurtleBot4 ─────────────────────────────────────────────
-    y = node(c, y, "⑥ Nav2 + TurtleBot4 ×2  ·  주행", "하드웨어", [
-        "bt_navigator · planner · controller · AMCL (공용 지도 maps/map.yaml)",
-        "출력 /{robot_id}/cmd_vel · geometry_msgs/Twist · 최대 0.20 m/s",
-        "센서 /scan · /odom · /battery_state · /dock_status  (BEST_EFFORT)",
-        "카메라 /{robot_id}/oakd/rgb/image_raw/compressed (BEST_EFFORT)",
-    ])
-    y = down(c, y, [
-        "센서값을 모아 RobotState 로 옮기는 일",
-        "/odom → 위치·속도 · /battery_state → 배터리 · /dock_status → 도킹",
-    ], accent=RED)
-
-    # ── ⑦ robot_state_monitor (끊김) ────────────────────────────────────
-    y_state = y
-    y = node(c, y, "⑦ robot_state_monitor ×2  ·  로봇 상태 집계", "뼈대", [
-        "패키지와 노드는 있으나 콜백이 비어 있다 (29줄 scaffold)",
-        "이것이 없어서 관제의 로봇 카드가 빈칸으로 남는다",
-        "시연에서는 tools/demo_publisher.py 가 bag 의 odom·battery 를 옮긴다",
-    ], accent=RED)
-    y_bottom_left = y
-
-    # ── 관제로 가는 가로 화살표 (저마다 다른 높이) ──────────────────────
-    across(c, y_vision + 96, [
-        "/{camera_id}/vision/debug/compressed",
-        "sensor_msgs/CompressedImage · BEST_EFFORT depth 1 · 15 Hz",
-        "검출 상자가 그려진 그림. 최신 프레임만 의미가 있어 밀리면 버린다",
-        "함께: /{camera_id}/vision/person_count · std_msgs/UInt32 · RELIABLE",
-    ])
-    across(c, y_manager + 108, [
-        "/aed/mission_status",
-        "aed_interfaces/MissionStatus · RELIABLE depth 20",
+    y = arrow(c, y, 2, 1, [
+        "/aed/mission_status    ASSIGNED → DISPATCHING",
+        "aed_interfaces/MissionStatus · RELIABLE depth 10",
         "상태 14종. 한 번만 오므로 놓치면 그 기록이 영영 없다",
-        "배정도 함께 구독한다 /{robot_id}/mission_assignment (목표 좌표)",
     ])
-    across(c, y_state + 84, [
-        "/aed/robot_state  ← 발행하는 노드가 없다",
-        "aed_interfaces/RobotState · RELIABLE depth 20",
-        "관제는 구독하고 있으나 아무것도 안 온다",
-        "AED_HMI_STATE_RELIABILITY=best_effort 로 BEST_EFFORT 전환 가능",
+    y = close(y)
+
+    # P3 이동 ───────────────────────────────────────────────────────────
+    y = phase("P3  이동", "Nav2 가 목표까지 몬다")
+    y = inside(c, y, 2, [
+        "/{robot_id}/navigate_to_pose    Topic 아님 · Action",
+        "nav2_msgs/action/NavigateToPose",
+        "goal PoseStamped(map) / feedback 남은 거리 / result 성공·실패",
+    ])
+    y = arrow(c, y, 2, 3, [
+        "/{robot_id}/cmd_vel",
+        "geometry_msgs/Twist · 최대 선속도 0.20 m/s (nav2_aed.yaml)",
+    ])
+    y = arrow(c, y, 3, 1, [
+        "/{robot_id}/oakd/rgb/image_raw/compressed",
+        "sensor_msgs/CompressedImage · BEST_EFFORT depth 1",
+        "로봇 시점 영상. 로봇 쪽 검출 노드는 아직 없어 원본만 나온다",
+    ])
+    y = arrow(c, y, 2, 1, [
+        "/aed/mission_status    EN_ROUTE",
+        "aed_interfaces/MissionStatus · RELIABLE depth 10",
+    ])
+    y = arrow(c, y, 1, 4, [
+        "WebSocket 0.25초   +   MJPEG /api/video/{stream_id}",
+        "경보 배너 · 도착 예상(ETA) · 로봇 카드 · 4분할 영상",
+        "ETA = 남은 거리 ÷ 실측 속도. 못 믿을 때는 순항 0.20 m/s 로 갈음",
+    ])
+    y = close(y)
+
+    # P4 재할당 ─────────────────────────────────────────────────────────
+    y = phase("P4  장애 · 재할당", "가던 로봇이 못 가면 다른 한 대가 간다")
+    y = arrow(c, y, 2, 1, [
+        "/aed/mission_status    BLOCKED | NETWORK_LOST | NAVIGATION_ERROR",
+        "aed_interfaces/MissionStatus · reason 에 사유 문자열이 실린다",
     ], accent=RED)
+    y = arrow(c, y, 1, 2, [
+        "/{robot_id}/mission_assignment    assignment_version = 2",
+        "aed_interfaces/MissionAssignment · cancel_previous=true",
+        "실패한 로봇을 후보에서 빼고 차순위에게 다시 보낸다",
+    ], accent=RED)
+    y = close(y)
 
-    # ── 오른쪽 기둥: 관제 ───────────────────────────────────────────────
-    ry = TOP
-    rh = y_bottom_left - TOP
-    c.box(RIGHT_X, ry, RIGHT_W, rh)
-    c.record_box(RIGHT_X, ry, RIGHT_W, rh, [], title="aed_hmi  ·  관제",
-                 tag="[구현]", size=16)
-    c.shapes[-1]["container"] = True
-    c.text(RIGHT_X + 22, ry + 34, "aed_hmi  ·  관제", size=19, weight="700")
-    c.text(RIGHT_X + RIGHT_W - 22, ry + 34, "[구현]", size=14, weight="700",
-           anchor="end", opacity=0.9)
+    # P5 도착·종료 ──────────────────────────────────────────────────────
+    y = phase("P5  도착 · 종료", "AED 전달이 끝나면 기록이 남는다")
+    y = arrow(c, y, 2, 1, [
+        "/aed/mission_status    ARRIVED → COMPLETED",
+        "aed_interfaces/MissionStatus · RELIABLE depth 10",
+    ])
+    y = inside(c, y, 1, [
+        "context.on_*  —  같은 값이 두 갈래로 간다",
+        "Ⓐ 메모리(LiveState) → WebSocket 0.25초      지금 상태",
+        "Ⓑ SQLite(Repository) → REST 5초             일어난 일",
+    ])
+    y = arrow(c, y, 1, 4, [
+        "GET /api/missions · /api/stats/response-time · /stats/eta-accuracy",
+        "출동 이력과 통계. 임무 요약은 저장하지 않고 상태 전이에서 되짚는다",
+    ])
+    y = close(y)
 
-    inner = [
-        ("aed_hmi_bridge (rclpy 스레드)", [
-            "ros/bridge.py — rclpy 를 아는 유일한 곳",
-            "구독이 안 붙으면 토픽 이름을 대어 로그에 적는다",
-            "QoS 가 어긋나면 ROS 2 는 조용히 연결을 안 맺는다",
-        ]),
-        ("ros/converters.py", [
-            "uint8 → 이름 문자열 · Time → UTC epoch 초",
-            "여기서만 aed_interfaces 를 안다",
-        ]),
-        ("context.on_*  ← 갈림길", [
-            "같은 값이 두 갈래로 간다",
-            "Ⓐ 메모리(LiveState) · Ⓑ SQLite(Repository)",
-        ]),
-        ("SQLite  ·  var/aed_hmi.sqlite3", [
-            "emergency_events · mission_assignments",
-            "mission_events · robot_samples · eta_records",
-            "상태 전이는 덧붙이기만 한다. 요약은 매번 되짚는다",
-        ]),
-        ("FastAPI  ·  :8000", [
-            "WS /ws/live — 0.25초마다 스냅샷 (메모리에서)",
-            "GET /api/missions · /api/stats/* (SQLite 에서)",
-            "MJPEG /api/video/{stream_id}",
-        ]),
-        ("React + TypeScript  ·  :5173", [
-            "4분할 영상 · 로봇 카드 · 경보 배너 · 출동 이력",
-            "타입은 domain/models.py 와 1:1",
-        ]),
-    ]
-    # 안쪽 상자를 기둥 높이에 고르게 편다. 붙여 쌓으면 아래가 텅 비어
-    # 그림이 덜 그려진 것처럼 보인다.
-    heights = [34 + LINE * len(lines) + 8 for _, lines in inner]
-    room = rh - 58 - 24 - sum(heights)
-    step = max(room // (len(inner) - 1), 26)
+    # 레인 세로 안내선. 어느 칸의 일인지 눈으로 따라갈 수 있게 한다.
+    # 가로 화살표가 이 선을 지나는 것은 정상이다(생명선).
+    guides = []
+    for i in range(len(LANES)):
+        gx = lane_mid(i)
+        guides.append(
+            f'<line x1="{gx}" y1="{HEAD_Y + HEAD_H}" x2="{gx}" y2="{y}"'
+            f' stroke="currentColor" stroke-width="1.5"'
+            f' stroke-dasharray="3 7" stroke-opacity="0.35"/>'
+        )
+        c.keep_line(gx, HEAD_Y + HEAD_H, gx, y, arrow=False, dashed=True,
+                    guide=True)
 
-    iy = ry + 58
-    for index, (title, lines) in enumerate(inner):
-        height = heights[index]
-        c.box(RIGHT_X + 20, iy, RIGHT_W - 40, height)
-        c.record_box(RIGHT_X + 20, iy, RIGHT_W - 40, height, lines,
-                     title=title, size=13)
-        c.text(RIGHT_X + 38, iy + 26, title, size=15, weight="700")
-        for i, line in enumerate(lines):
-            c.text(RIGHT_X + 38, iy + 48 + LINE * i, line, size=13,
-                   opacity=0.82)
-        iy += height
-        if index < len(inner) - 1:
-            c.add(
-                f'<line x1="{RIGHT_X + RIGHT_W // 2}" y1="{iy}"'
-                f' x2="{RIGHT_X + RIGHT_W // 2}" y2="{iy + step - 6}"'
-                f' stroke="currentColor" stroke-width="2"'
-                f' marker-end="url(#a)"/>'
-            )
-            c.record_line(RIGHT_X + RIGHT_W // 2, iy,
-                          RIGHT_X + RIGHT_W // 2, iy + step)
-            iy += step
+    # 단계 띠는 배경이므로 뒤에 만들어 앞에 붙인다.
+    band = []
+    for title, note, top, bottom in phases:
+        band.append(
+            f'<rect x="40" y="{top - 12}" width="{W - 80}"'
+            f' height="{bottom - top + 12}" rx="10"'
+            f' fill="currentColor" fill-opacity="0.03"'
+            f' stroke="currentColor" stroke-opacity="0.28"'
+            f' stroke-width="1.5"/>'
+        )
+        c.keep_box(40, top - 12, W - 80, bottom - top + 12, title=title,
+                   tag=None, lines=[note], style="dashed", size=15,
+                   container=True)
+    for title, note, top, bottom in phases:
+        band.append(
+            f'<text x="62" y="{top + 20}" font-size="21" font-weight="700"'
+            f' fill="currentColor">{esc(title)}</text>'
+        )
+        band.append(
+            f'<text x="272" y="{top + 20}" font-size="15"'
+            f' fill="currentColor" opacity="0.7">{esc(note)}</text>'
+        )
+    c.parts = band + guides + c.parts
 
-    # ── 아래: 정의는 했으나 아직 아무도 안 쓰는 것 ──────────────────────
-    fy = y_bottom_left + 56
-    notes = [
-        ("정의만 해 두고 아직 쓰는 노드가 없는 인터페이스", [
-            "action/DeliverAed        출동 지시. 지금은 MissionAssignment"
-            " topic 이 그 자리를 대신한다",
-            "srv/ReportEmergency      119·운영자 좌표 접수",
-            "msg/CrowdLevel           혼잡도. 지금은 std_msgs/String 이 나간다",
-            "msg/DetectionSummary     프레임당 검출 결과",
-            "msg/SensorHealth         라이다 이상과 대체 주행 여부",
-        ]),
-        ("main 에 없는 것", [
-            "multi_robot_emergency    ETA 예상·실측 비교. woduqAMR 브랜치에"
-            " 있다",
-            "/emergency/eta/result    관제는 이미 구독한다"
-            " (std_msgs/String 안의 JSON · TRANSIENT_LOCAL depth 10)",
-        ]),
-    ]
-    for title, lines in notes:
-        height = 34 + LINE * len(lines) + 10
-        c.box(LEFT_X, fy, W - LEFT_X * 2, height, style="dashed")
-        c.record_box(LEFT_X, fy, W - LEFT_X * 2, height, lines,
-                     style="dashed", title=title, size=13)
-        c.text(LEFT_X + 20, fy + 26, title, size=16, weight="700",
-               opacity=0.9)
-        for i, line in enumerate(lines):
-            c.text(LEFT_X + 20, fy + 50 + LINE * i, line, size=14,
-                   opacity=0.8, mono=True)
-        fy += height + 20
-
-    height = fy + 30
+    height = y + 30
     c.bottom = height
     body = "\n".join(c.parts)
     return c, (
         f'<svg viewBox="0 0 {W} {height}" role="img"'
-        f' aria-label="main 기준 실제 배선. 왼쪽은 ROS 흐름, 오른쪽은 관제.'
-        f' 빨간 상자 둘은 발행자가 없어 흐름이 멈추는 자리다.">\n'
+        f' aria-label="기계 다섯 종을 세로 칸으로, 시나리오 여섯 단계를'
+        f' 가로 띠로 놓은 그림. 화살표 위의 글이 그 화살표로 오가는 토픽과'
+        f' 메시지 타입, QoS 다.">\n'
         f'<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5"'
-        f' markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
+        f' markerWidth="6" markerHeight="6" orient="auto-start-reverse">'
         f'<path d="M0 0 L10 5 L0 10 z" fill="context-stroke"/>'
         f'</marker></defs>\n{body}\n</svg>'
     )
 
 
-# ── drawio 로 뽑기 ──────────────────────────────────────────────────────
+# ── 두 번째 그림: Nav2 안에서 goal 이 어떻게 굴러가나 ────────────────────
 #
-# 같은 좌표를 쓴다. drawio 가 알아서 선을 돌리게 두면 배치가 무너지므로,
-# 선도 시작점과 끝점을 좌표로 직접 박는다(자동 경로 없음).
+# 강사님이 여기를 자세히 본다. 노드 이름·액션 이름·메시지 타입·플러그인
+# 클래스·파라미터 값을 코드에서 읽은 그대로 적는다. 값은
+# src/aed_bringup/config/nav2_aed.yaml 에서 왔다.
 
-DRAWIO_HEAD = (
-    '<mxfile host="app.diagrams.net">'
-    '<diagram name="main 기준 실제 배선">'
+NAV_W = 2860
+NAV_COL_X = [60, 780, 1500, 2220]
+NAV_COL_W = [660, 660, 660, 580]
+
+
+def build_nav2():
+    c = Canvas()
+    RED = "var(--red)"
+
+    c.svg_text(60, 56,
+               "Nav2 상세 — goal 하나가 바퀴까지 가는 길", size=30,
+               weight="700")
+    c.svg_text(60, 92,
+               "노드 이름 · 액션/토픽 이름 · 메시지 타입 · 플러그인 클래스 · "
+               "파라미터 값을 코드에서 읽은 그대로 적었습니다 "
+               "(src/aed_bringup/config/nav2_aed.yaml).", size=16,
+               opacity=0.75)
+
+    steps = [
+        ("① 목표 접수", "bt_navigator", [
+            "액션 서버  /{ns}/navigate_to_pose",
+            "nav2_msgs/action/NavigateToPose",
+            "goal: geometry_msgs/PoseStamped (frame_id=map)",
+            "동작 트리 XML: navigate_to_pose_w_replanning_and_recovery.xml",
+            "global_frame=map · robot_base_frame=base_link",
+            "보내는 쪽은 우리 mission_executor (robot_missions)",
+        ], None),
+        ("② 경로 계산", "planner_server", [
+            "액션 서버  /{ns}/compute_path_to_pose",
+            "nav2_msgs/action/ComputePathToPose  →  결과 nav_msgs/Path",
+            "플러그인 GridBased = nav2_navfn_planner/NavfnPlanner",
+            "tolerance 0.5 m · expected_planner_frequency 20.0 Hz",
+            "동작 트리가 1 Hz 로 다시 계획한다(replanning)",
+            "실패하면 BT 가 복구 가지로 넘어간다",
+        ], None),
+        ("③ 전역 지도", "global_costmap", [
+            "레이어 static_layer · obstacle_layer · inflation_layer",
+            "nav2_costmap_2d::StaticLayer  ← /{ns}/map (nav_msgs/OccupancyGrid)",
+            "ObstacleLayer  ← /{ns}/scan (sensor_msgs/LaserScan)",
+            "  obstacle_max_range 2.5 m · raytrace_max_range 3.0 m",
+            "InflationLayer  inflation_radius 0.22 · cost_scaling_factor 8.0",
+            "resolution 0.06 m · robot_radius 0.2 m · update 1.0 Hz",
+        ], None),
+        ("④ 경로 추종", "controller_server", [
+            "액션 서버  /{ns}/follow_path",
+            "nav2_msgs/action/FollowPath  ← 위 ②의 nav_msgs/Path",
+            "플러그인 FollowPath = dwb_core::DWBLocalPlanner",
+            "controller_frequency 20.0 Hz · max_vel_x 0.2 m/s",
+            "진행 확인 SimpleProgressChecker",
+            "  20초 안에 0.25 m 를 못 가면 실패로 본다",
+            "도착 판정 SimpleGoalChecker",
+            "  xy_goal_tolerance 0.15 m · yaw_goal_tolerance 0.25 rad",
+        ], None),
+        ("⑤ 지역 지도", "local_costmap", [
+            "global_frame=odom · rolling_window=true · 3 m × 3 m",
+            "레이어 static_layer · voxel_layer · inflation_layer",
+            "nav2_costmap_2d::VoxelLayer  ← /{ns}/scan",
+            "update 5.0 Hz · publish 2.0 Hz · resolution 0.06 m",
+            "지역 지도는 map 이 아니라 odom 을 쓴다. 위치추정이 잠깐 튀어도",
+            "장애물 회피가 흔들리지 않게 하기 위해서다",
+        ], None),
+        ("⑥ 속도 다듬기", "velocity_smoother", [
+            "입력  /{ns}/cmd_vel_nav   geometry_msgs/Twist",
+            "출력  /{ns}/cmd_vel       geometry_msgs/Twist",
+            "급가감속을 깎아 낸다. Create3 가 이 값을 그대로 받는다",
+        ], None),
+        ("⑦ 위치추정", "amcl", [
+            "입력  /{ns}/scan (LaserScan) · /{ns}/map (OccupancyGrid)",
+            "       odom→base_link TF (Create3 가 낸다)",
+            "출력  map→odom TF · /{ns}/amcl_pose",
+            "       geometry_msgs/PoseWithCovarianceStamped",
+            "초기 위치는 dock_poses.yaml 실측값을 /initialpose 로 넣는다",
+            "  robot1 (-0.576, 0.137, 5.3°) · robot2 (-0.047, 0.049, 186.4°)",
+            "설정은 turtlebot4_navigation 기본값을 쓴다",
+        ], None),
+        ("⑧ 복구 행동", "behavior_server", [
+            "global_frame=odom · robot_base_frame=base_link",
+            "spin  nav2_behaviors/Spin        제자리 회전으로 시야 확보",
+            "backup  nav2_behaviors/BackUp    뒤로 물러난다",
+            "drive_on_heading · wait · assisted_teleop",
+            "BT 가 경로 계산이나 추종에 실패했을 때 부른다",
+            "그래도 안 되면 NavigateToPose result 가 실패로 확정된다",
+        ], RED),
+    ]
+
+    # 두 칸씩 네 줄로 놓는다. 화살표는 칸 사이 가로선 하나씩만 쓴다.
+    y = 140
+    positions = {}
+    row_height = 0
+    for index, (num, node_name, lines, accent) in enumerate(steps):
+        col = index % 2
+        if col == 0 and index:
+            y += row_height + 60
+            row_height = 0
+        x = NAV_COL_X[col * 2]
+        w = NAV_COL_W[col * 2]
+        height = 74 + LINE * len(lines)
+        row_height = max(row_height, height)
+
+        c.svg_box(x, y, w, height, accent=accent)
+        c.svg_text(x + 20, y + 32, num, size=19, weight="700",
+                   fill=accent or "currentColor")
+        c.svg_text(x + 20, y + 58, node_name, size=17, weight="700",
+                   fill=accent or "currentColor", mono=True)
+        for i, line in enumerate(lines):
+            c.svg_text(x + 20, y + 84 + LINE * i, line, size=14, opacity=0.85,
+                       mono=line.strip().startswith("/"))
+        c.keep_box(x, y, w, height, title=f"{num}   {node_name}",
+                   lines=lines, accent=accent, size=14)
+        positions[index] = (x, y, w, height)
+
+    bottom = y + row_height + 60
+
+    # 흐름 화살표. 같은 줄 안에서는 가로, 줄이 바뀌면 아래로 내려간다.
+    order = [(0, 1), (2, 3), (4, 5), (6, 7)]
+    for left, right in order:
+        if left in positions and right in positions:
+            lx, ly, lw, lh = positions[left]
+            rx, ry, rw, rh = positions[right]
+            mid = ly + min(lh, rh) // 2
+            c.add(
+                f'<line x1="{lx + lw}" y1="{mid}" x2="{rx - 7}" y2="{mid}"'
+                f' stroke="currentColor" stroke-width="2.6"'
+                f' marker-end="url(#a)"/>'
+            )
+            c.keep_line(lx + lw, mid, rx, mid)
+
+    c.svg_text(60, bottom - 20,
+               "②③ 는 한 쌍이고 ④⑤ 도 한 쌍이다. planner 는 global_costmap 을,"
+               " controller 는 local_costmap 을 보고 판단한다.",
+               size=15, opacity=0.75)
+
+    c.bottom = bottom
+    body = "\n".join(c.parts)
+    return c, (
+        f'<svg viewBox="0 0 {NAV_W} {bottom}" role="img"'
+        f' aria-label="Nav2 안에서 goal 이 경로 계산과 추종을 거쳐 cmd_vel'
+        f' 로 나가기까지의 노드와 액션, 플러그인.">\n'
+        f'<defs><marker id="b" viewBox="0 0 10 10" refX="9" refY="5"'
+        f' markerWidth="6" markerHeight="6" orient="auto-start-reverse">'
+        f'<path d="M0 0 L10 5 L0 10 z" fill="context-stroke"/>'
+        f'</marker></defs>\n{body}\n</svg>'.replace("url(#a)", "url(#b)")
+    )
+
+
+# ── drawio 로 뽑기 ──────────────────────────────────────────────────────
+DRAWIO_PAGE = (
+    '<diagram name="{name}">'
     '<mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1"'
     ' tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1"'
     ' pageWidth="{w}" pageHeight="{h}" math="0" shadow="0">'
     '<root><mxCell id="0"/><mxCell id="1" parent="0"/>'
 )
-DRAWIO_TAIL = "</root></mxGraphModel></diagram></mxfile>"
+DRAWIO_PAGE_TAIL = "</root></mxGraphModel></diagram>"
 
 
 def _xml(text: str) -> str:
-    """XML 속성에 넣을 수 있게 escape 한다."""
     return (text.replace("&", "&amp;").replace("<", "&lt;")
                 .replace(">", "&gt;").replace('"', "&quot;"))
 
 
 def _value(title, tag, lines) -> str:
-    """drawio 상자 안의 글. html=1 이라 줄바꿈은 &lt;br&gt; 이다."""
-    parts = []
+    rows = []
     if title:
-        head = f"<b>{_xml(title)}</b>"
+        head = f"&lt;b&gt;{_xml(title)}&lt;/b&gt;"
         if tag:
-            head += f"  {_xml(tag)}"
-        parts.append(head)
+            head += f"　{_xml(tag)}"
+        rows.append(head)
     for index, line in enumerate(lines):
-        bold = title is None and index == 0
-        parts.append(f"<b>{_xml(line)}</b>" if bold else _xml(line))
-    return "&lt;br&gt;".join(
-        part.replace("<b>", "&lt;b&gt;").replace("</b>", "&lt;/b&gt;")
-        for part in parts
-    )
+        if title is None and index == 0:
+            rows.append(f"&lt;b&gt;{_xml(line)}&lt;/b&gt;")
+        else:
+            rows.append(_xml(line))
+    return "&lt;br&gt;".join(rows)
 
 
-def render_drawio(canvas: Canvas) -> str:
+def _page(canvas: Canvas, name: str, prefix: str) -> str:
     cells = []
     for index, shape in enumerate(canvas.shapes):
         colour = "#C0392B" if shape["accent"] else "#333333"
-        dashed = 1 if shape["style"] == "dashed" else 0
-        style = (
-            f"rounded=1;arcSize=6;whiteSpace=wrap;html=1;align=left;"
-            f"verticalAlign=top;spacing=10;spacingLeft=6;spacingTop=4;"
-            f"fillColor=#FFFFFF;strokeColor={colour};strokeWidth=2;"
-            f"dashed={dashed};dashPattern=8 5;fontSize={shape['size']};"
-            f"fontColor={colour};"
-        )
+        if shape["kind"] == "text":
+            # 테두리도 채움도 없는 글. 화살표 위에 얹는 설명이다.
+            style = (
+                f"text;html=1;align=left;verticalAlign=top;"
+                f"fillColor=none;strokeColor=none;spacing=0;"
+                f"fontSize={shape['size']};fontColor={colour};"
+            )
+        else:
+            dashed = 1 if shape["style"] == "dashed" else 0
+            fill = "none" if shape["container"] else "#FFFFFF"
+            style = (
+                f"rounded=1;arcSize=6;whiteSpace=wrap;html=1;align=left;"
+                f"verticalAlign=top;spacing=10;spacingLeft=6;spacingTop=4;"
+                f"fillColor={fill};strokeColor={colour};strokeWidth=2;"
+                f"dashed={dashed};dashPattern=8 5;"
+                f"fontSize={shape['size']};fontColor={colour};"
+            )
         cells.append(
-            f'<mxCell id="s{index}"'
+            f'<mxCell id="{prefix}s{index}"'
             f' value="{_value(shape["title"], shape["tag"], shape["lines"])}"'
             f' style="{style}" vertex="1" parent="1">'
             f'<mxGeometry x="{shape["x"]}" y="{shape["y"]}"'
@@ -476,10 +621,19 @@ def render_drawio(canvas: Canvas) -> str:
     for index, line in enumerate(canvas.lines):
         colour = "#C0392B" if line["accent"] else "#333333"
         end = "block" if line.get("arrow", True) else "none"
-        style = (
-            f"endArrow={end};endFill=1;endSize=6;html=1;rounded=0;"
-            f"strokeColor={colour};strokeWidth=2.5;edgeStyle=none;"
-        )
+        dashed = 1 if line.get("dashed") else 0
+        if line.get("guide"):
+            # 레인 안내선. 검사기가 이 무늬로 알아본다.
+            style = (
+                f"endArrow=none;html=1;rounded=0;strokeColor=#9AA7B4;"
+                f"strokeWidth=1.5;edgeStyle=none;dashed=1;dashPattern=3 7;"
+            )
+        else:
+            style = (
+                f"endArrow={end};endFill=1;endSize=6;html=1;rounded=0;"
+                f"strokeColor={colour};strokeWidth=2.6;edgeStyle=none;"
+                f"dashed={dashed};dashPattern=8 5;"
+            )
         cells.append(
             f'<mxCell id="e{index}" style="{style}" edge="1" parent="1">'
             f'<mxGeometry relative="1" as="geometry">'
@@ -488,27 +642,35 @@ def render_drawio(canvas: Canvas) -> str:
             f"</mxGeometry></mxCell>"
         )
 
-    head = DRAWIO_HEAD.format(w=W, h=canvas.bottom)
-    return head + "".join(cells) + DRAWIO_TAIL
+    head = DRAWIO_PAGE.format(name=name, w=W, h=canvas.bottom)
+    return head + "".join(cells) + DRAWIO_PAGE_TAIL
+
+
+def render_drawio(*pages) -> str:
+    names = ["기계 구성과 시나리오 흐름", "Nav2 상세"]
+    body = "".join(
+        _page(canvas, names[i], f"p{i}")
+        for i, canvas in enumerate(pages)
+    )
+    return "<mxfile host=\"app.diagrams.net\">" + body + "</mxfile>"
 
 
 PAGE = """<meta charset="utf-8">
-<title>Multi-AMR AED — main 기준 실제 배선</title>
+<title>Multi-AMR AED — 기계 구성과 시나리오 흐름</title>
 <style>
   :root {{
-    --bg:#fff; --fg:#16202b; --dim:#5b6b7d; --red:#c0392b; --line:#c9d3de;
+    --bg:#fff; --fg:#16202b; --dim:#5b6b7d; --red:#c0392b;
   }}
   @media (prefers-color-scheme: dark) {{
-    :root {{ --bg:#0f151c; --fg:#dce6f2; --dim:#8496ab; --red:#ff6b6b;
-             --line:#2b3846; }}
+    :root {{ --bg:#0f151c; --fg:#dce6f2; --dim:#8496ab; --red:#ff6b6b; }}
   }}
-  body {{ margin:0; padding:24px; background:var(--bg); color:var(--fg);
+  body {{ margin:0; padding:20px; background:var(--bg); color:var(--fg);
           font-family:"Noto Sans KR",-apple-system,"Segoe UI",sans-serif; }}
   svg {{ width:100%; height:auto; }}
-  p.hint {{ color:var(--dim); font-size:14px; margin:0 0 16px; }}
+  p.hint {{ color:var(--dim); font-size:14px; margin:0 0 14px; }}
 </style>
-<p class="hint">브라우저에서 Ctrl + 휠 로 확대하면 글자가 깨지지 않습니다
-(그림이 SVG 라 배율을 올려도 선명합니다).</p>
+<p class="hint">Ctrl + 휠 로 확대해도 글자가 깨지지 않습니다.
+고쳐 쓰시려면 docs/system_flow.drawio 를 draw.io 로 여세요.</p>
 {svg}
 """
 
@@ -516,20 +678,22 @@ PAGE = """<meta charset="utf-8">
 def main() -> int:
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     canvas, svg = build()
+    nav_canvas, nav_svg = build_nav2()
 
-    # 같은 배치를 둘로 뽑는다. drawio 는 팀이 고쳐 쓰라고, html 은 확인과
-    # 발표용이다.
     html_path = os.path.join(root, "docs", "system_flow.html")
     with open(html_path, "w", encoding="utf-8") as handle:
-        handle.write(PAGE.format(svg=svg))
+        handle.write(PAGE.format(svg=svg + "\n<hr>\n" + nav_svg))
 
     drawio_path = os.path.join(root, "docs", "system_flow.drawio")
     with open(drawio_path, "w", encoding="utf-8") as handle:
-        handle.write(render_drawio(canvas))
+        handle.write(render_drawio(canvas, nav_canvas))
 
     print(f"저장: {html_path}")
-    print(f"저장: {drawio_path}  "
-          f"(상자 {len(canvas.shapes)}개 · 화살표 {len(canvas.lines)}개)")
+    print(f"저장: {drawio_path}")
+    print(f"      1쪽 {W} x {canvas.bottom} · 도형 {len(canvas.shapes)} · "
+          f"화살표 {len(canvas.lines)}")
+    print(f"      2쪽 {NAV_W} x {nav_canvas.bottom} · "
+          f"도형 {len(nav_canvas.shapes)} · 화살표 {len(nav_canvas.lines)}")
     return 0
 
 

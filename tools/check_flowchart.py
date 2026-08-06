@@ -58,6 +58,9 @@ def main() -> int:
     for cell in cells:
         if cell.get("edge") != "1":
             continue
+        # 레인 안내선(생명선)은 지나가라고 있는 선이다. 검사에서 뺀다.
+        if "dashPattern=3 7" in (cell.get("style") or ""):
+            continue
         g = cell.find("mxGeometry")
         source = g.find("mxPoint[@as='sourcePoint']")
         target = g.find("mxPoint[@as='targetPoint']")
