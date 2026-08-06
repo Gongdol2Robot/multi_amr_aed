@@ -54,6 +54,10 @@ ros2 topic echo /aed/selected_robot
 사용합니다. 엄격한 pose 시간 제한은 `allow_stale_pose:=false`로 켤 수
 있습니다.
 
+기본 `use_planner_start:=true`에서는 각 Nav2 Planner가 TF에서 자신의 현재
+시작 위치를 직접 가져오므로 중앙 노드의 오래된 AMCL pose를 경로 시작점으로
+강제하지 않습니다.
+
 ```bash
 ros2 launch aed_bringup central_dispatch.launch.py dispatch_enabled:=true
 ```

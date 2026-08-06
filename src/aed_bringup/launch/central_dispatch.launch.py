@@ -18,6 +18,11 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="true",
                 choices=["true", "false"],
             ),
+            DeclareLaunchArgument(
+                "use_planner_start",
+                default_value="true",
+                choices=["true", "false"],
+            ),
             DeclareLaunchArgument("plan_retry_sec", default_value="3.0"),
             DeclareLaunchArgument(
                 "path_collection_timeout_sec", default_value="10.0"
@@ -42,6 +47,10 @@ def generate_launch_description() -> LaunchDescription:
                         ),
                         "allow_stale_pose": ParameterValue(
                             LaunchConfiguration("allow_stale_pose"),
+                            value_type=bool,
+                        ),
+                        "use_planner_start": ParameterValue(
+                            LaunchConfiguration("use_planner_start"),
                             value_type=bool,
                         ),
                         "plan_retry_sec": ParameterValue(

@@ -66,6 +66,7 @@ class RobotStateMonitor(Node):
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("pose_timeout_sec", 15.0)
         self.declare_parameter("allow_stale_pose", True)
+        self.declare_parameter("use_planner_start", True)
         self.declare_parameter("plan_retry_sec", 3.0)
         self.declare_parameter("state_publish_period_sec", 0.5)
         self.declare_parameter("planner_id", "GridBased")
@@ -80,6 +81,9 @@ class RobotStateMonitor(Node):
         self.pose_timeout = float(self.get_parameter("pose_timeout_sec").value)
         self.allow_stale_pose = bool(
             self.get_parameter("allow_stale_pose").value
+        )
+        self.use_planner_start = bool(
+            self.get_parameter("use_planner_start").value
         )
         self.plan_retry = float(self.get_parameter("plan_retry_sec").value)
         self.planner_id = str(self.get_parameter("planner_id").value)
@@ -268,7 +272,7 @@ class RobotStateMonitor(Node):
 
     def _request_plan(self, robot_id: str, serial: int) -> None:
         runtime = self.runtime[robot_id]
-        if not self._pose_is_usable(runtime):
+        if not self.use_planner_start and not self._pose_is_usable(runtime):
             runtime.path_event_id = self.current_event_id
             runtime.path_valid = False
             runtime.path_cost = -1.0
@@ -282,12 +286,13 @@ class RobotStateMonitor(Node):
 
         goal = ComputePathToPose.Goal()
         goal.goal = deepcopy(self.current_target)
-        goal.start = deepcopy(runtime.pose)
         stamp = self.get_clock().now().to_msg()
         goal.goal.header.stamp = stamp
-        goal.start.header.stamp = stamp
         goal.planner_id = self.planner_id
-        goal.use_start = True
+        goal.use_start = not self.use_planner_start
+        if goal.use_start:
+            goal.start = deepcopy(runtime.pose)
+            goal.start.header.stamp = stamp
         runtime.planning = True
         client.send_goal_async(goal).add_done_callback(
             lambda future, rid=robot_id, event_id=self.current_event_id:
