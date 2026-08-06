@@ -50,12 +50,32 @@ def esc(text: str) -> str:
 
 
 class Canvas:
+    """그린 것을 SVG 조각과 배치 목록 양쪽으로 남긴다.
+
+    좌표 계산은 한 번만 하고, 그 결과를 SVG 로도 drawio 로도 뽑는다.
+    둘을 따로 계산하면 언젠가 서로 어긋난다.
+    """
+
     def __init__(self) -> None:
         self.parts: list[str] = []
+        self.shapes: list[dict] = []   # drawio 로 뽑을 상자
+        self.lines: list[dict] = []    # drawio 로 뽑을 선
         self.bottom = 0
 
     def add(self, svg: str) -> None:
         self.parts.append(svg)
+
+    def record_box(self, x, y, w, h, lines, style="solid", accent=None,
+                   title=None, tag=None, size=14) -> None:
+        self.shapes.append({
+            "x": x, "y": y, "w": w, "h": h, "lines": list(lines),
+            "style": style, "accent": accent, "title": title, "tag": tag,
+            "size": size,
+        })
+
+    def record_line(self, x1, y1, x2, y2, accent=None, arrow=True) -> None:
+        self.lines.append({"x1": x1, "y1": y1, "x2": x2, "y2": y2,
+                           "accent": accent, "arrow": arrow})
 
     def text(self, x, y, s, size=15, weight="400", fill="currentColor",
              anchor="start", opacity=1.0, mono=False):
@@ -83,6 +103,10 @@ def node(canvas: Canvas, y: int, title: str, status: str, lines: list[str],
     height = 46 + LINE * len(lines) + 14
     style = "dashed" if status in ("뼈대", "끊김") else "solid"
     canvas.box(LEFT_X, y, LEFT_W, height, style, accent)
+    tag_text = {"구현": "[구현]", "뼈대": "[뼈대 · 콜백 없음]",
+                "끊김": "[끊김]", "하드웨어": "[하드웨어]"}[status]
+    canvas.record_box(LEFT_X, y, LEFT_W, height, lines, style, accent,
+                      title=title, tag=tag_text, size=16)
     canvas.text(LEFT_X + 20, y + 30, title, size=19, weight="700",
                 fill=accent or "currentColor")
 
@@ -107,6 +131,8 @@ def down(canvas: Canvas, y_from: int, lines: list[str], accent=None) -> int:
     height = 16 + LINE * len(lines) + 10
     top = y_from + (GAP - height) // 2
     canvas.box(NOTE_X, top, NOTE_W, height, accent=accent)
+    canvas.record_box(NOTE_X, top, NOTE_W, height, lines, accent=accent)
+    canvas.record_line(SPINE_X, y_from, SPINE_X, y_to, accent)
     for i, line in enumerate(lines):
         bold = "700" if i == 0 else "400"
         canvas.text(NOTE_X + 16, top + 26 + LINE * i, line, size=14,
@@ -117,15 +143,32 @@ def down(canvas: Canvas, y_from: int, lines: list[str], accent=None) -> int:
 
 
 def across(canvas: Canvas, y: int, lines: list[str], accent=None) -> None:
-    """관제로 가는 가로 화살표. 높이 y 는 이 화살표만 쓴다."""
+    """관제로 가는 가로 화살표. 높이 y 는 이 화살표만 쓴다.
+
+    선을 설명 상자 앞뒤로 끊는다. 한 줄로 그으면 상자를 뚫고 지나가는데,
+    상자가 불투명해 가려질 뿐 도형이 겹친 상태다. drawio 로 열어 상자를
+    옮기면 그 선이 드러난다.
+    """
     stroke = accent or "currentColor"
-    canvas.add(
-        f'<line x1="{LEFT_X + LEFT_W}" y1="{y}" x2="{RIGHT_X - 6}" y2="{y}"'
-        f' stroke="{stroke}" stroke-width="2.5" marker-end="url(#a)"/>'
-    )
     height = 16 + LINE * len(lines) + 10
     top = y - height // 2
+
+    # 왼쪽 기둥 → 설명 상자
+    canvas.add(
+        f'<line x1="{LEFT_X + LEFT_W}" y1="{y}" x2="{GUT_X}" y2="{y}"'
+        f' stroke="{stroke}" stroke-width="2.5"/>'
+    )
+    canvas.record_line(LEFT_X + LEFT_W, y, GUT_X, y, accent, arrow=False)
+
     canvas.box(GUT_X, top, GUT_W, height, accent=accent)
+    canvas.record_box(GUT_X, top, GUT_W, height, lines, accent=accent)
+
+    # 설명 상자 → 관제 기둥
+    canvas.add(
+        f'<line x1="{GUT_X + GUT_W}" y1="{y}" x2="{RIGHT_X - 6}" y2="{y}"'
+        f' stroke="{stroke}" stroke-width="2.5" marker-end="url(#a)"/>'
+    )
+    canvas.record_line(GUT_X + GUT_W, y, RIGHT_X, y, accent)
     for i, line in enumerate(lines):
         bold = "700" if i == 0 else "400"
         canvas.text(GUT_X + 16, top + 26 + LINE * i, line, size=14,
@@ -262,6 +305,9 @@ def build() -> str:
     ry = TOP
     rh = y_bottom_left - TOP
     c.box(RIGHT_X, ry, RIGHT_W, rh)
+    c.record_box(RIGHT_X, ry, RIGHT_W, rh, [], title="aed_hmi  ·  관제",
+                 tag="[구현]", size=16)
+    c.shapes[-1]["container"] = True
     c.text(RIGHT_X + 22, ry + 34, "aed_hmi  ·  관제", size=19, weight="700")
     c.text(RIGHT_X + RIGHT_W - 22, ry + 34, "[구현]", size=14, weight="700",
            anchor="end", opacity=0.9)
@@ -305,6 +351,8 @@ def build() -> str:
     for index, (title, lines) in enumerate(inner):
         height = heights[index]
         c.box(RIGHT_X + 20, iy, RIGHT_W - 40, height)
+        c.record_box(RIGHT_X + 20, iy, RIGHT_W - 40, height, lines,
+                     title=title, size=13)
         c.text(RIGHT_X + 38, iy + 26, title, size=15, weight="700")
         for i, line in enumerate(lines):
             c.text(RIGHT_X + 38, iy + 48 + LINE * i, line, size=13,
@@ -317,6 +365,8 @@ def build() -> str:
                 f' stroke="currentColor" stroke-width="2"'
                 f' marker-end="url(#a)"/>'
             )
+            c.record_line(RIGHT_X + RIGHT_W // 2, iy,
+                          RIGHT_X + RIGHT_W // 2, iy + step)
             iy += step
 
     # ── 아래: 정의는 했으나 아직 아무도 안 쓰는 것 ──────────────────────
@@ -340,6 +390,8 @@ def build() -> str:
     for title, lines in notes:
         height = 34 + LINE * len(lines) + 10
         c.box(LEFT_X, fy, W - LEFT_X * 2, height, style="dashed")
+        c.record_box(LEFT_X, fy, W - LEFT_X * 2, height, lines,
+                     style="dashed", title=title, size=13)
         c.text(LEFT_X + 20, fy + 26, title, size=16, weight="700",
                opacity=0.9)
         for i, line in enumerate(lines):
@@ -348,8 +400,9 @@ def build() -> str:
         fy += height + 20
 
     height = fy + 30
+    c.bottom = height
     body = "\n".join(c.parts)
-    return (
+    return c, (
         f'<svg viewBox="0 0 {W} {height}" role="img"'
         f' aria-label="main 기준 실제 배선. 왼쪽은 ROS 흐름, 오른쪽은 관제.'
         f' 빨간 상자 둘은 발행자가 없어 흐름이 멈추는 자리다.">\n'
@@ -358,6 +411,85 @@ def build() -> str:
         f'<path d="M0 0 L10 5 L0 10 z" fill="context-stroke"/>'
         f'</marker></defs>\n{body}\n</svg>'
     )
+
+
+# ── drawio 로 뽑기 ──────────────────────────────────────────────────────
+#
+# 같은 좌표를 쓴다. drawio 가 알아서 선을 돌리게 두면 배치가 무너지므로,
+# 선도 시작점과 끝점을 좌표로 직접 박는다(자동 경로 없음).
+
+DRAWIO_HEAD = (
+    '<mxfile host="app.diagrams.net">'
+    '<diagram name="main 기준 실제 배선">'
+    '<mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1"'
+    ' tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1"'
+    ' pageWidth="{w}" pageHeight="{h}" math="0" shadow="0">'
+    '<root><mxCell id="0"/><mxCell id="1" parent="0"/>'
+)
+DRAWIO_TAIL = "</root></mxGraphModel></diagram></mxfile>"
+
+
+def _xml(text: str) -> str:
+    """XML 속성에 넣을 수 있게 escape 한다."""
+    return (text.replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def _value(title, tag, lines) -> str:
+    """drawio 상자 안의 글. html=1 이라 줄바꿈은 &lt;br&gt; 이다."""
+    parts = []
+    if title:
+        head = f"<b>{_xml(title)}</b>"
+        if tag:
+            head += f"  {_xml(tag)}"
+        parts.append(head)
+    for index, line in enumerate(lines):
+        bold = title is None and index == 0
+        parts.append(f"<b>{_xml(line)}</b>" if bold else _xml(line))
+    return "&lt;br&gt;".join(
+        part.replace("<b>", "&lt;b&gt;").replace("</b>", "&lt;/b&gt;")
+        for part in parts
+    )
+
+
+def render_drawio(canvas: Canvas) -> str:
+    cells = []
+    for index, shape in enumerate(canvas.shapes):
+        colour = "#C0392B" if shape["accent"] else "#333333"
+        dashed = 1 if shape["style"] == "dashed" else 0
+        style = (
+            f"rounded=1;arcSize=6;whiteSpace=wrap;html=1;align=left;"
+            f"verticalAlign=top;spacing=10;spacingLeft=6;spacingTop=4;"
+            f"fillColor=#FFFFFF;strokeColor={colour};strokeWidth=2;"
+            f"dashed={dashed};dashPattern=8 5;fontSize={shape['size']};"
+            f"fontColor={colour};"
+        )
+        cells.append(
+            f'<mxCell id="s{index}"'
+            f' value="{_value(shape["title"], shape["tag"], shape["lines"])}"'
+            f' style="{style}" vertex="1" parent="1">'
+            f'<mxGeometry x="{shape["x"]}" y="{shape["y"]}"'
+            f' width="{shape["w"]}" height="{shape["h"]}" as="geometry"/>'
+            f"</mxCell>"
+        )
+
+    for index, line in enumerate(canvas.lines):
+        colour = "#C0392B" if line["accent"] else "#333333"
+        end = "block" if line.get("arrow", True) else "none"
+        style = (
+            f"endArrow={end};endFill=1;endSize=6;html=1;rounded=0;"
+            f"strokeColor={colour};strokeWidth=2.5;edgeStyle=none;"
+        )
+        cells.append(
+            f'<mxCell id="e{index}" style="{style}" edge="1" parent="1">'
+            f'<mxGeometry relative="1" as="geometry">'
+            f'<mxPoint x="{line["x1"]}" y="{line["y1"]}" as="sourcePoint"/>'
+            f'<mxPoint x="{line["x2"]}" y="{line["y2"]}" as="targetPoint"/>'
+            f"</mxGeometry></mxCell>"
+        )
+
+    head = DRAWIO_HEAD.format(w=W, h=canvas.bottom)
+    return head + "".join(cells) + DRAWIO_TAIL
 
 
 PAGE = """<meta charset="utf-8">
@@ -383,10 +515,21 @@ PAGE = """<meta charset="utf-8">
 
 def main() -> int:
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    out = os.path.join(root, "docs", "system_flow.html")
-    with open(out, "w", encoding="utf-8") as handle:
-        handle.write(PAGE.format(svg=build()))
-    print(f"저장: {out}")
+    canvas, svg = build()
+
+    # 같은 배치를 둘로 뽑는다. drawio 는 팀이 고쳐 쓰라고, html 은 확인과
+    # 발표용이다.
+    html_path = os.path.join(root, "docs", "system_flow.html")
+    with open(html_path, "w", encoding="utf-8") as handle:
+        handle.write(PAGE.format(svg=svg))
+
+    drawio_path = os.path.join(root, "docs", "system_flow.drawio")
+    with open(drawio_path, "w", encoding="utf-8") as handle:
+        handle.write(render_drawio(canvas))
+
+    print(f"저장: {html_path}")
+    print(f"저장: {drawio_path}  "
+          f"(상자 {len(canvas.shapes)}개 · 화살표 {len(canvas.lines)}개)")
     return 0
 
 
