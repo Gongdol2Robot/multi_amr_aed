@@ -44,6 +44,12 @@ class Repository:
                 self.database_path, timeout=5.0, isolation_level=None
             )
             connection.row_factory = sqlite3.Row
+            # foreign_keys 는 연결마다 켜야 한다. schema.sql 의 PRAGMA 는
+            # 그것을 실행한 첫 연결에만 걸린다. 정작 쓰기는 ROS 스레드의
+            # 다른 연결에서 일어나므로, 여기서 켜지 않으면 없는 event_id 로
+            # 배정이 들어가도 그대로 통과한다.
+            # (journal_mode=WAL 은 파일 속성이라 한 번이면 된다.)
+            connection.execute("PRAGMA foreign_keys = ON")
             self._local.connection = connection
         return connection
 

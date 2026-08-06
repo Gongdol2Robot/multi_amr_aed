@@ -4,8 +4,8 @@
 통신 방식을 확정하고, 코드는 이 표를 따릅니다.
 
 이 값들이 관제 DB 의 어느 칸에 어떤 형으로 들어가는지, 그리고 지금 무엇이
-구현돼 있고 무엇이 사양뿐인지는 [db_interfaces.md](db_interfaces.md) 에
-있습니다.
+구현돼 있고 무엇이 사양뿐인지는 [db_interfaces.md](db_interfaces.md) 에,
+그 표의 키·인덱스와 쿼리 설계는 [db_queries.md](db_queries.md) 에 있습니다.
 
 ## 통신 방식을 고르는 기준
 

@@ -12,7 +12,9 @@ ROS 인터페이스  →  ros/converters.py  →  domain 모델  →  store/repo
 ```
 
 인터페이스 자체의 사양과 왜 그 통신 방식인지는 [interfaces.md](interfaces.md)
-에 있다. 여기서는 **DB 에 남는 값**만 다룬다.
+에 있다. 표의 키·인덱스를 왜 그렇게 잡았고 화면이 부르는 쿼리를 어떻게
+짰는지는 [db_queries.md](db_queries.md) 에 있다. 여기서는 **어느 값이
+어디서 와서 어느 칸에 들어가는지**만 다룬다.
 
 ---
 
