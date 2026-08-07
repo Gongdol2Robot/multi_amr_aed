@@ -20,7 +20,9 @@ AED를 전달한 로봇이 사고 지점에서 구조 인력을 직접 찾는 �
 
 `helper_wait_timeout`의 기본값은 `0`이므로 구조 인력이 올 때까지 계속
 회전·호출합니다. 취소, 예외, 노드 종료 시에도 반드시 0 속도와 오디오 정지
-명령을 발행합니다.
+명령을 발행합니다. 정지 속도 명령은 기본 3회 반복해 단일 메시지 유실 위험을
+줄입니다. `aed_vision` 메시지가 처음부터 들어오지 않거나 마지막 수신 이후
+5분 동안 끊기면 카메라 장애로 판단하여 회전과 호출음을 정지합니다.
 
 ## 실행
 
@@ -37,7 +39,8 @@ ros2 launch aed_vision robot_vision.launch.py robot_id:=robot2
 ros2 launch helper_mission helper_mission.launch.py \
   robot_ids:=robot1,robot2 \
   rotation_speed_rps:=0.35 \
-  helper_wait_timeout:=0.0
+  helper_wait_timeout:=0.0 \
+  vision_timeout_seconds:=300.0
 ```
 
 각 controller의 상대 토픽은 namespace에 따라 다음처럼 해석됩니다.
@@ -53,7 +56,9 @@ ros2 launch helper_mission helper_mission.launch.py \
 |---|---:|---|
 | `rotation_speed_rps` | `0.35` | 제자리 회전 각속도(rad/s) |
 | `control_period` | `0.1` | 회전 명령 발행 주기(초) |
+| `stop_command_repeats` | `3` | 종료 시 0속도 명령 반복 횟수 |
 | `vision_stale_seconds` | `1.0` | Vision true 신호의 최대 유효 시간 |
+| `vision_timeout_seconds` | `300.0` | Vision 메시지 단절 안전 정지 시간 |
 | `helper_wait_timeout` | `0.0` | 탐색 제한 시간, 0이면 무제한 |
 | `buzzer_period` | `1.0` | 호출음 반복 주기(초) |
 | `buzzer_frequencies` | `880,660` | 임시 호출 2음(Hz) |

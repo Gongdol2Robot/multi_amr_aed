@@ -17,7 +17,10 @@ from rclpy.node import Node
 from rclpy.task import Future
 from std_msgs.msg import Bool, String
 
-from helper_mission.mission_logic import helper_confirmation_is_fresh
+from helper_mission.mission_logic import (
+    helper_confirmation_is_fresh,
+    vision_stream_timed_out,
+)
 
 try:
     from irobot_create_msgs.msg import AudioNote, AudioNoteVector
@@ -43,7 +46,9 @@ class HelperMissionController(Node):
         self.declare_parameter("audio_topic", "cmd_audio")
         self.declare_parameter("rotation_speed_rps", 0.35)
         self.declare_parameter("control_period", 0.1)
+        self.declare_parameter("stop_command_repeats", 3)
         self.declare_parameter("vision_stale_seconds", 1.0)
+        self.declare_parameter("vision_timeout_seconds", 300.0)
         # 0은 구조 인력이 올 때까지 시간 제한 없이 계속 탐색한다.
         self.declare_parameter("helper_wait_timeout", 0.0)
         self.declare_parameter("buzzer_period", 1.0)
@@ -57,7 +62,13 @@ class HelperMissionController(Node):
             raise ValueError("robot_id parameter is required")
         self.rotation_speed = self._positive("rotation_speed_rps")
         self.control_period = self._positive("control_period")
+        self.stop_command_repeats = int(
+            self.get_parameter("stop_command_repeats").value
+        )
+        if self.stop_command_repeats < 1:
+            raise ValueError("stop_command_repeats must be at least one")
         self.vision_stale = self._positive("vision_stale_seconds")
+        self.vision_timeout = self._positive("vision_timeout_seconds")
         self.wait_timeout = float(
             self.get_parameter("helper_wait_timeout").value
         )
@@ -142,6 +153,9 @@ class HelperMissionController(Node):
         latest = self.latest_versions.get(request.event_id, -1)
         if request.mission_version <= latest:
             return GoalResponse.REJECT
+        # execute callback이 시작되기 전 들어오는 두 번째 Goal도 차단한다.
+        self.busy = True
+        self.latest_versions[request.event_id] = request.mission_version
         return GoalResponse.ACCEPT
 
     @staticmethod
@@ -152,9 +166,7 @@ class HelperMissionController(Node):
     async def _execute(self, goal_handle):
         """구조 인력이 감지될 때까지 회전·호출하고 감지 즉시 안내음을 낸다."""
         request = goal_handle.request
-        self.busy = True
         self.current_request = request
-        self.latest_versions[request.event_id] = request.mission_version
         # 이전 임무나 노드 시작 전의 true 신호가 새 탐색을 끝내지 못하게 초기화한다.
         self.helper_confirmed = False
         self.helper_observed_at = None
@@ -174,6 +186,19 @@ class HelperMissionController(Node):
                         goal_handle, result, GuideHelper.Result.CANCELED
                     )
                 now = time.monotonic()
+                if vision_stream_timed_out(
+                    search_started_at=started_at,
+                    last_observed_at=self.helper_observed_at,
+                    now=now,
+                    timeout_seconds=self.vision_timeout,
+                ):
+                    return self._terminate(
+                        goal_handle,
+                        result,
+                        GuideHelper.Result.NAVIGATION_FAILED,
+                        "aed_vision signal missing for "
+                        f"{self.vision_timeout:g} seconds",
+                    )
                 if self._vision_confirmed(now):
                     self._stop_rotation()
                     self._stop_audio()
@@ -245,8 +270,9 @@ class HelperMissionController(Node):
         self.cmd_vel_publisher.publish(command)
 
     def _stop_rotation(self) -> None:
-        """감지·취소·오류·종료 모든 경로에서 0 속도를 발행한다."""
-        self.cmd_vel_publisher.publish(Twist())
+        """감지·취소·오류·종료 때 0 속도를 반복 발행해 유실 위험을 줄인다."""
+        for _ in range(self.stop_command_repeats):
+            self.cmd_vel_publisher.publish(Twist())
 
     def _publish_call_tone(self) -> None:
         """구조 인력을 부르는 반복 2음 임시 신호를 발행한다."""

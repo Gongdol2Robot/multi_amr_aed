@@ -64,6 +64,19 @@ class TemporalConfirmation:
         return sum(self._history)
 
 
+def update_presence_confirmation(
+    confirmation: TemporalConfirmation, detected: bool
+) -> bool:
+    """현재 프레임 검출과 시간 창 조건을 모두 만족할 때만 true를 반환한다.
+
+    과거 hit가 창에 남아 있더라도 현재 프레임에 사람이 없으면 즉시 false가
+    된다. false도 confirmation에 넣어 오래된 hit가 정상적으로 밀려나게 한다.
+    """
+    detected_now = bool(detected)
+    window_confirmed = confirmation.update(detected_now)
+    return detected_now and window_confirmed
+
+
 def intersection_over_union(first: Box, second: Box) -> float:
     """두 bbox가 겹치는 정도인 Intersection over Union을 계산한다.
 

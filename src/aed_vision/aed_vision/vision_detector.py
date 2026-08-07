@@ -19,6 +19,7 @@ from .camera_source import DirectCameraSource
 from .detection_logic import (
     Box,
     TemporalConfirmation,
+    update_presence_confirmation,
 )
 from .homography import Homography
 from .inference_pipeline import InferenceOutput, InferencePipeline
@@ -360,7 +361,9 @@ class VisionDetector(Node):
         """
         self.person_count_pub.publish(UInt32(data=person_count))
         helper_count = len(helpers)
-        helper_confirmed = self.helper_confirmation.update(helper_count > 0)
+        helper_confirmed = update_presence_confirmation(
+            self.helper_confirmation, helper_count > 0
+        )
         self.helper_count_pub.publish(UInt32(data=helper_count))
         self.helper_confirmed_pub.publish(Bool(data=helper_confirmed))
         crowd_value = (

@@ -7,6 +7,11 @@ import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
 
+from helper_mission.mission_logic import (
+    arrival_dispatch_allowed,
+    dispatch_response_is_current,
+)
+
 
 class HelperMissionCoordinator(Node):
     """AED가 도착하면 바로 그 로봇에 회전 탐색 임무를 요청한다."""
@@ -60,6 +65,9 @@ class HelperMissionCoordinator(Node):
         self.events = {}
         self.pending = {}
         self.active_goals = {}
+        self.canceled_events = set()
+        self.handled_arrivals = set()
+        self.dispatch_serial = 0
         self.get_logger().info(
             "ready: arrived AED robot will rotate and call for a helper"
         )
@@ -74,6 +82,7 @@ class HelperMissionCoordinator(Node):
                     f"Ignoring event {event.event_id} without location frame"
                 )
                 return
+            self.canceled_events.discard(event.event_id)
             self.events[event.event_id] = event
             self._try_dispatch(event.event_id)
             return
@@ -82,11 +91,12 @@ class HelperMissionCoordinator(Node):
             EmergencyEvent.RESOLVED,
         ):
             return
+        self.canceled_events.add(event.event_id)
         self.events.pop(event.event_id, None)
         self.pending.pop(event.event_id, None)
-        handle = self.active_goals.get(event.event_id)
-        if handle is not None:
-            handle.cancel_goal_async()
+        active = self.active_goals.get(event.event_id)
+        if active is not None:
+            active["handle"].cancel_goal_async()
 
     def _on_status(self, status: MissionStatus) -> None:
         """AED 정상 도착을 기록하고 도착한 동일 로봇에 탐색 임무를 준비한다."""
@@ -97,8 +107,22 @@ class HelperMissionCoordinator(Node):
                 f"Unknown arrived robot ignored: {status.robot_id}"
             )
             return
-        if status.event_id in self.active_goals:
+        context = self.pending.get(status.event_id)
+        if context is not None:
+            # 전송 실패 뒤 같은 ARRIVED가 오면 기존 문맥으로만 재시도한다.
+            if not context.get("dispatching", False):
+                self._try_dispatch(status.event_id)
             return
+        if not arrival_dispatch_allowed(
+            status.event_id,
+            canceled_events=self.canceled_events,
+            handled_events=self.handled_arrivals,
+            pending_events=self.pending,
+            active_events=self.active_goals,
+        ):
+            # 같은 ARRIVED가 재전송되어도 진행 중인 Goal 문맥을 덮어쓰지 않는다.
+            return
+        self.handled_arrivals.add(status.event_id)
         self.pending[status.event_id] = {
             "robot_id": status.robot_id,
             "version": max(1, int(status.assignment_version) + 1),
@@ -131,36 +155,70 @@ class HelperMissionCoordinator(Node):
         # 기존 Action 형식과 호환하기 위해 두 pose에 같은 현장 좌표를 넣는다.
         goal.helper_search_pose = patient_pose
         goal.patient_pose = patient_pose
+        self.dispatch_serial += 1
+        serial = self.dispatch_serial
+        context["serial"] = serial
         context["dispatching"] = True
         future = client.send_goal_async(goal)
         future.add_done_callback(
-            lambda response, eid=event_id, rid=robot_id: self._goal_response(
-                response, eid, rid
+            lambda response, eid=event_id, rid=robot_id, seq=serial: (
+                self._goal_response(response, eid, rid, seq)
             )
         )
         self.get_logger().info(
             f"Event {event_id}: requesting on-site helper scan from {robot_id}"
         )
 
-    def _goal_response(self, future, event_id: str, robot_id: str) -> None:
+    def _goal_response(
+        self, future, event_id: str, robot_id: str, serial: int
+    ) -> None:
         """탐색 Goal 수락 여부를 처리하고 완료 결과 callback을 연결한다."""
         try:
             handle = future.result()
         except Exception as error:
-            self._dispatch_failed(event_id, robot_id, str(error))
+            self._dispatch_failed(event_id, robot_id, serial, str(error))
             return
         if handle is None or not handle.accepted:
-            self._dispatch_failed(event_id, robot_id, "goal rejected")
+            self._dispatch_failed(
+                event_id, robot_id, serial, "goal rejected"
+            )
             return
-        self.active_goals[event_id] = handle
+        context = self.pending.get(event_id)
+        is_current = dispatch_response_is_current(
+            event_exists=event_id in self.events,
+            canceled=event_id in self.canceled_events,
+            context_serial=(
+                None if context is None else context.get("serial")
+            ),
+            response_serial=serial,
+            dispatching=(
+                False if context is None else context.get("dispatching", False)
+            ),
+        )
+        if not is_current:
+            # 취소와 Goal 수락이 겹쳤다면 수락 직후 즉시 취소한다.
+            handle.cancel_goal_async()
+            self.get_logger().warning(
+                f"Event {event_id}: canceled stale accepted helper goal"
+            )
+            return
+        self.active_goals[event_id] = {
+            "handle": handle,
+            "serial": serial,
+        }
         handle.get_result_async().add_done_callback(
-            lambda result, eid=event_id, rid=robot_id: self._goal_result(
-                result, eid, rid
+            lambda result, eid=event_id, rid=robot_id, seq=serial: (
+                self._goal_result(result, eid, rid, seq)
             )
         )
 
-    def _goal_result(self, future, event_id: str, robot_id: str) -> None:
+    def _goal_result(
+        self, future, event_id: str, robot_id: str, serial: int
+    ) -> None:
         """구조 인력 탐색 결과를 기록하고 이벤트별 실행 상태를 정리한다."""
+        active = self.active_goals.get(event_id)
+        if active is None or active.get("serial") != serial:
+            return
         try:
             wrapped = future.result()
             code = wrapped.result.code
@@ -181,12 +239,17 @@ class HelperMissionCoordinator(Node):
             )
 
     def _dispatch_failed(
-        self, event_id: str, robot_id: str, reason: str
+        self, event_id: str, robot_id: str, serial: int, reason: str
     ) -> None:
         """Action 전송 실패를 대기 상태로 바꿔 이후 도착 상태 재수신을 허용한다."""
         context = self.pending.get(event_id)
-        if context is not None:
-            context["dispatching"] = False
+        if (
+            context is None
+            or context.get("serial") != serial
+            or event_id in self.canceled_events
+        ):
+            return
+        context["dispatching"] = False
         self._publish_wait(event_id, robot_id, reason)
 
     @staticmethod
@@ -213,6 +276,13 @@ class HelperMissionCoordinator(Node):
         message.reason = reason
         self.status_publisher.publish(message)
         self.get_logger().warning(f"Event {event_id}: {reason}")
+
+    def destroy_node(self) -> None:
+        """노드 종료 전에 수락된 모든 구조 인력 탐색 Goal을 취소한다."""
+        for active in self.active_goals.values():
+            active["handle"].cancel_goal_async()
+        self.active_goals.clear()
+        super().destroy_node()
 
 
 def main(args=None) -> None:

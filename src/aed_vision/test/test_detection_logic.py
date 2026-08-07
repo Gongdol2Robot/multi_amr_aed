@@ -11,6 +11,7 @@ from aed_vision.detection_logic import (
     crowd_time_multiplier,
     filter_nonfallen_people,
     intersection_over_union,
+    update_presence_confirmation,
 )
 
 
@@ -37,6 +38,14 @@ class DetectionLogicTest(unittest.TestCase):
     def test_invalid_confirmation_configuration(self):
         with self.assertRaises(ValueError):
             TemporalConfirmation(window_size=2, required_hits=3)
+
+    def test_helper_confirmation_requires_person_in_current_frame(self):
+        """과거 3회 검출이 남아 있어도 현재 사람이 없으면 즉시 false가 된다."""
+        confirmation = TemporalConfirmation(window_size=6, required_hits=3)
+        self.assertFalse(update_presence_confirmation(confirmation, True))
+        self.assertFalse(update_presence_confirmation(confirmation, True))
+        self.assertTrue(update_presence_confirmation(confirmation, True))
+        self.assertFalse(update_presence_confirmation(confirmation, False))
 
     def test_iou_for_partially_overlapping_boxes(self):
         actual = intersection_over_union(

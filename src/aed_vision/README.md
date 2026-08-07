@@ -200,4 +200,5 @@ ros2 topic echo /robot1/vision/helper_confirmed
 ```
 
 `helper_mission_controller`는 `helper_confirmed=true`의 최신 수신값을 확인하는
-즉시 제자리 회전과 반복 호출음을 중지합니다.
+즉시 제자리 회전과 반복 호출음을 중지합니다. 과거 검출이 시간 창에 남아
+있더라도 현재 프레임에 사람이 없으면 `helper_confirmed`는 즉시 `false`가 됩니다.
