@@ -12,8 +12,8 @@ import cv2
 from .detection_logic import (
     Box,
     classify_crowd,
-    count_crowd_people,
     crowd_time_multiplier,
+    filter_nonfallen_people,
 )
 
 
@@ -27,8 +27,12 @@ def _model_path(value: str, description: str) -> Path:
 
         package, separator, relative = value[10:].partition("/")
         if not separator or not package or not relative:
-            raise RuntimeError(f"Invalid package model URI for {description}: {value}")
-        path = (Path(get_package_share_directory(package)) / relative).resolve()
+            raise RuntimeError(
+                f"Invalid package model URI for {description}: {value}"
+            )
+        path = (
+            Path(get_package_share_directory(package)) / relative
+        ).resolve()
     else:
         path = Path(os.path.expandvars(value)).expanduser().resolve()
     if not path.is_file():
@@ -79,6 +83,7 @@ class InferencePipeline:
         rescue_weights: str,
         person_weights: str,
         enable_crowd: bool,
+        detect_people_as_helpers: bool,
         rescue_conf: float,
         person_conf: float,
         iou: float,
@@ -91,6 +96,7 @@ class InferencePipeline:
         from ultralytics import YOLO
 
         self.enable_crowd = enable_crowd
+        self.detect_people_as_helpers = detect_people_as_helpers
         self.rescue_conf = rescue_conf
         self.person_conf = person_conf
         self.crowd_roi = crowd_roi
@@ -102,22 +108,27 @@ class InferencePipeline:
         if device:
             self.options["device"] = device
 
-        self.rescue_model = YOLO(str(_model_path(rescue_weights, "rescue weights")))
+        self.rescue_model = YOLO(
+            str(_model_path(rescue_weights, "rescue weights"))
+        )
         rescue_names = _names(self.rescue_model)
         if rescue_names != RESCUE_CLASS_NAMES:
             raise RuntimeError(
-                f"Rescue classes must be {RESCUE_CLASS_NAMES}, got {rescue_names}"
+                f"Rescue classes must be {RESCUE_CLASS_NAMES}, "
+                f"got {rescue_names}"
             )
 
         self.person_model = None
         self.person_class_id = -1
-        if enable_crowd:
+        if enable_crowd or detect_people_as_helpers:
             self.person_model = YOLO(
                 str(_model_path(person_weights, "COCO person weights"))
             )
             person_names = _names(self.person_model)
             if "person" not in person_names:
-                raise RuntimeError("The crowd model does not contain COCO person")
+                raise RuntimeError(
+                    "The person model does not contain COCO person"
+                )
             self.person_class_id = person_names.index("person")
 
     def predict(self, frame) -> InferenceOutput:
@@ -141,16 +152,20 @@ class InferencePipeline:
                 **self.options,
             )[0]
             height, width = frame.shape[:2]
-            person_count = count_crowd_people(
+            people = filter_nonfallen_people(
                 _boxes(person_result, self.person_class_id),
                 fallen,
                 (width, height),
                 self.crowd_roi,
                 self.overlap_threshold,
             )
-            crowd_level = classify_crowd(person_count)
-            time_multiplier = crowd_time_multiplier(person_count)
-            crowd_traversable = time_multiplier is not None
+            person_count = len(people)
+            if self.detect_people_as_helpers:
+                helpers = people
+            if self.enable_crowd:
+                crowd_level = classify_crowd(person_count)
+                time_multiplier = crowd_time_multiplier(person_count)
+                crowd_traversable = time_multiplier is not None
 
         return InferenceOutput(
             rescue_result,
@@ -185,6 +200,8 @@ class InferencePipeline:
                 f"{camera_id} | crowd={output.crowd_level} | "
                 f"people={output.person_count}"
             )
+        elif self.detect_people_as_helpers:
+            text = f"{camera_id} | helper candidates={len(output.helpers)}"
         else:
             text = f"{camera_id} | rescue detection"
         cv2.putText(

@@ -117,8 +117,28 @@ def count_crowd_people(
     2. fallen bbox와 IoU가 임계값 이상인 person을 동일 대상으로 보고 제외한다.
     3. 남은 COCO person만 통행을 방해할 수 있는 인파로 센다.
     """
+    return len(
+        filter_nonfallen_people(
+            people, fallen, frame_size, roi, overlap_threshold
+        )
+    )
+
+
+def filter_nonfallen_people(
+    people: Iterable[Box],
+    fallen: Iterable[Box],
+    frame_size: tuple[int, int],
+    roi: Sequence[float],
+    overlap_threshold: float,
+) -> list[Box]:
+    """ROI 안의 사람 중 쓰러진 대상과 겹치지 않는 사람만 반환한다.
+
+    로봇 카메라에서는 반환된 사람을 구조 인력 후보로 사용한다. 별도 사람
+    추적 모델 없이 COCO person 검출을 재사용하되, 환자를 구조 인력으로 잘못
+    세지 않도록 fallen_person 상자와 겹치는 검출은 제외한다.
+    """
     fallen_boxes = tuple(fallen)
-    count = 0
+    selected = []
     for person in people:
         if not point_inside_normalized_roi(person.center, frame_size, roi):
             continue
@@ -127,8 +147,8 @@ def count_crowd_people(
             for fallen_box in fallen_boxes
         ):
             continue
-        count += 1
-    return count
+        selected.append(person)
+    return selected
 
 
 def classify_crowd(person_count: int) -> int:
@@ -154,7 +174,9 @@ def crowd_time_multiplier(person_count: int) -> float | None:
     return 1.0 + level * 0.1
 
 
-def apply_crowd_time_penalty(base_time: float, person_count: int) -> float | None:
+def apply_crowd_time_penalty(
+    base_time: float, person_count: int
+) -> float | None:
     """기본 이동 시간에 혼잡 패널티를 적용한다."""
     if base_time < 0.0:
         raise ValueError("base_time must be non-negative")

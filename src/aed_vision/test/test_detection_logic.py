@@ -9,6 +9,7 @@ from aed_vision.detection_logic import (
     count_crowd_people,
     apply_crowd_time_penalty,
     crowd_time_multiplier,
+    filter_nonfallen_people,
     intersection_over_union,
 )
 
@@ -58,6 +59,19 @@ class DetectionLogicTest(unittest.TestCase):
             overlap_threshold=0.4,
         )
         self.assertEqual(count, 1)
+
+    def test_robot_helper_candidates_exclude_fallen_person(self):
+        """로봇 카메라가 환자는 빼고 서 있는 사람만 구조 인력으로 선택한다."""
+        fallen = [Box(10, 10, 40, 90)]
+        people = [Box(10, 10, 40, 90), Box(55, 10, 85, 95)]
+        selected = filter_nonfallen_people(
+            people,
+            fallen,
+            frame_size=(100, 100),
+            roi=(0.0, 0.0, 1.0, 1.0),
+            overlap_threshold=0.4,
+        )
+        self.assertEqual(selected, [people[1]])
 
     def test_classify_crowd(self):
         expected_states = [

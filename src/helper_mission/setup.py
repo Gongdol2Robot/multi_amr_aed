@@ -25,7 +25,7 @@ setup(
     zip_safe=True,
     maintainer="multi_amr_aed team",
     maintainer_email="team@example.com",
-    description="Helper request and responder guidance mission controller.",
+    description="On-site rotating helper detection and alert controller.",
     license="Apache-2.0",
     entry_points={
         "console_scripts": [

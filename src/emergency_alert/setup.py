@@ -8,7 +8,7 @@ package_name = "emergency_alert"
 
 setup(
     name=package_name,
-    version="0.1.0",
+    version="0.2.0",
     packages=find_packages(exclude=["test"]),
     data_files=[
         (
@@ -25,12 +25,14 @@ setup(
     zip_safe=True,
     maintainer="multi_amr_aed team",
     maintainer_email="team@example.com",
-    description="Emergency audio alert node for TurtleBot4.",
+    description="Mission-aware emergency audio alerts for TurtleBot4.",
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
             "alert_mission_executor = "
             "emergency_alert.alert_mission_executor:main",
+            "mission_status_alert = "
+            "emergency_alert.mission_status_alert:main",
             "siren = emergency_alert.siren_node:main",
         ],
     },
