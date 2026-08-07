@@ -136,9 +136,8 @@ class RosBridge:
 
         # 이벤트는 두 경로로 온다.
         #  - vision_detector 가 카메라마다 직접 내는 것
-        #  - mission_manager 쪽이 보는 공용 토픽
-        # 지금은 둘을 잇는 노드가 없어서 카메라 토픽만 실제로 값이 온다.
-        # 둘 다 구독해 두면 나중에 연결되어도 화면은 그대로 동작한다.
+        #  - HMI 지도 클릭과 수동 신고가 쓰는 공용 토픽
+        # multi_robot_emergency 는 둘 다 직접 구독한다.
         node.create_subscription(
             EmergencyEvent, topics.AGGREGATE_EVENT_TOPIC,
             self._handle_emergency_event, topics.state_qos(),

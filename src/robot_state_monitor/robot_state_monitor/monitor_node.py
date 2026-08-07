@@ -57,6 +57,16 @@ def path_length(path: Path) -> float:
     )
 
 
+def battery_percentage_100(value: float) -> float:
+    """Normalize BatteryState's 0..1 fraction for the 0..100 HMI field."""
+    percentage = float(value)
+    if not math.isfinite(percentage):
+        return -1.0
+    if 0.0 <= percentage <= 1.0:
+        return percentage * 100.0
+    return percentage
+
+
 class RobotStateMonitor(Node):
     """Evaluate configured Nav2 paths and publish event-tagged RobotState values."""
 
@@ -194,8 +204,8 @@ class RobotStateMonitor(Node):
         runtime.pose_received_at = time.monotonic()
 
     def _on_battery(self, robot_id: str, message: BatteryState) -> None:
-        percentage = float(message.percentage)
-        if math.isfinite(percentage):
+        percentage = battery_percentage_100(message.percentage)
+        if percentage >= 0.0:
             self.runtime[robot_id].battery_percentage = percentage
 
     def _on_clicked_point(self, message: PointStamped) -> None:

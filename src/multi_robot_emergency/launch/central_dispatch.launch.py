@@ -52,7 +52,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "blocked_timeout_sec",
-                default_value="5.0",
+                default_value="8.0",
                 description=(
                     "Declare a moving robot blocked after this many seconds "
                     "without measurable progress"

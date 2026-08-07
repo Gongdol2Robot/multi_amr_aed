@@ -72,6 +72,7 @@ class EmergencyMissionManager(Node):
         self.declare_parameter(
             "emergency_event_topics",
             [
+                "/aed/emergency_event",
                 "/camera_open/vision/emergency_event",
                 "/camera_alley/vision/emergency_event",
             ],

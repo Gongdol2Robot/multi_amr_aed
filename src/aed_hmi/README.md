@@ -17,15 +17,24 @@
 
 ### 실제 ROS에 붙여서
 
+HMI는 중앙 제어 launch에 포함되지 않습니다. 필요할 때만 별도 launch로
+로봇 상태 발행기와 웹 백엔드를 올립니다.
+
 ```bash
-cd ~/rokey_ws/multi_amr_aed
+cd ~/turtlebot4_ws/multi_amr_aed
 source /opt/ros/humble/setup.bash
-colcon build --packages-select aed_interfaces   # 최초 1회
+colcon build --symlink-install --packages-select \
+  aed_interfaces robot_state_monitor aed_hmi   # 최초 1회
 source install/setup.bash
 export ROS_SUPER_CLIENT=True                    # 없으면 토픽이 안 보인다
 
-cd src/aed_hmi
-python3 -m backend.main
+ros2 launch aed_hmi hmi_runtime.launch.py
+```
+
+다른 PC의 브라우저에서도 접속해야 할 때만 백엔드 바인딩을 엽니다.
+
+```bash
+ros2 launch aed_hmi hmi_runtime.launch.py backend_host:=0.0.0.0
 ```
 
 다른 터미널에서 화면을 띄웁니다.
@@ -35,6 +44,17 @@ cd src/aed_hmi/frontend
 npm install     # 최초 1회
 npm run dev     # http://localhost:5173
 ```
+
+백엔드 없이 `/aed/robot_state` 발행만 점검하려면 다음처럼 실행합니다.
+
+```bash
+ros2 launch aed_hmi hmi_runtime.launch.py start_backend:=false
+```
+
+HMI 지도 클릭은 `/aed/emergency_event`를 발행하며
+`multi_robot_emergency`가 이를 직접 구독합니다. 따라서 실제 출동 시험에는
+평소처럼 중앙 제어를 별도 터미널에서 `dispatch_enabled:=true`로 실행해야
+합니다. HMI를 종료해도 중앙 제어와 주행은 계속 동작합니다.
 
 ### 장비 없이 (화면 개발·시연용)
 
@@ -154,14 +174,9 @@ AED_HMI_STREAM_ROBOT1=/robot1/vision/debug/compressed python3 -m backend.main
 
 ## 아직 안 된 것
 
-- **검출이 출동으로 이어지지 않습니다.** `vision_detector`는
-  `/{camera_id}/vision/emergency_event`로 내는데 `mission_manager`는
-  `/aed/emergency_event`를 구독합니다. 둘을 잇는 노드가 필요합니다.
 - **로봇 OAK-D는 검출을 하지 않습니다.** 영상만 나옵니다.
 - **영상은 MJPEG입니다.** 지연이 문제가 되면 WebRTC로 바꿔야 하고, 그때
   고칠 곳은 `api/video.py`와 `components/video/VideoTile.tsx`뿐입니다.
-- **`robot_state_monitor`가 아직 뼈대입니다.** 그것이 `RobotState`를 내기
-  전까지 실제 모드에서는 로봇 카드가 빈칸입니다.
 
 인터페이스별 구현 상태와 DB 대응은 [../../docs/db_interfaces.md](../../docs/db_interfaces.md),
 키·쿼리 설계는 [../../docs/db_queries.md](../../docs/db_queries.md) 에 있습니다.

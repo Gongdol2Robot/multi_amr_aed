@@ -1,6 +1,7 @@
 """Execute assigned Multi-AMR missions through Nav2."""
 
 from copy import deepcopy
+import math
 import time
 
 from action_msgs.msg import GoalStatus
@@ -9,6 +10,28 @@ from nav2_msgs.action import NavigateToPose
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
+
+
+def angle_distance(first: float, second: float) -> float:
+    """Return the shortest absolute angular separation in radians."""
+    return abs(math.atan2(math.sin(second - first), math.cos(second - first)))
+
+
+def pose_has_progress(
+    previous: tuple[float, float, float] | None,
+    current: tuple[float, float, float],
+    *,
+    translation_epsilon: float,
+    rotation_epsilon: float,
+) -> bool:
+    """Treat either translation or in-place rotation as Nav2 progress."""
+    if previous is None:
+        return True
+    translation = math.hypot(
+        current[0] - previous[0], current[1] - previous[1]
+    )
+    rotation = angle_distance(previous[2], current[2])
+    return translation >= translation_epsilon or rotation >= rotation_epsilon
 
 
 class MissionExecutor(Node):
@@ -22,8 +45,10 @@ class MissionExecutor(Node):
         self.declare_parameter("dispatch_retry_timeout_sec", 15.0)
         self.declare_parameter("dispatch_retry_interval_sec", 0.5)
         self.declare_parameter("cancel_settle_sec", 0.5)
-        self.declare_parameter("blocked_timeout_sec", 30.0)
+        self.declare_parameter("blocked_timeout_sec", 8.0)
         self.declare_parameter("progress_epsilon_m", 0.05)
+        self.declare_parameter("progress_translation_epsilon_m", 0.03)
+        self.declare_parameter("progress_rotation_epsilon_deg", 8.0)
 
         self.robot_id = str(self.get_parameter("robot_id").value)
         if not self.robot_id:
@@ -43,6 +68,12 @@ class MissionExecutor(Node):
         self.progress_epsilon = float(
             self.get_parameter("progress_epsilon_m").value
         )
+        self.progress_translation_epsilon = float(
+            self.get_parameter("progress_translation_epsilon_m").value
+        )
+        self.progress_rotation_epsilon = math.radians(
+            float(self.get_parameter("progress_rotation_epsilon_deg").value)
+        )
         if self.dispatch_retry_timeout <= 0.0:
             raise ValueError("dispatch_retry_timeout_sec must be positive")
         if self.dispatch_retry_interval <= 0.0:
@@ -53,6 +84,14 @@ class MissionExecutor(Node):
             raise ValueError("blocked_timeout_sec must be positive")
         if self.progress_epsilon < 0.0:
             raise ValueError("progress_epsilon_m must be non-negative")
+        if self.progress_translation_epsilon < 0.0:
+            raise ValueError(
+                "progress_translation_epsilon_m must be non-negative"
+            )
+        if self.progress_rotation_epsilon < 0.0:
+            raise ValueError(
+                "progress_rotation_epsilon_deg must be non-negative"
+            )
 
         self.action_client = ActionClient(
             self,
@@ -76,6 +115,7 @@ class MissionExecutor(Node):
         self.retry_deadline = 0.0
         self.retry_timer = None
         self.last_distance = None
+        self.last_feedback_pose: tuple[float, float, float] | None = None
         self.last_progress_at = 0.0
         self.blocked_reported = False
         self.watchdog_timer = self.create_timer(1.0, self._check_progress)
@@ -112,6 +152,7 @@ class MissionExecutor(Node):
         self.pending_pose = deepcopy(assignment.target)
         self.retry_deadline = time.monotonic() + self.dispatch_retry_timeout
         self.last_distance = None
+        self.last_feedback_pose = None
         self.last_progress_at = time.monotonic()
         self.blocked_reported = False
         self._publish_status(
@@ -193,6 +234,7 @@ class MissionExecutor(Node):
         self.pending_pose = None
         self._cancel_retry_timer()
         self.goal_handle = handle
+        self.last_feedback_pose = None
         self.last_progress_at = time.monotonic()
         self._publish_status(MissionStatus.EN_ROUTE)
         handle.get_result_async().add_done_callback(
@@ -265,6 +307,29 @@ class MissionExecutor(Node):
             return
         distance = float(feedback.feedback.distance_remaining)
         now = time.monotonic()
+        pose = feedback.feedback.current_pose.pose
+        orientation = pose.orientation
+        yaw = math.atan2(
+            2.0 * (
+                orientation.w * orientation.z
+                + orientation.x * orientation.y
+            ),
+            1.0
+            - 2.0
+            * (
+                orientation.y * orientation.y
+                + orientation.z * orientation.z
+            ),
+        )
+        current_pose = (pose.position.x, pose.position.y, yaw)
+        if pose_has_progress(
+            self.last_feedback_pose,
+            current_pose,
+            translation_epsilon=self.progress_translation_epsilon,
+            rotation_epsilon=self.progress_rotation_epsilon,
+        ):
+            self.last_feedback_pose = current_pose
+            self.last_progress_at = now
         if self.last_distance is None:
             self.last_distance = distance
             self.last_progress_at = now
@@ -287,7 +352,8 @@ class MissionExecutor(Node):
         self.goal_handle.cancel_goal_async()
         self._publish_status(
             MissionStatus.BLOCKED,
-            f"no path progress for {self.blocked_timeout:.1f}s",
+            f"no translation, rotation, or path progress for "
+            f"{self.blocked_timeout:.1f}s",
         )
 
     def _publish_status(self, state: int, reason: str = "") -> None:
