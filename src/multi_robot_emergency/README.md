@@ -125,6 +125,17 @@ ros2 launch multi_robot_emergency central_dispatch.launch.py \
 8. 먼저 도착한 로봇이 생기면 늦은 로봇의 목표를 취소하고 저장한 출발
    Pose로 `ROLE_RETURN` 임무 전송
 
+YOLO 연동 시 `/camera_open/vision/emergency_event`와
+`/camera_alley/vision/emergency_event`의 `CONFIRMED` 전이만 새 요청으로
+받습니다. 프레임마다 나오는 `fallen_location`은 출동 트리거로 사용하지 않아
+같은 검출이 반복 출동으로 이어지지 않습니다. 이벤트의 map 좌표는 위의
+0.50m 환자 정지 처리에 그대로 들어갑니다.
+
+혼잡도는 비전이 발행하는 문자열 `0/1/2/3`을 각각
+`CLEAR/BUSY/CROWDED/BLOCKED`로 변환합니다. 시간 보정은 비전 JSON의
+`crowd_time_multiplier`를 사용하지 않고, 이 패키지의 AMR 실측 속도
+`0.20/0.15/0.10m/s`와 3단계 통행 불가 정책을 한 번만 적용합니다.
+
 복귀 전환 시 executor는 기존 Nav2 Goal의 취소 응답을 기다리고 0.5초 뒤
 복귀 Goal을 보냅니다. 취소 경합 등으로 복귀 Goal이 `ABORTED` 또는
 `CANCELED`되면 기본 15초 동안 0.5초 간격으로 다시 시도합니다. 이 제한을

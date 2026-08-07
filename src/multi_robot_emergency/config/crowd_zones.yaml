@@ -1,8 +1,8 @@
 emergency_mission_manager:
   ros__parameters:
-    # Camera2 owns this classification. Replace these temporary names when
-    # the vision team publishes its final stage names. The list order is the
-    # severity/ETA level; person_count remains diagnostic only.
+    # Camera2 owns the 0..3 classification. The central node maps those
+    # numeric strings to these AMR-owned names and applies only the speed
+    # table below; vision's crowd_time_multiplier is not applied again.
     crowd_level_names: ["CLEAR", "BUSY", "CROWDED", "BLOCKED"]
     crowd_state_timeout_sec: 2.0
     crowd_increase_confirm_sec: 0.5

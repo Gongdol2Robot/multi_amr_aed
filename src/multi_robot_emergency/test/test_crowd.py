@@ -55,3 +55,19 @@ def test_unrecognized_team_label_becomes_unknown() -> None:
     snapshot = crowd.update_level("TEAM_WILL_RENAME_THIS", 1.0)
     assert snapshot.name == "UNKNOWN"
     assert not snapshot.fresh
+
+
+def test_numeric_vision_levels_use_amr_stage_names() -> None:
+    crowd = make_filter()
+    assert crowd.update_level("0", 0.0).name == "CLEAR"
+    assert crowd.update_level("2", 1.0).name == "CLEAR"
+    snapshot = crowd.update_level("2", 1.5)
+    assert snapshot.level == 2
+    assert snapshot.name == "CROWDED"
+
+
+def test_numeric_vision_level_out_of_range_is_unknown() -> None:
+    crowd = make_filter()
+    snapshot = crowd.update_level("9", 1.0)
+    assert snapshot.name == "UNKNOWN"
+    assert not snapshot.fresh

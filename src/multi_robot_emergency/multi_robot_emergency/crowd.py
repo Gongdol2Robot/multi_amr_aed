@@ -66,7 +66,15 @@ class CrowdStateFilter:
         """Consume the final stage selected and published by vision."""
         if not math.isfinite(now):
             raise ValueError("now must be finite")
-        desired = self.level_by_name.get(self._normalize(raw_level))
+        normalized = self._normalize(raw_level)
+        desired = self.level_by_name.get(normalized)
+        # The vision package publishes severity as the strings "0".."3".
+        # Keep the AMR-owned stage names and speed table while accepting that
+        # wire format. Vision's JSON time multiplier is intentionally unused.
+        if desired is None and normalized.isdecimal():
+            numeric_level = int(normalized)
+            if 0 <= numeric_level < len(self.level_names):
+                desired = numeric_level
         self.received_at = now
         if desired is None:
             self.stable_level = -1

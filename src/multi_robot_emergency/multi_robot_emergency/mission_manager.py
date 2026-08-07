@@ -9,7 +9,12 @@ import math
 import time
 
 from action_msgs.msg import GoalStatus
-from aed_interfaces.msg import MissionAssignment, MissionStatus, RobotState
+from aed_interfaces.msg import (
+    EmergencyEvent,
+    MissionAssignment,
+    MissionStatus,
+    RobotState,
+)
 from geometry_msgs.msg import (
     Point,
     PointStamped,
@@ -62,6 +67,13 @@ class EmergencyMissionManager(Node):
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("request_topic", "/emergency/request")
         self.declare_parameter("clicked_point_topic", "/clicked_point")
+        self.declare_parameter(
+            "emergency_event_topics",
+            [
+                "/camera_open/vision/emergency_event",
+                "/camera_alley/vision/emergency_event",
+            ],
+        )
         self.declare_parameter("pose_timeout_sec", 15.0)
         self.declare_parameter("allow_stale_pose", True)
         self.declare_parameter("use_planner_start", True)
@@ -485,6 +497,20 @@ class EmergencyMissionManager(Node):
             self._on_request,
             10,
         )
+        event_topics = [
+            str(topic)
+            for topic in self.get_parameter("emergency_event_topics").value
+        ]
+        self.processed_event_ids: set[str] = set()
+        self.emergency_event_subscriptions = [
+            self.create_subscription(
+                EmergencyEvent,
+                topic,
+                self._on_emergency_event,
+                10,
+            )
+            for topic in dict.fromkeys(event_topics)
+        ]
         global_click_topic = str(
             self.get_parameter("clicked_point_topic").value
         )
@@ -575,6 +601,9 @@ class EmergencyMissionManager(Node):
             "RViz Publish Point topics: " + ", ".join(click_topics)
         )
         self.get_logger().info(
+            "YOLO emergency event topics: " + ", ".join(event_topics)
+        )
+        self.get_logger().info(
             "Crowd input: "
             f"{self.get_parameter('crowd_level_topic').value}; "
             "person_count is diagnostics only"
@@ -624,7 +653,9 @@ class EmergencyMissionManager(Node):
             self.crowd_filter.snapshot(time.monotonic()), force=True
         )
 
-    def _on_request(self, message: PoseStamped) -> None:
+    def _on_request(
+        self, message: PoseStamped, request_id: str | None = None
+    ) -> None:
         request = deepcopy(message)
         if not request.header.frame_id:
             request.header.frame_id = self.map_frame
@@ -664,7 +695,11 @@ class EmergencyMissionManager(Node):
         self.dual_dispatch_active = False
         self._publish_dispatched_robots()
         request.header.stamp = self.get_clock().now().to_msg()
-        self.active_request_id = f"emergency-{self.request_serial:03d}"
+        self.active_request_id = (
+            request_id.strip()
+            if request_id is not None and request_id.strip()
+            else f"emergency-{self.request_serial:03d}"
+        )
         self._publish_status("EMERGENCY_RECEIVED", self.active_request_id)
         self._publish_target_marker(request)
         crowd = self.crowd_filter.snapshot(time.monotonic())
@@ -691,6 +726,29 @@ class EmergencyMissionManager(Node):
                 )
                 return
         self._calculate_and_assign(request)
+
+    def _on_emergency_event(self, message: EmergencyEvent) -> None:
+        """Start one mission on a YOLO confirmation edge only."""
+        if message.status != EmergencyEvent.CONFIRMED:
+            return
+        event_id = message.event_id.strip()
+        if event_id and event_id in self.processed_event_ids:
+            return
+        if event_id:
+            self.processed_event_ids.add(event_id)
+
+        request = PoseStamped()
+        request.header = deepcopy(message.location.header)
+        request.pose.position = deepcopy(message.location.point)
+        request.pose.orientation.w = 1.0
+        self.get_logger().info(
+            "YOLO emergency confirmed: "
+            f"event={event_id or '<empty>'}, camera={message.camera_id}, "
+            f"confidence={message.confidence:.3f}, "
+            f"x={request.pose.position.x:.3f}, "
+            f"y={request.pose.position.y:.3f}"
+        )
+        self._on_request(request, request_id=event_id or None)
 
     def _begin_keepout_planning(
         self, serial: int, target: PoseStamped
