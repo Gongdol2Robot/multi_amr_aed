@@ -18,7 +18,8 @@ from geometry_msgs.msg import (
 )
 from irobot_create_msgs.msg import DockStatus
 from nav2_msgs.action import ComputePathToPose
-from nav_msgs.msg import Path
+from nav2_msgs.msg import CostmapFilterInfo
+from nav_msgs.msg import OccupancyGrid, Path
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
@@ -36,6 +37,7 @@ from .assignment import (
     path_length,
     path_length_in_polygon,
     path_motion_cost,
+    point_to_polygon_distance,
 )
 from .crowd import CrowdSnapshot, CrowdStateFilter
 
@@ -87,6 +89,14 @@ class EmergencyMissionManager(Node):
             "crowd_level_speeds_mps", [0.20, 0.15, 0.10, 0.05]
         )
         self.declare_parameter("crowd_blocking_level", 3)
+        self.declare_parameter("crowd_keepout_margin_m", 0.22)
+        self.declare_parameter("crowd_keepout_settle_sec", 1.2)
+        self.declare_parameter(
+            "crowd_keepout_mask_topic", "/emergency/crowd_keepout_mask"
+        )
+        self.declare_parameter(
+            "crowd_filter_info_topic", "/emergency/crowd_filter_info"
+        )
         self.declare_parameter(
             "crowd_zone_polygon",
             [
@@ -157,6 +167,18 @@ class EmergencyMissionManager(Node):
         self.crowd_blocking_level = int(
             self.get_parameter("crowd_blocking_level").value
         )
+        self.crowd_keepout_margin = float(
+            self.get_parameter("crowd_keepout_margin_m").value
+        )
+        self.crowd_keepout_settle = float(
+            self.get_parameter("crowd_keepout_settle_sec").value
+        )
+        self.crowd_keepout_mask_topic = str(
+            self.get_parameter("crowd_keepout_mask_topic").value
+        )
+        self.crowd_filter_info_topic = str(
+            self.get_parameter("crowd_filter_info_topic").value
+        )
         polygon_values = [
             float(value)
             for value in self.get_parameter("crowd_zone_polygon").value
@@ -215,6 +237,10 @@ class EmergencyMissionManager(Node):
             )
         if not 1 <= self.crowd_blocking_level < len(crowd_level_names):
             raise ValueError("crowd_blocking_level is outside stage range")
+        if self.crowd_keepout_margin < 0.0:
+            raise ValueError("crowd_keepout_margin_m must be non-negative")
+        if self.crowd_keepout_settle < 0.0:
+            raise ValueError("crowd_keepout_settle_sec must be non-negative")
         self.crowd_filter = CrowdStateFilter(
             level_names=crowd_level_names,
             state_timeout_sec=float(
@@ -296,6 +322,12 @@ class EmergencyMissionManager(Node):
         self.crowd_marker_publisher = self.create_publisher(
             MarkerArray, "/emergency/crowd_markers", latched_qos
         )
+        self.keepout_mask_publisher = self.create_publisher(
+            OccupancyGrid, self.crowd_keepout_mask_topic, latched_qos
+        )
+        self.filter_info_publisher = self.create_publisher(
+            CostmapFilterInfo, self.crowd_filter_info_topic, latched_qos
+        )
         self.crowded_distance_publishers = {
             robot_id: self.create_publisher(
                 Float32,
@@ -313,6 +345,8 @@ class EmergencyMissionManager(Node):
             for robot_id in self.robot_ids
         }
 
+        self.latest_map: OccupancyGrid | None = None
+        self.keepout_active: bool | None = None
         self.observations: dict[str, RobotObservation] = {}
         self.dock_states: dict[str, bool] = {}
         self.assignment_publishers = {
@@ -341,6 +375,17 @@ class EmergencyMissionManager(Node):
             self._on_raw_crowd_level,
             10,
         )
+        # Robot1이 꺼진 Robot2 단독 시험에서도 keepout mask를 만들 수
+        # 있도록 두 map_server 중 먼저 보이는 공용 지도를 사용한다.
+        self.map_subscriptions = [
+            self.create_subscription(
+                OccupancyGrid,
+                f"/{robot_id}/map",
+                self._on_map,
+                latched_qos,
+            )
+            for robot_id in self.robot_ids
+        ]
         self.planner_clients = {
             robot_id: ActionClient(
                 self,
@@ -486,6 +531,14 @@ class EmergencyMissionManager(Node):
         )
         self._publish_crowd_state(snapshot)
 
+    def _on_map(self, message: OccupancyGrid) -> None:
+        """Keep one shared map template for the dynamic keepout mask."""
+        self.latest_map = deepcopy(message)
+        self.keepout_active = None
+        self._publish_keepout_mask(
+            self.crowd_filter.snapshot(time.monotonic()), force=True
+        )
+
     def _on_request(self, message: PoseStamped) -> None:
         request = deepcopy(message)
         if not request.header.frame_id:
@@ -516,7 +569,44 @@ class EmergencyMissionManager(Node):
         self.active_request_id = f"emergency-{self.request_serial:03d}"
         self._publish_status("EMERGENCY_RECEIVED", self.active_request_id)
         self._publish_target_marker(request)
+        crowd = self.crowd_filter.snapshot(time.monotonic())
+        if crowd.fresh and crowd.level >= self.crowd_blocking_level:
+            if self.latest_map is None:
+                self._publish_status(
+                    "FAILED", "BLOCKED crowd stage but keepout map unavailable"
+                )
+                return
+            self._publish_keepout_mask(crowd, force=True)
+            if self.crowd_keepout_settle > 0.0:
+                self.planning_active = True
+                self.planning_target = deepcopy(request)
+                self._publish_status(
+                    "CALCULATING",
+                    f"waiting {self.crowd_keepout_settle:.1f}s for Nav2 "
+                    "keepout update",
+                )
+                serial = self.request_serial
+                target = deepcopy(request)
+                self.planning_timer = self.create_timer(
+                    self.crowd_keepout_settle,
+                    lambda: self._begin_keepout_planning(serial, target),
+                )
+                return
         self._calculate_and_assign(request)
+
+    def _begin_keepout_planning(
+        self, serial: int, target: PoseStamped
+    ) -> None:
+        """Plan after both Nav2 costmaps have consumed the keepout mask."""
+        if serial != self.request_serial or not self.planning_active:
+            return
+        if self.planning_timer is not None:
+            timer = self.planning_timer
+            self.planning_timer = None
+            timer.cancel()
+            self.destroy_timer(timer)
+        self.planning_active = False
+        self._calculate_and_assign(target)
 
     def _on_clicked_point(self, message: PointStamped) -> None:
         """Convert an RViz Publish Point click into a planning request."""
@@ -1118,11 +1208,63 @@ class EmergencyMissionManager(Node):
         )
         self.crowd_state_publisher.publish(message)
         self._publish_crowd_markers(snapshot)
+        self._publish_keepout_mask(snapshot)
 
     def _crowd_speed(self, snapshot: CrowdSnapshot) -> float:
         if snapshot.fresh and snapshot.level > 0:
             return self.crowd_level_speeds[snapshot.level]
         return self.nominal_linear_speed
+
+    def _publish_keepout_mask(
+        self, snapshot: CrowdSnapshot, *, force: bool = False
+    ) -> None:
+        """Publish a Nav2 keepout mask while the camera stage is BLOCKED."""
+        active = (
+            snapshot.fresh
+            and snapshot.level >= self.crowd_blocking_level
+        )
+        if self.latest_map is None:
+            return
+        if not force and active == self.keepout_active:
+            return
+
+        source = self.latest_map
+        mask = OccupancyGrid()
+        mask.header = deepcopy(source.header)
+        mask.header.frame_id = self.map_frame
+        mask.header.stamp = self.get_clock().now().to_msg()
+        mask.info = deepcopy(source.info)
+        width = int(mask.info.width)
+        height = int(mask.info.height)
+        resolution = float(mask.info.resolution)
+        origin_x = float(mask.info.origin.position.x)
+        origin_y = float(mask.info.origin.position.y)
+        data = [0] * (width * height)
+        if active:
+            for row in range(height):
+                y = origin_y + (row + 0.5) * resolution
+                for column in range(width):
+                    x = origin_x + (column + 0.5) * resolution
+                    if point_to_polygon_distance(
+                        (x, y), self.crowd_zone_polygon
+                    ) <= self.crowd_keepout_margin:
+                        data[row * width + column] = 100
+        mask.data = data
+
+        info = CostmapFilterInfo()
+        info.header.frame_id = self.map_frame
+        info.header.stamp = mask.header.stamp
+        info.type = 0
+        info.filter_mask_topic = self.crowd_keepout_mask_topic
+        info.base = 0.0
+        info.multiplier = 1.0
+        self.filter_info_publisher.publish(info)
+        self.keepout_mask_publisher.publish(mask)
+        self.keepout_active = active
+        self.get_logger().info(
+            "Crowd keepout mask "
+            + ("enabled" if active else "cleared")
+        )
 
     def _publish_crowd_markers(self, snapshot: CrowdSnapshot) -> None:
         """Show the monitored map polygon and current stage in RViz."""

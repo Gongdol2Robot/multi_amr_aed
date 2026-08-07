@@ -8,6 +8,7 @@ from multi_robot_emergency.assignment import (
     path_length_in_polygon,
     path_motion_cost,
     point_in_polygon,
+    point_to_polygon_distance,
     simplify_path,
 )
 
@@ -32,6 +33,15 @@ def test_polygon_contains_boundary_and_rejects_short_polygon() -> None:
     assert not point_in_polygon((3.0, 1.0), polygon)
     with pytest.raises(ValueError):
         point_in_polygon((0.0, 0.0), [])
+
+
+def test_point_to_polygon_distance_handles_inside_and_outside() -> None:
+    polygon = [(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 2.0)]
+    assert point_to_polygon_distance((1.0, 1.0), polygon) == 0.0
+    assert point_to_polygon_distance((3.0, 1.0), polygon) == 1.0
+    assert point_to_polygon_distance((3.0, 3.0), polygon) == pytest.approx(
+        math.sqrt(2.0)
+    )
 
 
 def test_path_length_in_polygon_uses_segment_midpoints() -> None:

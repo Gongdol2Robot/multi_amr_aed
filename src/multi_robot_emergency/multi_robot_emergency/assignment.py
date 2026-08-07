@@ -61,6 +61,36 @@ def point_in_polygon(point: Position, polygon: Iterable[Position]) -> bool:
     return inside
 
 
+def point_to_polygon_distance(
+    point: Position, polygon: Iterable[Position]
+) -> float:
+    """Return zero inside a polygon, otherwise distance to its boundary."""
+    vertices = list(polygon)
+    if point_in_polygon(point, vertices):
+        return 0.0
+    x, y = point
+    result = math.inf
+    for start, end in zip(vertices, vertices[1:] + vertices[:1]):
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        squared = dx * dx + dy * dy
+        if squared <= 1e-18:
+            nearest_x, nearest_y = start
+        else:
+            ratio = max(
+                0.0,
+                min(
+                    1.0,
+                    ((x - start[0]) * dx + (y - start[1]) * dy)
+                    / squared,
+                ),
+            )
+            nearest_x = start[0] + ratio * dx
+            nearest_y = start[1] + ratio * dy
+        result = min(result, math.hypot(x - nearest_x, y - nearest_y))
+    return result
+
+
 def path_length_in_polygon(
     points: Iterable[Position], polygon: Iterable[Position]
 ) -> float:

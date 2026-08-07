@@ -143,14 +143,19 @@ final_eta = base_eta + crowd_delay
 ```
 
 단계별 기본 속도는 `0.20, 0.15, 0.10m/s`이며 `BLOCKED` 단계에서는 해당
-구역을 지나는 후보 경로를 제외합니다. `CLEAR` 또는 `UNKNOWN`이면
-`crowd_delay`는 0입니다. RViz 표시 토픽과 확인용 토픽은 다음과 같습니다.
+polygon을 Nav2 keepout mask로 전역·지역 costmap에 넣습니다. 두 Planner는
+mask 반영을 위해 1.2초 기다린 뒤 막힌 구역을 우회하는 경로를 각각 다시
+생성합니다. 우회로 자체가 없을 때만 해당 후보의 경로 계산이 실패합니다.
+`CLEAR` 또는 `UNKNOWN`이면 mask와 `crowd_delay`를 모두 해제합니다. RViz
+표시 토픽과 확인용 토픽은 다음과 같습니다.
 
 ```bash
 ros2 topic echo /camera_alley/vision/crowd_level
 ros2 topic echo /camera_alley/vision/person_count
 ros2 topic echo /emergency/crowd/state
 ros2 topic echo /emergency/crowd_markers
+ros2 topic echo /emergency/crowd_filter_info
+ros2 topic echo /emergency/crowd_keepout_mask
 ros2 topic echo /emergency/crowded_path_distance/robot1
 ros2 topic echo /emergency/crowd_delay/robot1
 ```

@@ -21,3 +21,6 @@ emergency_mission_manager:
     # intersects the zone; its speed is retained only for list consistency.
     crowd_level_speeds_mps: [0.20, 0.15, 0.10, 0.05]
     crowd_blocking_level: 3
+    # BLOCKED일 때 Nav2 keepout mask를 실제 ROI보다 로봇 반경만큼 넓힌다.
+    crowd_keepout_margin_m: 0.22
+    crowd_keepout_settle_sec: 1.2

@@ -39,6 +39,7 @@ class LocalizationInitializer(Node):
         self.declare_parameter('lifecycle_timeout_sec', 60.0)
         self.declare_parameter('lifecycle_fallback_delay_sec', 8.0)
         self.declare_parameter('sensor_timeout_sec', 60.0)
+        self.declare_parameter('robot_tf_timeout_sec', 30.0)
         self.declare_parameter('initial_pose_timeout_sec', 300.0)
         self.declare_parameter('tf_timeout_sec', 30.0)
 
@@ -234,6 +235,45 @@ class LocalizationInitializer(Node):
         ):
             missing.append('dock_status')
         raise RuntimeError(f'Missing robot data: {", ".join(missing)}')
+
+    def wait_for_robot_transforms(self) -> None:
+        """Wait for the robot-local TF chain before deriving an initial pose."""
+        timeout = float(self.get_parameter('robot_tf_timeout_sec').value)
+        deadline = time.monotonic() + timeout
+        scan_frame = (
+            self.latest_scan.header.frame_id
+            if self.latest_scan is not None
+            else 'rplidar_link'
+        )
+        required = (
+            ('odom', 'base_link'),
+            ('base_link', scan_frame),
+        )
+        self.get_logger().info(
+            'Waiting for robot TF: odom -> base_link -> '
+            f'{scan_frame}...'
+        )
+        while rclpy.ok() and time.monotonic() < deadline:
+            rclpy.spin_once(self, timeout_sec=0.1)
+            if all(
+                self.tf_buffer.can_transform(
+                    target,
+                    source,
+                    Time(),
+                    timeout=Duration(seconds=0.1),
+                )
+                for target, source in required
+            ):
+                self.get_logger().info('Robot-local TF is ready.')
+                return
+        missing = [
+            f'{target} <- {source}'
+            for target, source in required
+            if not self.tf_buffer.can_transform(target, source, Time())
+        ]
+        raise RuntimeError(
+            f'Robot-local TF did not become available: {", ".join(missing)}'
+        )
 
     def _load_initial_pose(self) -> tuple[float, float, float]:
         use_dock_pose = bool(
@@ -520,6 +560,7 @@ class LocalizationInitializer(Node):
         self.ensure_lifecycle_active('map_server')
         self.ensure_lifecycle_active('amcl')
         self.wait_for_robot_data()
+        self.wait_for_robot_transforms()
         self.wait_for_initial_pose()
         self.wait_for_map_transform()
 
