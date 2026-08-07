@@ -17,6 +17,11 @@ uvicorn[standard]>=0.27
 # 빼더라도 깨지지 않게 직접 적는다.
 websockets>=12.0
 
+# maps/map.yaml 을 읽어 지도 그림과 좌표 변환을 낸다(backend/api/map_view.py).
+# 이것도 uvicorn[standard] 가 딸려 오지만, 우리가 직접 import 하는 것을
+# 남의 extras 에 기대지 않는다.
+PyYAML>=6.0
+
 # --mock 이 영상 프레임을 만들 때 쓴다. ROS 에 붙여 쓸 때는 시스템에 이미
 # 깔린 python3-opencv 를 그대로 써도 된다.
 opencv-python>=4.8
