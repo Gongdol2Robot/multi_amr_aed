@@ -8,7 +8,7 @@ package_name = "aed_vision"
 setup(
     name=package_name,
     version="0.1.0",
-    packages=find_packages(exclude=["test"]),
+    packages=find_packages(),
     data_files=[
         (
             "share/ament_index/resource_index/packages",
