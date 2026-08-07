@@ -47,6 +47,15 @@ export type EventStatus =
   | 'resolved'
   | 'canceled';
 
+/** 지도 좌표를 그림 좌표로 바꾸는 계수. /api/map/meta 가 준다. */
+export interface MapMeta {
+  width: number;
+  height: number;
+  resolution: number;
+  origin_x: number;
+  origin_y: number;
+}
+
 export interface Point2D {
   x: number;
   y: number;

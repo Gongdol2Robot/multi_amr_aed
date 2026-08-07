@@ -14,6 +14,7 @@ import { useLiveSnapshot } from './hooks/useLiveSnapshot';
 import { TopBar } from './components/layout/TopBar';
 import { ActiveEvent } from './components/mission/ActiveEvent';
 import { MissionTable } from './components/mission/MissionTable';
+import { MapView } from './components/robot/MapView';
 import { RobotCard } from './components/robot/RobotCard';
 import { VideoWall } from './components/video/VideoWall';
 import './styles/app.css';
@@ -34,6 +35,7 @@ export default function App() {
 
   const robots = snapshot?.robots ?? [];
   const streams = snapshot?.streams ?? [];
+  const missions = snapshot?.active_missions ?? [];
 
   return (
     <div className="app">
@@ -47,13 +49,14 @@ export default function App() {
 
       <ActiveEvent
         event={snapshot?.active_event ?? null}
-        missions={snapshot?.active_missions ?? []}
+        missions={missions}
         now={now}
       />
 
       <div className="app__main">
         <VideoWall streams={streams} />
 
+        <div className="app__side">
         <section className="panel fleet">
           <header className="panel__title">
             <span>로봇 상태</span>
@@ -76,6 +79,11 @@ export default function App() {
             ))}
           </div>
         </section>
+
+        {/* 로봇 카드는 좌표를 숫자로만 준다. 두 로봇이 서로 어디 있는지와
+            목표가 어느 쪽인지는 지도라야 잡힌다. */}
+        <MapView robots={robots} missions={missions} />
+        </div>
       </div>
 
       <MissionTable />

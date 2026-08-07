@@ -10,6 +10,7 @@
 
 import type {
   EtaAccuracyStats,
+  MapMeta,
   MissionEvent,
   MissionSummary,
   ResponseTimeStats,
@@ -51,6 +52,10 @@ export async function fetchMissionTimeline(
 
 export async function fetchResponseStats(): Promise<ResponseTimeStats> {
   return getJson<ResponseTimeStats>('/api/stats/response-time');
+}
+
+export async function fetchMapMeta(): Promise<MapMeta> {
+  return getJson<MapMeta>('/api/map/meta');
 }
 
 export async function fetchEtaAccuracy(

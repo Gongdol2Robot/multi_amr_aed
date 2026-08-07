@@ -293,7 +293,11 @@
 .tile__image {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  /* contain 이면 원본 비율을 지키느라 좌우가 검게 남는다. 4분할에서 그
+     검은 띠가 화면의 3할을 먹었다. cover 로 채우면 가장자리가 조금
+     잘리는 대신 타일이 그림으로 꽉 찬다. 관제 화면에서 가운데가 아니라
+     가장자리가 잘리는 것은 판단에 지장이 없다. */
+  object-fit: cover;
   display: block;
 }
 
@@ -639,4 +643,114 @@
   border-radius: 3px;
   padding: 0 3px;
   margin-left: 3px;
+}
+
+
+/* 오른쪽 칸 -------------------------------------------------------- */
+
+.app__side {
+  display: grid;
+  /* 로봇 카드는 내용만큼, 남는 자리는 전부 지도에 준다. */
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--gap);
+  min-height: 0;
+}
+
+/* 지도 ------------------------------------------------------------- */
+
+.map {
+  /* 패널이 자기 칸을 넘지 않게 가둔다. 안 그러면 지도가 아래 이력표를
+     덮는다. 지도는 가로세로 비가 정해져 있어 폭에 맞추면 높이가 따라
+     정해지는데, 그 높이가 남은 자리보다 클 수 있다. */
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.map__scale {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.map__frame {
+  position: relative;
+  margin: 8px;
+  /* 남은 높이를 넘지 않게 한다. 그림은 아래 max-height 로 줄어든다. */
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 그림에 딱 맞는 상자. 로봇·목표 표시의 % 기준이 된다. */
+.map__inner {
+  position: relative;
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  line-height: 0;
+}
+
+.map__image {
+  /* 폭에 맞추되 칸 높이를 넘지 않는다. 둘 중 작은 쪽이 이긴다. */
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  display: block;
+  border-radius: 4px;
+  /* 88x139 짜리 작은 그림이라 늘리면 흐려진다. 격자를 살려 벽이 또렷하게
+     보이도록 확대 보간을 끈다. */
+  image-rendering: pixelated;
+  /* PGM 은 빈 공간이 밝고 벽이 어둡다. 어두운 관제 화면에서는 그대로 두면
+     빈 공간이 하얗게 번져 눈이 아프다. 반전해서 빈 공간을 어둡게, 벽을
+     밝게 만든다. 지도에서 눈이 좇는 것은 벽이다. */
+  filter: invert(1);
+  opacity: 0.55;
+}
+
+.map__empty {
+  color: var(--text-faint);
+  font-size: 12px;
+  padding: 16px;
+}
+
+/* 로봇 표시. 삼각형 머리로 바라보는 쪽을 알린다. */
+.map__robot {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border-radius: 50%;
+  background: var(--info);
+  border: 2px solid var(--bg-panel);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--bg-base);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+.map__robot--busy {
+  background: var(--accent);
+}
+
+.map__robot b {
+  /* 표시는 방위대로 돌아가지만 숫자는 똑바로 서 있어야 읽힌다. */
+  display: block;
+}
+
+.map__target {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px solid var(--danger);
+  box-shadow: 0 0 0 4px rgba(255, 77, 94, 0.25);
+  animation: detect-blink 1.2s ease-in-out infinite;
 }

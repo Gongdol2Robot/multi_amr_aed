@@ -16,7 +16,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import history, live, video
+from .api import history, live, map_view, video
 from .context import Context, Settings
 
 LOGGER = logging.getLogger(__name__)
@@ -90,6 +90,7 @@ def create_app(settings: Settings) -> FastAPI:
     app.include_router(live.router)
     app.include_router(history.router)
     app.include_router(video.router)
+    app.include_router(map_view.router)
     return app
 
 
