@@ -1,7 +1,9 @@
 # multi_robot_emergency
 
 각 로봇 PC에서 기존 단독 Nav2/RViz를 실행하고, 중앙 PC에서는 두 Nav2
-Planner가 계산한 실제 경로 길이를 비교해 짧은 로봇만 출동시키는 패키지입니다.
+Planner의 ETA를 비교해 기본적으로 가장 빠른 로봇을 출동시키는 패키지입니다.
+목표시간 미달 위험이 크면 두 로봇을 동시에 출동시키며, 먼저 도착한 로봇이
+생기면 늦은 로봇의 목표를 취소하고 출발 위치로 복귀시킵니다.
 
 중앙 런치는 Nav2, RViz, TF bridge를 실행하지 않습니다.
 
@@ -65,6 +67,22 @@ ros2 launch multi_robot_emergency central_dispatch.launch.py \
   dispatch_enabled:=true
 ```
 
+기본 동시출발 기준은 목표시간 30초의 85%인 25.5초입니다. 가장 빠른
+후보의 ETA도 25.5초 이상이고 두 로봇 모두 유효한 경로가 있을 때 두 대를
+출동시킵니다. 기준은 실행할 때 조정할 수 있습니다.
+
+```bash
+ros2 launch multi_robot_emergency central_dispatch.launch.py \
+  dispatch_enabled:=true \
+  dual_dispatch_enabled:=true \
+  target_arrival_time_sec:=30.0 \
+  dual_dispatch_trigger_ratio:=0.85
+```
+
+단축 명령은 `central <실주행> <목표시간초> <발동비율> <동시출발>` 순서입니다.
+기본 설정으로 실주행할 때는 `central true`, 목표시간을 40초로 바꾸려면
+`central true 40 0.85 true`를 사용합니다.
+
 목표는 `map` 좌표의 `PoseStamped`로 보냅니다.
 
 ```bash
@@ -84,13 +102,23 @@ ros2 topic pub --once /emergency/request geometry_msgs/msg/PoseStamped \
 3. 반환된 `nav_msgs/Path`의 모든 구간 길이와 회전 비용 계산
 4. Camera2가 판정한 혼잡 상태와 골목 통과 길이를 ETA에 반영
 5. 경로 실패/시간 초과 로봇 제외
-6. 최종 ETA가 가장 짧은 로봇에만 임무 전송
+6. 최단 ETA가 목표시간의 85% 미만이면 가장 빠른 로봇에만 임무 전송
+7. 최단 ETA가 기준 이상이면 유효한 두 로봇에 동시 임무 전송
+8. 먼저 도착한 로봇이 생기면 늦은 로봇의 목표를 취소하고 저장한 출발
+   Pose로 `ROLE_RETURN` 임무 전송
+
+복귀 전환 시 executor는 기존 Nav2 Goal의 취소 응답을 기다리고 0.5초 뒤
+복귀 Goal을 보냅니다. 취소 경합 등으로 복귀 Goal이 `ABORTED` 또는
+`CANCELED`되면 기본 15초 동안 0.5초 간격으로 다시 시도합니다. 이 제한을
+넘겨도 경로가 생성되지 않으면 `/emergency/status`에
+`NAVIGATION_ERROR`가 남으므로 물리적 장애물과 costmap을 확인해야 합니다.
 
 결과 확인:
 
 ```bash
 ros2 topic echo /emergency/status
 ros2 topic echo /emergency/selected_robot
+ros2 topic echo /emergency/dispatched_robots
 ros2 topic echo /emergency/path_distance/robot1
 ros2 topic echo /emergency/path_distance/robot2
 ros2 topic echo /emergency/eta/predicted/robot1
@@ -99,6 +127,10 @@ ros2 topic echo /emergency/eta/actual/robot1
 ros2 topic echo /emergency/eta/actual/robot2
 ros2 topic echo /emergency/eta/result
 ```
+
+`/emergency/selected_robot`은 현재 최우선 로봇 또는 먼저 도착한 로봇을
+표시합니다. `/emergency/dispatched_robots`는 동시출발 여부, 출동·주행·복귀
+중인 로봇 목록을 JSON 문자열로 발행합니다.
 
 경로를 계산할 수 없는 로봇의 거리에는 `nan`이 발행됩니다.
 정지 중에는 AMCL pose가 반복 발행되지 않으므로 기본적으로 마지막 수신 위치를

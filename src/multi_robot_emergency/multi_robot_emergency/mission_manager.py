@@ -1,4 +1,4 @@
-"""Select one of two robots and dispatch only that robot through Nav2."""
+"""Rank two robots and dispatch one or both through Nav2."""
 
 from __future__ import annotations
 
@@ -34,6 +34,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 from .assignment import (
     crowd_delay_seconds,
+    dispatch_candidates,
     path_length,
     path_length_in_polygon,
     path_motion_cost,
@@ -51,7 +52,7 @@ class RobotObservation:
 
 
 class EmergencyMissionManager(Node):
-    """Compare both Nav2 plans and dispatch only the shorter candidate."""
+    """Compare both Nav2 plans and manage deadline-aware dispatch."""
 
     def __init__(self) -> None:
         """Create robot inputs, mission outputs, and Nav2 action clients."""
@@ -67,6 +68,9 @@ class EmergencyMissionManager(Node):
         self.declare_parameter("planning_timeout_sec", 30.0)
         self.declare_parameter("dispatch_retry_timeout_sec", 15.0)
         self.declare_parameter("assignment_ack_timeout_sec", 3.0)
+        self.declare_parameter("dual_dispatch_enabled", True)
+        self.declare_parameter("target_arrival_time_sec", 30.0)
+        self.declare_parameter("dual_dispatch_trigger_ratio", 0.85)
         self.declare_parameter("nominal_linear_speed_mps", 0.20)
         self.declare_parameter("nominal_angular_speed_radps", 0.70)
         self.declare_parameter("slowdown_turn_threshold_deg", 45.0)
@@ -145,6 +149,15 @@ class EmergencyMissionManager(Node):
         self.assignment_ack_timeout = float(
             self.get_parameter("assignment_ack_timeout_sec").value
         )
+        self.dual_dispatch_enabled = bool(
+            self.get_parameter("dual_dispatch_enabled").value
+        )
+        self.target_arrival_time = float(
+            self.get_parameter("target_arrival_time_sec").value
+        )
+        self.dual_dispatch_trigger_ratio = float(
+            self.get_parameter("dual_dispatch_trigger_ratio").value
+        )
         self.nominal_linear_speed = float(
             self.get_parameter("nominal_linear_speed_mps").value
         )
@@ -202,6 +215,19 @@ class EmergencyMissionManager(Node):
             raise ValueError("dispatch_retry_timeout_sec must be positive")
         if self.assignment_ack_timeout <= 0.0:
             raise ValueError("assignment_ack_timeout_sec must be positive")
+        if (
+            not math.isfinite(self.target_arrival_time)
+            or self.target_arrival_time <= 0.0
+        ):
+            raise ValueError("target_arrival_time_sec must be positive")
+        if (
+            not math.isfinite(self.dual_dispatch_trigger_ratio)
+            or self.dual_dispatch_trigger_ratio <= 0.0
+            or self.dual_dispatch_trigger_ratio > 1.0
+        ):
+            raise ValueError(
+                "dual_dispatch_trigger_ratio must be in the (0, 1] interval"
+            )
         if self.nominal_linear_speed <= 0.0:
             raise ValueError("nominal_linear_speed_mps must be positive")
         if self.nominal_angular_speed <= 0.0:
@@ -268,6 +294,9 @@ class EmergencyMissionManager(Node):
         )
         self.selected_publisher = self.create_publisher(
             String, "/emergency/selected_robot", latched_qos
+        )
+        self.dispatched_publisher = self.create_publisher(
+            String, "/emergency/dispatched_robots", latched_qos
         )
         self.target_marker_publisher = self.create_publisher(
             Marker, "/emergency/target_marker", latched_qos
@@ -456,12 +485,21 @@ class EmergencyMissionManager(Node):
         self.ranked_candidates: list[str] = []
         self.excluded_robots: set[str] = set()
         self.assignment_version = 0
-        self.assignment_ack_timer = None
+        self.assignment_versions: dict[str, int] = {}
+        self.assignment_ack_timers: dict[str, object] = {}
         self.active_request_id = ""
         self.state = "IDLE"
         self._last_feedback_log = 0.0
-        self.navigation_started_at: float | None = None
-        self.navigation_predicted_eta: float | None = None
+        self.navigation_started_at: dict[str, float] = {}
+        self.navigation_predicted_eta: dict[str, float] = {}
+        self.dispatch_start_poses: dict[str, PoseStamped] = {}
+        self.dispatched_robots: set[str] = set()
+        self.terminal_robots: set[str] = set()
+        self.arrived_robots: set[str] = set()
+        self.failed_robots: set[str] = set()
+        self.return_failed_robots: set[str] = set()
+        self.returning_robots: set[str] = set()
+        self.dual_dispatch_active = False
         self.planning_crowd_snapshot = CrowdSnapshot(
             -1, "UNKNOWN", 0, False, math.inf
         )
@@ -485,6 +523,13 @@ class EmergencyMissionManager(Node):
         self.get_logger().info(
             f"Dispatch enabled: {self.dispatch_enabled}; "
             f"robots={self.robot_ids}"
+        )
+        self.get_logger().info(
+            "Dual dispatch: "
+            f"enabled={self.dual_dispatch_enabled}, "
+            f"target={self.target_arrival_time:.1f}s, "
+            "trigger="
+            f"{self.target_arrival_time * self.dual_dispatch_trigger_ratio:.1f}s"
         )
         self.get_logger().info(
             "RViz Publish Point topics: " + ", ".join(click_topics)
@@ -563,8 +608,20 @@ class EmergencyMissionManager(Node):
 
         self.request_serial += 1
         self.assignment_version = 0
+        self.assignment_versions.clear()
         self.ranked_candidates.clear()
         self.excluded_robots.clear()
+        self.navigation_started_at.clear()
+        self.navigation_predicted_eta.clear()
+        self.dispatch_start_poses.clear()
+        self.dispatched_robots.clear()
+        self.terminal_robots.clear()
+        self.arrived_robots.clear()
+        self.failed_robots.clear()
+        self.return_failed_robots.clear()
+        self.returning_robots.clear()
+        self.dual_dispatch_active = False
+        self._publish_dispatched_robots()
         request.header.stamp = self.get_clock().now().to_msg()
         self.active_request_id = f"emergency-{self.request_serial:03d}"
         self._publish_status("EMERGENCY_RECEIVED", self.active_request_id)
@@ -892,6 +949,25 @@ class EmergencyMissionManager(Node):
         self.ranked_candidates = [robot_id for robot_id, _ in ranked]
         self.selected_robot = self.ranked_candidates[0]
         self._publish_selected_robot(self.selected_robot)
+        dispatch_robot_ids = dispatch_candidates(
+            ranked,
+            dual_dispatch_enabled=self.dual_dispatch_enabled,
+            target_arrival_time=self.target_arrival_time,
+            trigger_ratio=self.dual_dispatch_trigger_ratio,
+        )
+        if len(dispatch_robot_ids) > 1:
+            missing_start = [
+                robot_id
+                for robot_id in dispatch_robot_ids
+                if not self.plan_results[robot_id][0].poses
+            ]
+            if missing_start:
+                self.get_logger().warning(
+                    "Dual dispatch disabled because start pose is missing: "
+                    + ", ".join(missing_start)
+                )
+                dispatch_robot_ids = dispatch_robot_ids[:1]
+        self.dual_dispatch_active = len(dispatch_robot_ids) > 1
         detail = ", ".join(
             (
                 f"{robot_id}={score:.2f}s"
@@ -908,8 +984,17 @@ class EmergencyMissionManager(Node):
                 f"{robot_id}({reason})"
                 for robot_id, reason in self.plan_failures.items()
             )
+        dispatch_detail = "+".join(dispatch_robot_ids)
+        if self.dual_dispatch_active:
+            detail += (
+                "; dual dispatch: fastest ETA "
+                f"{ranked[0][1]:.2f}s >= trigger "
+                f"{self.target_arrival_time * self.dual_dispatch_trigger_ratio:.2f}s"
+            )
         self._publish_status(
-            "ASSIGNED", f"selected={self.selected_robot}; {detail}"
+            "ASSIGNED",
+            f"selected={self.selected_robot}; dispatch={dispatch_detail}; "
+            f"{detail}",
         )
 
         if not self.dispatch_enabled:
@@ -918,25 +1003,63 @@ class EmergencyMissionManager(Node):
                 "the selected robot."
             )
             return
-        self._publish_assignment(self.selected_robot)
+        for robot_id in dispatch_robot_ids:
+            self.dispatch_start_poses[robot_id] = (
+                self._capture_dispatch_start_pose(robot_id)
+            )
+            self._publish_assignment(
+                robot_id,
+                deepcopy(self.planning_target),
+                role=RobotState.ROLE_AED_DELIVERY,
+                mission_suffix="aed",
+            )
 
-    def _publish_assignment(self, robot_id: str) -> None:
-        if self.planning_target is None:
+    def _capture_dispatch_start_pose(self, robot_id: str) -> PoseStamped:
+        """Store the planned start position and best known start yaw."""
+        start_pose = deepcopy(self.plan_results[robot_id][0].poses[0])
+        start_pose.header.frame_id = self.map_frame
+        observation = self.observations.get(robot_id)
+        if observation is not None:
+            start_pose.pose.orientation = deepcopy(
+                observation.pose.pose.orientation
+            )
+        return start_pose
+
+    def _publish_assignment(
+        self,
+        robot_id: str,
+        target: PoseStamped | None,
+        *,
+        role: int,
+        mission_suffix: str,
+    ) -> None:
+        if target is None:
             self.navigation_active = False
-            self._publish_status("FAILED", "planning target was lost")
+            self._publish_status("FAILED", "assignment target was lost")
             return
         self.assignment_version += 1
-        self.selected_robot = robot_id
+        self.assignment_versions[robot_id] = self.assignment_version
+        self.dispatched_robots.add(robot_id)
+        self.terminal_robots.discard(robot_id)
         self.navigation_active = True
-        self.navigation_started_at = None
-        self.navigation_predicted_eta = self.plan_results[robot_id][2]
-        self._publish_selected_robot(robot_id)
+        self.navigation_started_at.pop(robot_id, None)
+        if role == RobotState.ROLE_AED_DELIVERY:
+            self.navigation_predicted_eta[robot_id] = self.plan_results[
+                robot_id
+            ][2]
+            self.returning_robots.discard(robot_id)
+        else:
+            self.navigation_predicted_eta.pop(robot_id, None)
+            self.returning_robots.add(robot_id)
+        self._publish_dispatched_robots()
         assignment = MissionAssignment()
-        assignment.mission_id = f"{self.active_request_id}-aed"
+        assignment.mission_id = (
+            f"{self.active_request_id}-{mission_suffix}-{robot_id}"
+        )
         assignment.event_id = self.active_request_id
         assignment.robot_id = robot_id
-        assignment.role = RobotState.ROLE_AED_DELIVERY
-        assignment.target = deepcopy(self.planning_target)
+        assignment.role = role
+        assignment.target = deepcopy(target)
         assignment.assigned_at = self.get_clock().now().to_msg()
         assignment.assignment_version = self.assignment_version
         assignment.cancel_previous = True
@@ -948,18 +1071,21 @@ class EmergencyMissionManager(Node):
         )
         self._publish_status(
             "DISPATCHING",
-            f"assignment v{self.assignment_version} published to {robot_id}",
+            f"assignment v{self.assignment_version} published to {robot_id} "
+            f"role={role}",
         )
 
     def _on_mission_status(self, status: MissionStatus) -> None:
         if status.event_id != self.active_request_id:
             return
-        if status.robot_id != self.selected_robot:
+        if status.robot_id not in self.dispatched_robots:
             return
-        if status.assignment_version != self.assignment_version:
+        if status.assignment_version != self.assignment_versions.get(
+            status.robot_id
+        ):
             return
 
-        self._cancel_assignment_ack_timer()
+        self._cancel_assignment_ack_timer(status.robot_id)
 
         if status.status == MissionStatus.DISPATCHING:
             self._publish_status(
@@ -967,31 +1093,39 @@ class EmergencyMissionManager(Node):
             )
             return
         if status.status == MissionStatus.EN_ROUTE:
-            if self.navigation_started_at is None:
-                self.navigation_started_at = time.monotonic()
-            self._publish_status("NAVIGATING", f"{status.robot_id} is moving")
+            self.navigation_started_at.setdefault(
+                status.robot_id, time.monotonic()
+            )
+            state = (
+                "RETURNING"
+                if status.robot_id in self.returning_robots
+                else "NAVIGATING"
+            )
+            self._publish_status(state, f"{status.robot_id} is moving")
             return
         if status.status in (MissionStatus.ARRIVED, MissionStatus.COMPLETED):
-            self.navigation_active = False
-            if self.navigation_started_at is not None:
-                actual = time.monotonic() - self.navigation_started_at
-                predicted = self.navigation_predicted_eta
-                if predicted is not None:
-                    self._publish_actual_eta(status.robot_id, actual)
-                    self._publish_eta_result(
-                        status.robot_id, predicted, actual
-                    )
-                    self.get_logger().info(
-                        f"ETA measurement {status.robot_id}: "
-                        f"predicted={predicted:.2f}s, actual={actual:.2f}s, "
-                        f"error={actual - predicted:+.2f}s"
-                    )
-            self.navigation_started_at = None
-            self.navigation_predicted_eta = None
+            if status.robot_id in self.returning_robots:
+                self.returning_robots.discard(status.robot_id)
+                self.navigation_started_at.pop(status.robot_id, None)
+                self.terminal_robots.add(status.robot_id)
+                self._publish_status(
+                    "RETURNED",
+                    f"{status.robot_id} returned to its dispatch start pose",
+                )
+                self._finish_if_all_terminal()
+                return
+
+            self._record_arrival(status.robot_id)
+            self.arrived_robots.add(status.robot_id)
+            self.terminal_robots.add(status.robot_id)
+            self.selected_robot = status.robot_id
+            self._publish_selected_robot(status.robot_id)
             self._publish_status(
                 "ARRIVED", f"{status.robot_id} reached the emergency"
             )
-            self._publish_status("COMPLETED", self.active_request_id)
+            if self.dual_dispatch_active:
+                self._return_late_robots(status.robot_id)
+            self._finish_if_all_terminal()
             return
         if status.status not in {
             MissionStatus.CANCELED,
@@ -1001,54 +1135,69 @@ class EmergencyMissionManager(Node):
         }:
             return
 
-        self._reassign_after_failure(status.robot_id, status.reason)
+        self._handle_navigation_failure(status.robot_id, status.reason)
 
     def _start_assignment_ack_timer(
         self, event_id: str, robot_id: str, assignment_version: int
     ) -> None:
-        self._cancel_assignment_ack_timer()
-        self.assignment_ack_timer = self.create_timer(
+        self._cancel_assignment_ack_timer(robot_id)
+        self.assignment_ack_timers[robot_id] = self.create_timer(
             self.assignment_ack_timeout,
             lambda: self._on_assignment_ack_timeout(
                 event_id, robot_id, assignment_version
             ),
         )
 
-    def _cancel_assignment_ack_timer(self) -> None:
-        if self.assignment_ack_timer is None:
+    def _cancel_assignment_ack_timer(self, robot_id: str) -> None:
+        timer = self.assignment_ack_timers.pop(robot_id, None)
+        if timer is None:
             return
-        timer = self.assignment_ack_timer
-        self.assignment_ack_timer = None
         timer.cancel()
         self.destroy_timer(timer)
 
     def _on_assignment_ack_timeout(
         self, event_id: str, robot_id: str, assignment_version: int
     ) -> None:
-        self._cancel_assignment_ack_timer()
+        self._cancel_assignment_ack_timer(robot_id)
         if (
             event_id != self.active_request_id
-            or robot_id != self.selected_robot
-            or assignment_version != self.assignment_version
+            or robot_id not in self.dispatched_robots
+            or assignment_version != self.assignment_versions.get(robot_id)
             or not self.navigation_active
         ):
             return
-        self._reassign_after_failure(
+        self._handle_navigation_failure(
             robot_id,
             f"mission executor did not acknowledge within "
             f"{self.assignment_ack_timeout:.1f}s",
         )
 
-    def _reassign_after_failure(self, failed_robot: str, reason: str) -> None:
-        if self.navigation_started_at is not None:
-            elapsed = time.monotonic() - self.navigation_started_at
+    def _handle_navigation_failure(
+        self, failed_robot: str, reason: str
+    ) -> None:
+        started_at = self.navigation_started_at.pop(failed_robot, None)
+        if started_at is not None:
+            elapsed = time.monotonic() - started_at
             self.get_logger().warning(
                 f"ETA measurement {failed_robot}: aborted after "
                 f"{elapsed:.2f}s ({reason or 'unspecified failure'})"
             )
-        self.navigation_started_at = None
-        self.navigation_predicted_eta = None
+        self.navigation_predicted_eta.pop(failed_robot, None)
+        was_returning = failed_robot in self.returning_robots
+        self.returning_robots.discard(failed_robot)
+        self.failed_robots.add(failed_robot)
+        if was_returning:
+            self.return_failed_robots.add(failed_robot)
+        self.terminal_robots.add(failed_robot)
         self.excluded_robots.add(failed_robot)
+        if self.dual_dispatch_active or was_returning:
+            self._publish_status(
+                "NAVIGATION_ERROR",
+                f"{failed_robot}: {reason}; other robot continues",
+            )
+            self._finish_if_all_terminal()
+            return
+
         next_robot = next(
             (
                 robot_id
@@ -1058,17 +1207,92 @@ class EmergencyMissionManager(Node):
             None,
         )
         if next_robot is None:
-            self.navigation_active = False
-            self._publish_status(
-                "FAILED",
-                f"all candidates failed; last={failed_robot}: {reason}",
-            )
+            self._finish_if_all_terminal()
             return
         self._publish_status(
             "REASSIGNING",
             f"exclude {failed_robot}; assigning {next_robot}",
         )
-        self._publish_assignment(next_robot)
+        self.dispatch_start_poses[next_robot] = (
+            self._capture_dispatch_start_pose(next_robot)
+        )
+        self._publish_assignment(
+            next_robot,
+            deepcopy(self.planning_target),
+            role=RobotState.ROLE_AED_DELIVERY,
+            mission_suffix="aed",
+        )
+
+    def _record_arrival(self, robot_id: str) -> None:
+        started_at = self.navigation_started_at.pop(robot_id, None)
+        predicted = self.navigation_predicted_eta.pop(robot_id, None)
+        if started_at is None or predicted is None:
+            return
+        actual = time.monotonic() - started_at
+        self._publish_actual_eta(robot_id, actual)
+        self._publish_eta_result(robot_id, predicted, actual)
+        self.get_logger().info(
+            f"ETA measurement {robot_id}: predicted={predicted:.2f}s, "
+            f"actual={actual:.2f}s, error={actual - predicted:+.2f}s"
+        )
+
+    def _return_late_robots(self, winner: str) -> None:
+        for robot_id in sorted(self.dispatched_robots):
+            if robot_id == winner or robot_id in self.terminal_robots:
+                continue
+            start_pose = self.dispatch_start_poses.get(robot_id)
+            if start_pose is None:
+                self.get_logger().error(
+                    f"Cannot return {robot_id}: dispatch start pose missing"
+                )
+                self.failed_robots.add(robot_id)
+                self.terminal_robots.add(robot_id)
+                continue
+            started_at = self.navigation_started_at.pop(robot_id, None)
+            if started_at is not None:
+                elapsed = time.monotonic() - started_at
+                self.get_logger().info(
+                    f"Canceling late {robot_id} after {elapsed:.2f}s; "
+                    f"winner={winner}"
+                )
+            self._publish_status(
+                "RETURNING",
+                f"{winner} arrived first; cancel {robot_id} and return home",
+            )
+            self._publish_assignment(
+                robot_id,
+                deepcopy(start_pose),
+                role=RobotState.ROLE_RETURN,
+                mission_suffix="return",
+            )
+
+    def _finish_if_all_terminal(self) -> None:
+        if not self.dispatched_robots or not self.dispatched_robots.issubset(
+            self.terminal_robots
+        ):
+            return
+        self.navigation_active = False
+        self._publish_dispatched_robots()
+        arrived = ",".join(sorted(self.arrived_robots)) or "none"
+        failed = ",".join(sorted(self.failed_robots)) or "none"
+        if self.return_failed_robots:
+            return_failed = ",".join(sorted(self.return_failed_robots))
+            self._publish_status(
+                "RETURN_FAILED",
+                f"emergency reached by {arrived}; return failed="
+                f"{return_failed}",
+            )
+        elif self.arrived_robots:
+            self._publish_status(
+                "COMPLETED",
+                f"{self.active_request_id}; arrived={arrived}; "
+                f"failed={failed}",
+            )
+        else:
+            self._publish_status(
+                "FAILED",
+                f"all candidates failed; failed={failed}",
+            )
 
     def _publish_automatic_request(self) -> None:
         if self._automatic_request_timer is None:
@@ -1116,6 +1340,11 @@ class EmergencyMissionManager(Node):
                 continue
             position = observation.pose.pose.position
             selected = robot_id == self.selected_robot
+            dispatched = (
+                robot_id in self.dispatched_robots
+                and robot_id not in self.terminal_robots
+            )
+            returning = robot_id in self.returning_robots
             body = Marker()
             body.header.frame_id = self.map_frame
             body.header.stamp = stamp
@@ -1125,11 +1354,15 @@ class EmergencyMissionManager(Node):
             body.action = Marker.ADD
             body.pose = deepcopy(observation.pose.pose)
             body.pose.position.z = 0.12
-            body.scale.x = 0.42 if selected else 0.32
-            body.scale.y = 0.42 if selected else 0.32
+            body.scale.x = 0.42 if selected or dispatched else 0.32
+            body.scale.y = 0.42 if selected or dispatched else 0.32
             body.scale.z = 0.24
-            if selected:
+            if returning:
+                body.color.r, body.color.g, body.color.b = (0.7, 0.2, 1.0)
+            elif selected:
                 body.color.r, body.color.g, body.color.b = (1.0, 0.8, 0.0)
+            elif dispatched:
+                body.color.r, body.color.g, body.color.b = (1.0, 0.35, 0.0)
             else:
                 body.color.r, body.color.g, body.color.b = colors[index]
             body.color.a = 0.9
@@ -1150,7 +1383,14 @@ class EmergencyMissionManager(Node):
             label.color.g = 1.0
             label.color.b = 1.0
             label.color.a = 1.0
-            suffix = " [SELECTED]" if selected else ""
+            if returning:
+                suffix = " [RETURNING]"
+            elif selected:
+                suffix = " [PRIMARY]"
+            elif dispatched:
+                suffix = " [DISPATCHED]"
+            else:
+                suffix = ""
             label.text = f"{robot_id}{suffix}"
             markers.markers.append(label)
         self.robot_marker_publisher.publish(markers)
@@ -1162,6 +1402,26 @@ class EmergencyMissionManager(Node):
         message = String()
         message.data = robot_id
         self.selected_publisher.publish(message)
+
+    def _publish_dispatched_robots(self) -> None:
+        message = String()
+        message.data = json.dumps(
+            {
+                "dual_dispatch": self.dual_dispatch_active,
+                "primary_robot": self.selected_robot,
+                "dispatched_robots": sorted(self.dispatched_robots),
+                "active_robots": sorted(
+                    self.dispatched_robots - self.terminal_robots
+                ),
+                "returning_robots": sorted(self.returning_robots),
+                "return_failed_robots": sorted(
+                    self.return_failed_robots
+                ),
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        self.dispatched_publisher.publish(message)
 
     def _publish_distance(self, robot_id: str, distance: float) -> None:
         message = Float32()

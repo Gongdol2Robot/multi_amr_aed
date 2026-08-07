@@ -151,7 +151,10 @@ source install/setup.bash
 
 기존 `a1inteli`에서 사용하던 중앙 거리 비교 명령도 이 저장소에서 그대로
 실행할 수 있습니다. 이 명령은 단독 호환 실행용이며, 팀 통합 배정·복구 정책은
-`aed_bringup central_dispatch.launch.py`를 사용합니다.
+`aed_bringup central_dispatch.launch.py`를 사용합니다. 아래 호환 중앙 노드는
+기본적으로 최소 ETA 로봇을 보내며, 목표시간 미달 위험이 크면 두 로봇을
+동시에 출동시킨 뒤 먼저 도착한 로봇이 생겼을 때 늦은 로봇을 출발 위치로
+복귀시킵니다.
 
 ```bash
 ros2 launch multi_robot_emergency central_dispatch.launch.py \

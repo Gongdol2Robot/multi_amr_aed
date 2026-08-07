@@ -8,6 +8,46 @@ from collections.abc import Iterable
 Position = tuple[float, float]
 
 
+def dispatch_candidates(
+    ranked_candidates: Iterable[tuple[str, float]],
+    *,
+    dual_dispatch_enabled: bool,
+    target_arrival_time: float,
+    trigger_ratio: float,
+) -> list[str]:
+    """Choose one primary robot or both robots for a deadline-risk mission.
+
+    ``ranked_candidates`` must be ordered from the smallest ETA to the
+    largest. Dual dispatch is used only when both candidates are valid and
+    even the fastest ETA reaches the configured fraction of the target time.
+    """
+    if not math.isfinite(target_arrival_time) or target_arrival_time <= 0.0:
+        raise ValueError("target_arrival_time must be positive")
+    if (
+        not math.isfinite(trigger_ratio)
+        or trigger_ratio <= 0.0
+        or trigger_ratio > 1.0
+    ):
+        raise ValueError("trigger_ratio must be in the (0, 1] interval")
+
+    candidates = list(ranked_candidates)
+    if not all(
+        robot_id and math.isfinite(eta) and eta >= 0.0
+        for robot_id, eta in candidates
+    ):
+        raise ValueError("candidate IDs and ETAs must be valid")
+    if not candidates:
+        return []
+    trigger_eta = target_arrival_time * trigger_ratio
+    if (
+        dual_dispatch_enabled
+        and len(candidates) >= 2
+        and candidates[0][1] >= trigger_eta
+    ):
+        return [robot_id for robot_id, _ in candidates[:2]]
+    return [candidates[0][0]]
+
+
 def normalize_angle(angle: float) -> float:
     """Wrap an angle to the [-pi, pi] interval."""
     return math.atan2(math.sin(angle), math.cos(angle))

@@ -23,7 +23,7 @@ def generate_launch_description() -> LaunchDescription:
                 "dispatch_enabled",
                 default_value="false",
                 choices=["true", "false"],
-                description="Send the goal to the robot with the shorter path",
+                description="Send assignments chosen by the ETA policy",
             ),
             DeclareLaunchArgument(
                 "pose_timeout_sec", default_value="15.0"
@@ -49,6 +49,21 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "assignment_ack_timeout_sec", default_value="3.0"
+            ),
+            DeclareLaunchArgument(
+                "dual_dispatch_enabled",
+                default_value="true",
+                choices=["true", "false"],
+                description=(
+                    "Dispatch both valid robots when the fastest ETA is "
+                    "close to the target arrival time"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "target_arrival_time_sec", default_value="30.0"
+            ),
+            DeclareLaunchArgument(
+                "dual_dispatch_trigger_ratio", default_value="0.85"
             ),
             DeclareLaunchArgument("planner_id", default_value="GridBased"),
             DeclareLaunchArgument(
@@ -101,6 +116,20 @@ def generate_launch_description() -> LaunchDescription:
                         ),
                         "assignment_ack_timeout_sec": ParameterValue(
                             LaunchConfiguration("assignment_ack_timeout_sec"),
+                            value_type=float,
+                        ),
+                        "dual_dispatch_enabled": ParameterValue(
+                            LaunchConfiguration("dual_dispatch_enabled"),
+                            value_type=bool,
+                        ),
+                        "target_arrival_time_sec": ParameterValue(
+                            LaunchConfiguration("target_arrival_time_sec"),
+                            value_type=float,
+                        ),
+                        "dual_dispatch_trigger_ratio": ParameterValue(
+                            LaunchConfiguration(
+                                "dual_dispatch_trigger_ratio"
+                            ),
                             value_type=float,
                         ),
                         "planner_id": LaunchConfiguration("planner_id"),

@@ -178,9 +178,15 @@ manager() {
 # a1inteli에서 이관한 단일 중앙 노드: RViz 클릭마다 두 Nav2 경로를 직접 비교한다.
 central() {
   local dispatch=${1:-false}
+  local target_time=${2:-30.0}
+  local trigger_ratio=${3:-0.85}
+  local dual_dispatch=${4:-true}
   aedenv
   ros2 launch multi_robot_emergency central_dispatch.launch.py \
-    dispatch_enabled:="$dispatch"
+    dispatch_enabled:="$dispatch" \
+    target_arrival_time_sec:="$target_time" \
+    dual_dispatch_trigger_ratio:="$trigger_ratio" \
+    dual_dispatch_enabled:="$dual_dispatch"
 }
 
 executor() {

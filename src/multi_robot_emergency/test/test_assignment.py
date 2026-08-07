@@ -4,6 +4,7 @@ import pytest
 
 from multi_robot_emergency.assignment import (
     crowd_delay_seconds,
+    dispatch_candidates,
     path_length,
     path_length_in_polygon,
     path_motion_cost,
@@ -11,6 +12,57 @@ from multi_robot_emergency.assignment import (
     point_to_polygon_distance,
     simplify_path,
 )
+
+
+def test_dispatch_candidates_uses_one_robot_below_deadline_risk() -> None:
+    assert dispatch_candidates(
+        [("robot1", 25.49), ("robot2", 27.0)],
+        dual_dispatch_enabled=True,
+        target_arrival_time=30.0,
+        trigger_ratio=0.85,
+    ) == ["robot1"]
+
+
+def test_dispatch_candidates_uses_both_at_deadline_risk_boundary() -> None:
+    assert dispatch_candidates(
+        [("robot1", 25.5), ("robot2", 27.0)],
+        dual_dispatch_enabled=True,
+        target_arrival_time=30.0,
+        trigger_ratio=0.85,
+    ) == ["robot1", "robot2"]
+
+
+def test_dispatch_candidates_requires_two_valid_candidates() -> None:
+    assert dispatch_candidates(
+        [("robot1", 40.0)],
+        dual_dispatch_enabled=True,
+        target_arrival_time=30.0,
+        trigger_ratio=0.85,
+    ) == ["robot1"]
+
+
+def test_dispatch_candidates_can_be_disabled() -> None:
+    assert dispatch_candidates(
+        [("robot1", 40.0), ("robot2", 41.0)],
+        dual_dispatch_enabled=False,
+        target_arrival_time=30.0,
+        trigger_ratio=0.85,
+    ) == ["robot1"]
+
+
+@pytest.mark.parametrize(
+    "target,ratio", [(0.0, 0.85), (30.0, 0.0), (30.0, 1.1)]
+)
+def test_dispatch_candidates_rejects_invalid_policy(
+    target: float, ratio: float
+) -> None:
+    with pytest.raises(ValueError):
+        dispatch_candidates(
+            [("robot1", 10.0)],
+            dual_dispatch_enabled=True,
+            target_arrival_time=target,
+            trigger_ratio=ratio,
+        )
 
 
 def test_path_length_accumulates_every_segment() -> None:

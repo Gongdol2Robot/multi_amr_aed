@@ -4,7 +4,7 @@ from copy import deepcopy
 import time
 
 from action_msgs.msg import GoalStatus
-from aed_interfaces.msg import MissionAssignment, MissionStatus
+from aed_interfaces.msg import MissionAssignment, MissionStatus, RobotState
 from nav2_msgs.action import NavigateToPose
 import rclpy
 from rclpy.action import ActionClient
@@ -21,6 +21,7 @@ class MissionExecutor(Node):
         self.declare_parameter("navigate_action", "navigate_to_pose")
         self.declare_parameter("dispatch_retry_timeout_sec", 15.0)
         self.declare_parameter("dispatch_retry_interval_sec", 0.5)
+        self.declare_parameter("cancel_settle_sec", 0.5)
         self.declare_parameter("blocked_timeout_sec", 30.0)
         self.declare_parameter("progress_epsilon_m", 0.05)
 
@@ -33,6 +34,9 @@ class MissionExecutor(Node):
         self.dispatch_retry_interval = float(
             self.get_parameter("dispatch_retry_interval_sec").value
         )
+        self.cancel_settle = float(
+            self.get_parameter("cancel_settle_sec").value
+        )
         self.blocked_timeout = float(
             self.get_parameter("blocked_timeout_sec").value
         )
@@ -43,6 +47,8 @@ class MissionExecutor(Node):
             raise ValueError("dispatch_retry_timeout_sec must be positive")
         if self.dispatch_retry_interval <= 0.0:
             raise ValueError("dispatch_retry_interval_sec must be positive")
+        if self.cancel_settle < 0.0:
+            raise ValueError("cancel_settle_sec must be non-negative")
         if self.blocked_timeout <= 0.0:
             raise ValueError("blocked_timeout_sec must be positive")
         if self.progress_epsilon < 0.0:
@@ -103,9 +109,6 @@ class MissionExecutor(Node):
         self.goal_serial += 1
         self.assignment = assignment
         self._cancel_retry_timer()
-        if assignment.cancel_previous and self.goal_handle is not None:
-            self.goal_handle.cancel_goal_async()
-            self.goal_handle = None
         self.pending_pose = deepcopy(assignment.target)
         self.retry_deadline = time.monotonic() + self.dispatch_retry_timeout
         self.last_distance = None
@@ -114,7 +117,39 @@ class MissionExecutor(Node):
         self._publish_status(
             MissionStatus.DISPATCHING, "assignment received"
         )
+        if assignment.cancel_previous and self.goal_handle is not None:
+            old_goal_handle = self.goal_handle
+            self.goal_handle = None
+            cancel_future = old_goal_handle.cancel_goal_async()
+            cancel_future.add_done_callback(
+                lambda future, serial=self.goal_serial:
+                self._on_cancel_complete(future, serial)
+            )
+            return
         self._send_goal(self.pending_pose, self.goal_serial)
+
+    def _on_cancel_complete(self, future, serial: int) -> None:
+        """Wait briefly after Nav2 confirms cancellation before replacement."""
+        if serial != self.goal_serial or self.pending_pose is None:
+            return
+        try:
+            future.result()
+        except Exception as error:
+            self.get_logger().warning(
+                f"Previous goal cancel response failed: {error}"
+            )
+        self.get_logger().info(
+            f"Previous goal canceled; waiting {self.cancel_settle:.1f}s "
+            "before replacement goal"
+        )
+        self._cancel_retry_timer()
+        if self.cancel_settle == 0.0:
+            self._send_goal(self.pending_pose, serial)
+            return
+        self.retry_timer = self.create_timer(
+            self.cancel_settle,
+            lambda: self._retry_pending_goal(serial),
+        )
 
     def _send_goal(self, pose, serial: int) -> None:
         if not pose.header.frame_id:
@@ -174,6 +209,16 @@ class MissionExecutor(Node):
             self._publish_status(MissionStatus.NAVIGATION_ERROR, str(error))
             return
 
+        if (
+            status != GoalStatus.STATUS_SUCCEEDED
+            and self.assignment is not None
+            and self.assignment.role == RobotState.ROLE_RETURN
+        ):
+            self.pending_pose = deepcopy(self.assignment.target)
+            self._retry_or_fail(
+                serial, f"return Nav2 status={status}"
+            )
+            return
         if status == GoalStatus.STATUS_CANCELED:
             self._publish_status(MissionStatus.CANCELED)
             return
