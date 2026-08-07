@@ -19,6 +19,13 @@ venv/
 *~
 .DS_Store
 
+# HMI. node_modules 는 68MB 가 넘고 package-lock.json 으로 복원된다.
+# var/ 는 관제 서버가 만드는 SQLite 파일이라 환경마다 다르다.
+node_modules/
+src/aed_hmi/frontend/dist/
+src/aed_hmi/var/
+var/
+
 # Runtime output
 bags/
 captures/
@@ -39,6 +46,20 @@ models/*.engine
 models/*.onnx
 models/*.pt
 models/*.pth
+vision_training/models/*.pt
+vision_training/caterpillar_fall_pose_best.pt
 
 # Keep directory placeholders
 !models/.gitkeep
+
+# TypeScript 증분 빌드 캐시
+*.tsbuildinfo
+
+# Vite 개발 캐시
+.vite/
+
+# 데모 실행 중 남는 로그와 pid
+var/
+
+# 설계도 원본(drawio)은 각자 관리한다
+docs/*.drawio

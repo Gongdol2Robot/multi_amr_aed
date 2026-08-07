@@ -7,7 +7,12 @@
   <maintainer email="team@example.com">multi_amr_aed team</maintainer>
   <license>Apache-2.0</license>
 
+  <depend>action_msgs</depend>
+  <depend>aed_interfaces</depend>
   <depend>irobot_create_msgs</depend>
+  <depend>launch</depend>
+  <depend>launch_ros</depend>
+  <depend>nav2_msgs</depend>
   <depend>rclpy</depend>
 
   <test_depend>ament_flake8</test_depend>
@@ -18,4 +23,3 @@
     <build_type>ament_python</build_type>
   </export>
 </package>
-

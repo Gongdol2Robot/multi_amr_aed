@@ -9,7 +9,12 @@ from time import perf_counter
 
 import cv2
 
-from .detection_logic import Box, classify_crowd, count_crowd_people
+from .detection_logic import (
+    Box,
+    classify_crowd,
+    count_crowd_people,
+    crowd_time_multiplier,
+)
 
 
 RESCUE_CLASS_NAMES = ["fallen_person", "helper_rc_car"]
@@ -59,7 +64,9 @@ class InferenceOutput:
     fallen: list[Box]
     helpers: list[Box]
     person_count: int
-    crowd_level: str
+    crowd_level: int | None
+    crowd_time_multiplier: float | None
+    crowd_traversable: bool
     inference_ms: float
 
 
@@ -87,6 +94,8 @@ class InferencePipeline:
         self.rescue_conf = rescue_conf
         self.person_conf = person_conf
         self.crowd_roi = crowd_roi
+        # 하위 호환을 위해 파라미터는 받지만 혼잡 등급은 이제 사람 수 1/2/3을
+        # 직접 사용한다.
         self.crowded_threshold = crowded_threshold
         self.overlap_threshold = overlap_threshold
         self.options = {"iou": iou, "imgsz": imgsz, "verbose": False}
@@ -120,7 +129,9 @@ class InferencePipeline:
         helpers = _boxes(rescue_result, 1)
         person_result = None
         person_count = 0
-        crowd_level = "NOT_APPLICABLE"
+        crowd_level = None
+        time_multiplier = None
+        crowd_traversable = True
 
         if self.person_model is not None:
             person_result = self.person_model.predict(
@@ -137,7 +148,9 @@ class InferencePipeline:
                 self.crowd_roi,
                 self.overlap_threshold,
             )
-            crowd_level = classify_crowd(person_count, self.crowded_threshold)
+            crowd_level = classify_crowd(person_count)
+            time_multiplier = crowd_time_multiplier(person_count)
+            crowd_traversable = time_multiplier is not None
 
         return InferenceOutput(
             rescue_result,
@@ -146,6 +159,8 @@ class InferencePipeline:
             helpers,
             person_count,
             crowd_level,
+            time_multiplier,
+            crowd_traversable,
             (perf_counter() - started) * 1000.0,
         )
 
@@ -167,7 +182,7 @@ class InferencePipeline:
             )
             cv2.rectangle(image, (x1, y1), (x2, y2), (255, 255, 0), 2)
             text = (
-                f"{camera_id} | {output.crowd_level} | "
+                f"{camera_id} | crowd={output.crowd_level} | "
                 f"people={output.person_count}"
             )
         else:

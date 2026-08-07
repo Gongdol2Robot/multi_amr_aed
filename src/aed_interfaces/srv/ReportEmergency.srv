@@ -1,0 +1,14 @@
+# 119 나 신고자가 알려준 좌표를 접수한다.
+#
+# 왜 Service 인가: 접수됐는지 즉시 알려줘야 한다. Topic 으로 보내면 받았는지
+# 알 수 없고, 같은 신고가 두 번 들어왔을 때 무엇이 무시됐는지도 모른다.
+# 처리 자체는 짧으므로 Action 은 과하다.
+
+geometry_msgs/PointStamped location
+string source_id                    # "119-dispatch", "operator" 등
+string zone_id
+float32 confidence                  # 신고는 1.0, 검출 연계면 그 값
+---
+bool accepted
+string event_id                     # 접수되면 부여되는 식별자
+string reason                       # 거부됐을 때의 이유

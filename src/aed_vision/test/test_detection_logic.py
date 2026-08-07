@@ -7,6 +7,8 @@ from aed_vision.detection_logic import (
     TemporalConfirmation,
     classify_crowd,
     count_crowd_people,
+    apply_crowd_time_penalty,
+    crowd_time_multiplier,
     intersection_over_union,
 )
 
@@ -59,14 +61,31 @@ class DetectionLogicTest(unittest.TestCase):
 
     def test_classify_crowd(self):
         expected_states = [
-            (0, "CLEAR"),
-            (2, "CLEAR"),
-            (3, "CROWDED"),
-            (5, "CROWDED"),
+            (0, 0),
+            (1, 1),
+            (2, 2),
+            (3, 3),
+            (5, 3),
         ]
         for person_count, expected in expected_states:
             with self.subTest(person_count=person_count):
-                self.assertEqual(classify_crowd(person_count, 3), expected)
+                self.assertEqual(classify_crowd(person_count), expected)
+
+    def test_crowd_time_penalty(self):
+        self.assertEqual(crowd_time_multiplier(0), 1.0)
+        self.assertEqual(crowd_time_multiplier(1), 1.1)
+        self.assertEqual(crowd_time_multiplier(2), 1.2)
+        self.assertIsNone(crowd_time_multiplier(3))
+        self.assertIsNone(crowd_time_multiplier(10))
+        self.assertAlmostEqual(apply_crowd_time_penalty(100.0, 1), 110.0)
+        self.assertAlmostEqual(apply_crowd_time_penalty(100.0, 2), 120.0)
+        self.assertIsNone(apply_crowd_time_penalty(100.0, 3))
+
+    def test_crowd_values_must_not_be_negative(self):
+        with self.assertRaises(ValueError):
+            classify_crowd(-1)
+        with self.assertRaises(ValueError):
+            apply_crowd_time_penalty(-1.0, 0)
 
 
 if __name__ == "__main__":
