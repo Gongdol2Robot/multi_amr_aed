@@ -73,8 +73,8 @@ class Homography:
         self, x1: float, y1: float, x2: float, y2: float,
         image_size=None,
     ):
-        """검출 박스 하단 중앙점을 측량 해상도에 맞춰 map 좌표로 바꾼다."""
-        u, v = (x1 + x2) / 2.0, y2
+        """검출 박스 중심점을 측량 해상도에 맞춰 map 좌표로 바꾼다."""
+        u, v = (x1 + x2) / 2.0, (y1 + y2) / 2.0
         if image_size and self.camera:
             width, height = image_size
             u *= float(self.camera.get("width", width)) / width

@@ -10,6 +10,17 @@ CONFIG_DIR = Path(__file__).parents[1] / "config"
 
 
 class HomographyTest(unittest.TestCase):
+    def test_box_to_map_uses_bbox_center(self):
+        homography = Homography([
+            [1, 0, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+        ])
+        self.assertEqual(
+            homography.box_to_map(10, 20, 30, 60),
+            (20.0, 40.0),
+        )
+
     def test_survey_points_map_within_calibration_error(self):
         for path in sorted(CONFIG_DIR.glob("homography_cam*.yaml")):
             homography = Homography.load(str(path))

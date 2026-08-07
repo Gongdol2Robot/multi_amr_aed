@@ -11,10 +11,10 @@
 같은 코드를 두 노트북에 설치하고 YAML 설정만 다르게 실행합니다. 두 노트북은
 같은 ROS 2 네트워크와 `ROS_DOMAIN_ID`를 사용해야 합니다.
 
-| 카메라 | 모드 | 파인튜닝 구조 모델 | COCO person 모델 | 혼잡도 |
-|---|---|---:|---:|---:|
-| `camera_open` | `open` | 사용 | 미사용 | `NOT_APPLICABLE` |
-| `camera_alley` | `alley` | 사용 | 사용 | `CLEAR`/`CROWDED` |
+| 카메라 | 모드 | 기본 검출 | 선택 검출 | 혼잡도 |
+|---|---|---|---|---|
+| `camera_open` | `open` | 실제 사람 Pose | 목각인형 파인튜닝 | `NOT_APPLICABLE` |
+| `camera_alley` | `alley` | 실제 사람 Pose | 목각인형 파인튜닝 | `CLEAR`/`CROWDED` |
 
 - `open`: 탁 트인 장소에서 `fallen_person`과 `helper`만 검출합니다.
 - `alley`: 좁은 통로에서 구조 검출과 ROI 내부 실제 사람 수를 함께 계산합니다.
@@ -27,10 +27,11 @@
 
 - 각 노트북의 USB 웹캠을 직접 읽어 같은 프로세스에서 즉시 추론
 - 읽은 원본 영상은 모니터링용 JPEG 압축 토픽으로도 발행
-- 두 모드 모두 파인튜닝 YOLO11n으로 `fallen_person`, `helper` 검출
+- 기본 `person_pose` backend는 YOLO11n-Pose의 실제 사람 관절과 bbox로 자세 판정
+- 선택 `mannequin_detect` backend는 기존 파인튜닝 YOLO11n 검출을 그대로 사용
 - 최근 10프레임 중 6프레임 이상 검출될 때 응급상황 확정
 - 확정/해제 전환 시 `aed_interfaces/EmergencyEvent` 발행
-- 검출 bbox 하단 중앙점을 카메라별 호모그래피로 map 좌표 변환
+- 검출 bbox 중심점을 카메라별 호모그래피로 map 좌표 변환
 - `alley` 모드에서는 COCO YOLO11n으로 ROI 내부 `person` 수 계산
 - COCO가 쓰러진 대상을 person으로 중복 검출하면 bbox IoU를 이용해 인파에서 제외
 - 상태 JSON, 혼잡도, 사람 수, heartbeat, JPEG 디버그 영상 발행
@@ -77,11 +78,12 @@ colcon build --packages-select aed_interfaces aed_vision
 source install/setup.bash
 ```
 
-두 모델은 패키지의 `models/`에 포함되고 빌드할 때 ROS share 폴더에 함께
+세 모델은 패키지의 `models/`에 포함되고 빌드할 때 ROS share 폴더에 함께
 설치됩니다.
 
 - `models/rescue_yolo11n.pt`: 파인튜닝 구조 검출 모델
 - `models/coco_yolo11n.pt`: COCO person 검출 모델
+- `models/yolo11n-pose.pt`: 실제 사람 17관절 Pose 모델
 
 YAML은 절대 경로 대신 다음 ROS 패키지 URI를 사용하므로 노트북마다 경로를
 수정할 필요가 없습니다.
@@ -89,6 +91,7 @@ YAML은 절대 경로 대신 다음 ROS 패키지 URI를 사용하므로 노트�
 ```text
 package://aed_vision/models/rescue_yolo11n.pt
 package://aed_vision/models/coco_yolo11n.pt
+package://aed_vision/models/yolo11n-pose.pt
 ```
 
 ## 실행
@@ -101,8 +104,34 @@ ros2 launch aed_vision camera_vision.launch.py \
 ```
 
 `camera:=1`은 `camera_open` namespace와 `open_camera.yaml`을 자동 선택하며,
-파인튜닝 구조 모델만 실행해 쓰러진 사람과 helper를 검출합니다. 실행한
+기본적으로 실제 사람 Pose로 쓰러짐을 판정합니다. 실행한
 노트북에는 `AED Vision - camera_open (open)` 결과 창이 표시됩니다.
+
+기존 목각인형 파인튜닝 모델을 명시적으로 선택하려면 다음처럼 실행합니다.
+
+```bash
+ros2 launch aed_vision camera_vision.launch.py \
+  camera:=1 target:=mannequin
+```
+
+backend별 confidence도 launch에서 조절할 수 있습니다.
+
+```bash
+# 실제 사람 Pose: 기본 0.5
+ros2 launch aed_vision camera_vision.launch.py \
+  camera:=1 person_conf:=0.55
+
+# 목각인형 파인튜닝: 기본 0.25
+ros2 launch aed_vision camera_vision.launch.py \
+  camera:=1 target:=mannequin rescue_conf:=0.30
+```
+
+두 backend는 다음 두 값만 허용합니다.
+
+- `person_pose`(기본): 실제 사람의 bbox·17관절을 검출하고 종횡비와 몸통 각도로
+  `STANDING`, `SITTING`, `FALLEN` 판정
+- `mannequin_detect`: 기존 `rescue_yolo11n.pt`의 목각인형 기반
+  `fallen_person`, `helper_rc_car` 검출
 
 좁은 골목 노트북:
 
@@ -120,6 +149,10 @@ ros2 launch aed_vision camera_vision.launch.py \
 - `camera_device`: USB 웹캠 장치 경로. 기본값은 `/dev/video2`이며 가능하면
   재부팅 후에도 유지되는 `/dev/v4l/by-id/...` 경로 사용 권장
 - `inference_device`: YOLO 추론 장치 (`"cuda:0"`은 첫 GPU, `"cpu"`는 CPU)
+- `target`: `person`(기본) 또는 `mannequin`
+- `pose_weights`: 실제 사람용 Pose 가중치
+- `person_conf`, `pose_keypoint_conf`, `pose_min_keypoints`,
+  `pose_min_box_area`: Pose 사람·관절 품질 필터
 - `rescue_conf`: 구조 대상 YOLO의 1차 후보 confidence 임계값. 기본값은 `0.25`
 - `location_x`, `location_y`: 해당 고정 카메라 구조 지점의 map 좌표
 - `homography_camera_id`: 카메라별 측량 설정 ID (`cam1` 또는 `cam2`)
@@ -150,10 +183,15 @@ ros2 launch aed_vision camera_vision.launch.py \
   "camera_id": "camera_alley",
   "zone_id": "alley_zone",
   "mode": "alley",
+  "detection_backend": "person_pose",
   "fallen_detected": true,
   "fallen_confirmed": true,
   "fallen_count": 1,
   "fallen_max_confidence": 0.91,
+  "posture": "FALLEN",
+  "pose_aspect_ratio": 1.91,
+  "pose_torso_angle_deg": 19.4,
+  "pose_visible_keypoints": 14,
   "helper_count": 0,
   "person_count": 3,
   "crowd_level": 3,
@@ -187,8 +225,8 @@ person이 0명이면 시간 패널티가 없고, 1명이면 10%, 2명이면 20%�
 ## 검출 위치 좌표
 
 각 카메라는 `homography_cam1.yaml` 또는 `homography_cam2.yaml`의 현장 측량
-행렬을 사용합니다. 가장 confidence가 높은 `fallen_person` bbox의 하단 중앙점을
-바닥 접점으로 보고 `map` 좌표로 변환하여 `EmergencyEvent.location`에 넣습니다.
+행렬을 사용합니다. 가장 confidence가 높은 `fallen_person` bbox의 중심점을
+`map` 좌표로 변환하여 `EmergencyEvent.location`에 넣습니다.
 
 입력 영상 해상도가 측량 당시의 640×480과 다르면 픽셀 좌표를 측량 해상도로
 자동 환산합니다. 측량 영역에서 `homography_margin_m`보다 멀리 벗어난 검출은

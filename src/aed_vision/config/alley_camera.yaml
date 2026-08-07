@@ -12,11 +12,17 @@
     zone_id: alley_zone
     mode: alley
     image_topic: /camera_alley/image_raw/compressed
-    # 패키지와 함께 설치되는 구조 검출 및 COCO person 가중치이다.
+    # 기본은 실제 사람 Pose 판정이며 mannequin_detect 인자에서 rescue를 쓴다.
+    detection_backend: person_pose
     rescue_weights: package://aed_vision/models/rescue_yolo11n.pt
     person_weights: package://aed_vision/models/coco_yolo11n.pt
+    pose_weights: package://aed_vision/models/yolo11n-pose.pt
     rescue_conf: 0.25
-    person_conf: 0.25
+    person_conf: 0.5
+    pose_keypoint_conf: 0.3
+    pose_min_keypoints: 8
+    pose_min_box_area: 0.02
+    pose_min_torso_keypoints: 3
     iou: 0.5
     imgsz: 640
     inference_device: "cuda:0"

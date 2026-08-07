@@ -24,6 +24,15 @@ def _create_camera_nodes(context):
     vision_detector가 웹캠을 직접 읽고 추론하므로 카메라별 ROS 노드는 하나다.
     """
     camera = LaunchConfiguration("camera").perform(context)
+    target = LaunchConfiguration("target").perform(context)
+    detection_backend = {
+        "person": "person_pose",
+        "mannequin": "mannequin_detect",
+    }[target]
+    person_conf = float(LaunchConfiguration("person_conf").perform(context))
+    rescue_conf = float(LaunchConfiguration("rescue_conf").perform(context))
+    if not 0.0 <= person_conf <= 1.0 or not 0.0 <= rescue_conf <= 1.0:
+        raise ValueError("person_conf and rescue_conf must be between 0 and 1")
     namespace, config_name = CAMERA_PROFILES[camera]
     share_dir = Path(get_package_share_directory("aed_vision"))
     # 소스 경로가 아니라 install/share 경로를 사용하므로 다른 노트북에 패키지를
@@ -36,7 +45,14 @@ def _create_camera_nodes(context):
             executable="vision_detector",
             name="vision_detector",
             namespace=namespace,
-            parameters=[str(config)],
+            parameters=[
+                str(config),
+                {
+                    "detection_backend": detection_backend,
+                    "person_conf": person_conf,
+                    "rescue_conf": rescue_conf,
+                },
+            ],
             output="screen",
         ),
     ]
@@ -57,6 +73,22 @@ def generate_launch_description() -> LaunchDescription:
                     "1: 탁 트인 공간(fallen 검출), "
                     "2: 골목(fallen+인파 검출)"
                 ),
+            ),
+            DeclareLaunchArgument(
+                "target",
+                default_value="person",
+                choices=("person", "mannequin"),
+                description="person (default) or mannequin",
+            ),
+            DeclareLaunchArgument(
+                "person_conf",
+                default_value="0.5",
+                description="YOLO Pose confidence for actual people (0~1)",
+            ),
+            DeclareLaunchArgument(
+                "rescue_conf",
+                default_value="0.25",
+                description="Fine-tuned mannequin detector confidence (0~1)",
             ),
             OpaqueFunction(function=_create_camera_nodes),
         ]

@@ -4,13 +4,15 @@
 from __future__ import annotations
 
 import argparse
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 from pathlib import Path
 from time import monotonic, perf_counter
 
 import numpy as np
 import torch
 from torch import nn
+
+from pose_posture import PostureHistory, classify_posture
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,8 +65,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--classifier", type=Path, default=DEFAULT_CLASSIFIER)
     parser.add_argument("--pose-weights", type=Path, default=DEFAULT_POSE)
     parser.add_argument("--device", default="0", help="CUDA 번호 또는 cpu")
-    parser.add_argument("--conf", type=float, default=0.25)
+    parser.add_argument("--conf", type=float, default=0.50)
     parser.add_argument("--imgsz", type=int, default=640)
+    parser.add_argument("--keypoint-conf", type=float, default=0.30)
+    parser.add_argument("--min-keypoints", type=int, default=8)
+    parser.add_argument(
+        "--min-box-area", type=float, default=0.02,
+        help="전체 화면 대비 최소 bbox 면적 비율",
+    )
     parser.add_argument(
         "--sample-fps",
         type=float,
@@ -92,7 +100,7 @@ def resolve_source(value: str) -> int | str:
     if value.isdigit():
         return int(value)
     path = Path(value).expanduser().resolve()
-    if not path.is_file():
+    if not path.exists():
         raise SystemExit(f"입력 영상이 없습니다: {path}")
     return str(path)
 
@@ -188,8 +196,10 @@ def put_label(canvas, box, text: str, color) -> None:
 
 def main() -> int:
     args = parse_args()
-    if not 0.0 <= args.conf <= 1.0:
-        raise SystemExit("conf는 0 이상 1 이하여야 합니다.")
+    if not 0.0 <= args.conf <= 1.0 or not 0.0 <= args.keypoint_conf <= 1.0:
+        raise SystemExit("conf와 keypoint-conf는 0 이상 1 이하여야 합니다.")
+    if not 1 <= args.min_keypoints <= 17 or not 0.0 <= args.min_box_area <= 1.0:
+        raise SystemExit("min-keypoints는 1~17, min-box-area는 0~1이어야 합니다.")
     if args.sample_fps <= 0 or args.smooth_window < 1 or args.fallen_hits < 1:
         raise SystemExit("sample-fps, smooth-window, fallen-hits는 양수여야 합니다.")
     source = resolve_source(args.source)
@@ -225,6 +235,9 @@ def main() -> int:
     last_seen: dict[int, float] = {}
     fallen_streak: dict[int, int] = defaultdict(int)
     last_prediction: dict[int, tuple[str, np.ndarray]] = {}
+    prediction_counts: Counter[str] = Counter()
+    posture_history = PostureHistory(window=10, fallen_hits=6)
+    last_posture: dict[int, str] = {}
     next_sample_at = monotonic()
     frame_index = 0
 
@@ -252,7 +265,9 @@ def main() -> int:
                 device=yolo_device,
                 verbose=False,
             )[0]
-            canvas = result.plot(labels=False, conf=False)
+            # raw YOLO 결과를 그대로 그리면 필터에서 버릴 배경 오탐도 사람처럼
+            # 보인다. 검증 기준을 통과한 대상만 아래 루프에서 직접 그린다.
+            canvas = frame.copy()
             now = monotonic()
             collect_sample = now >= next_sample_at
             if collect_sample:
@@ -269,11 +284,48 @@ def main() -> int:
                 track_ids = result.boxes.id.int().detach().cpu().tolist()
                 all_xy = result.keypoints.xy.detach().cpu().numpy()
                 all_conf = result.keypoints.conf.detach().cpu().numpy()
-                for box, track_id, xy, confidence in zip(
-                    boxes, track_ids, all_xy, all_conf
+                box_confidences = result.boxes.conf.detach().cpu().numpy()
+                for box, box_confidence, track_id, xy, confidence in zip(
+                    boxes, box_confidences, track_ids, all_xy, all_conf
                 ):
+                    box_area_ratio = (
+                        max(float(box[2] - box[0]), 0.0)
+                        * max(float(box[3] - box[1]), 0.0)
+                        / float(frame.shape[0] * frame.shape[1])
+                    )
+                    visible = confidence >= args.keypoint_conf
+                    torso_visible = int(visible[[5, 6, 11, 12]].sum())
+                    if (
+                        box_confidence < args.conf
+                        or box_area_ratio < args.min_box_area
+                        or int(visible.sum()) < args.min_keypoints
+                        or torso_visible < 3
+                    ):
+                        continue
                     active_ids.append(track_id)
                     last_seen[track_id] = now
+                    keypoints = np.column_stack((xy, confidence))
+                    raw_posture, posture_metrics = classify_posture(
+                        keypoints, box, keypoint_conf=args.keypoint_conf
+                    )
+                    posture = posture_history.update(
+                        track_id, raw_posture, frame_index
+                    )
+                    if posture != last_posture.get(track_id):
+                        print(
+                            f"frame={frame_index} ID={track_id} "
+                            f"POSTURE {last_posture.get(track_id, 'START')}->{posture} "
+                            f"aspect={posture_metrics['aspect_ratio']:.2f} "
+                            f"torso={posture_metrics['torso_angle']:.1f}"
+                        )
+                        last_posture[track_id] = posture
+                    cv2.rectangle(
+                        canvas, (int(box[0]), int(box[1])),
+                        (int(box[2]), int(box[3])), (255, 120, 0), 2,
+                    )
+                    for x, y, shown in zip(xy[:, 0], xy[:, 1], visible):
+                        if shown:
+                            cv2.circle(canvas, (int(x), int(y)), 3, (0, 255, 0), -1)
                     if collect_sample:
                         sequences[track_id].append(
                             pose_feature(box, xy, confidence, frame.shape)
@@ -288,6 +340,17 @@ def main() -> int:
                             mean_prob = np.mean(probabilities[track_id], axis=0)
                             class_index = int(np.argmax(mean_prob))
                             label = classes[class_index]
+                            previous_label = last_prediction.get(
+                                track_id, (None, None)
+                            )[0]
+                            prediction_counts[label] += 1
+                            if label != previous_label:
+                                print(
+                                    f"frame={frame_index} ID={track_id} "
+                                    f"{previous_label or 'START'}->{label} "
+                                    f"N/Fg/Fn={mean_prob[0]:.3f}/"
+                                    f"{mean_prob[1]:.3f}/{mean_prob[2]:.3f}"
+                                )
                             fallen_streak[track_id] = (
                                 fallen_streak[track_id] + 1
                                 if label == "FALLEN" else 0
@@ -296,22 +359,33 @@ def main() -> int:
 
                     if track_id in last_prediction:
                         label, mean_prob = last_prediction[track_id]
-                        alarm = (
+                        lstm_alarm = (
                             label == "FALLEN"
                             and fallen_streak[track_id] >= args.fallen_hits
                         )
+                        posture_alarm = posture == "FALLEN"
+                        alarm = lstm_alarm or posture_alarm
                         shown_label = "FALLEN ALERT" if alarm else label
                         confidence_value = float(np.max(mean_prob))
                         text = (
                             f"ID {track_id} {shown_label} "
-                            f"{confidence_value:.2f} "
+                            f"LSTM={label}:{confidence_value:.2f} "
+                            f"POSTURE={posture} "
                             f"N/Fg/Fn={mean_prob[0]:.2f}/{mean_prob[1]:.2f}/{mean_prob[2]:.2f}"
                         )
-                        color = COLORS[label]
+                        color = COLORS["FALLEN"] if alarm else COLORS[label]
                     else:
                         collected = len(sequences[track_id])
-                        text = f"ID {track_id} COLLECTING {collected}/{sequence_length}"
-                        color = COLORS["COLLECTING"]
+                        posture_alarm = posture == "FALLEN"
+                        shown_label = "FALLEN ALERT" if posture_alarm else "COLLECTING"
+                        text = (
+                            f"ID {track_id} {shown_label} {collected}/{sequence_length} "
+                            f"POSTURE={posture}"
+                        )
+                        color = (
+                            COLORS["FALLEN"] if posture_alarm
+                            else COLORS["COLLECTING"]
+                        )
                     put_label(canvas, box, text, color)
 
             stale_ids = [
@@ -324,6 +398,9 @@ def main() -> int:
                 last_seen.pop(track_id, None)
                 fallen_streak.pop(track_id, None)
                 last_prediction.pop(track_id, None)
+                last_posture.pop(track_id, None)
+
+            posture_history.discard_stale(frame_index, max_age=60)
 
             elapsed_ms = (perf_counter() - started) * 1000.0
             status = (
@@ -350,6 +427,7 @@ def main() -> int:
     finally:
         capture.release()
         cv2.destroyAllWindows()
+    print(f"판정 횟수: {dict(prediction_counts)}")
     return 0
 
 

@@ -40,10 +40,16 @@ PARAMETER_DEFAULTS = (
     ("frame_id", "aed_camera_optical_frame"),
     ("jpeg_quality", 85),
     # 모델과 추론
+    ("detection_backend", "person_pose"),
     ("rescue_weights", ""),
     ("person_weights", ""),
+    ("pose_weights", ""),
     ("rescue_conf", 0.25),
-    ("person_conf", 0.25),
+    ("person_conf", 0.5),
+    ("pose_keypoint_conf", 0.3),
+    ("pose_min_keypoints", 8),
+    ("pose_min_box_area", 0.02),
+    ("pose_min_torso_keypoints", 3),
     ("detect_people_as_helpers", False),
     ("iou", 0.5),
     ("imgsz", 640),
@@ -172,6 +178,10 @@ class VisionDetector(Node):
         self.pipeline = InferencePipeline(
             rescue_weights=str(self.get_parameter("rescue_weights").value),
             person_weights=str(self.get_parameter("person_weights").value),
+            pose_weights=str(self.get_parameter("pose_weights").value),
+            detection_backend=str(
+                self.get_parameter("detection_backend").value
+            ),
             enable_crowd=self.enable_crowd,
             detect_people_as_helpers=self.detect_people_as_helpers,
             rescue_conf=float(self.get_parameter("rescue_conf").value),
@@ -182,6 +192,18 @@ class VisionDetector(Node):
             crowd_roi=self.crowd_roi,
             crowded_threshold=self.crowded_threshold,
             overlap_threshold=self.overlap_threshold,
+            pose_keypoint_conf=float(
+                self.get_parameter("pose_keypoint_conf").value
+            ),
+            pose_min_keypoints=int(
+                self.get_parameter("pose_min_keypoints").value
+            ),
+            pose_min_box_area=float(
+                self.get_parameter("pose_min_box_area").value
+            ),
+            pose_min_torso_keypoints=int(
+                self.get_parameter("pose_min_torso_keypoints").value
+            ),
         )
 
         # 절대 토픽명을 사용해 두 노트북이 같은 ROS_DOMAIN_ID에 있어도
@@ -233,7 +255,8 @@ class VisionDetector(Node):
         self.get_logger().info(
             f"camera={self.camera_id} mode={self.mode} image={image_topic} "
             f"crowd_detection={self.enable_crowd} "
-            f"people_as_helpers={self.detect_people_as_helpers}"
+            f"people_as_helpers={self.detect_people_as_helpers} "
+            f"detection_backend={self.pipeline.detection_backend}"
         )
 
     def _declare_parameters(self) -> None:
@@ -280,6 +303,7 @@ class VisionDetector(Node):
             self._publish_outputs(
                 source,
                 result.fallen,
+                result.pose_evidence,
                 result.helpers,
                 confirmed,
                 result.person_count,
@@ -302,7 +326,7 @@ class VisionDetector(Node):
     def _target_location(
         self, fallen: list[Box], frame_shape
     ) -> tuple[float, float, str]:
-        """가장 확실한 쓰러진 사람의 바닥 접점을 map 좌표로 변환한다."""
+        """가장 확실한 쓰러진 사람의 bbox 중심을 map 좌표로 변환한다."""
         fallback = (self.location_x, self.location_y)
         if self.homography is None or not fallen:
             return fallback[0], fallback[1], "configured"
@@ -345,6 +369,7 @@ class VisionDetector(Node):
         self,
         source: CompressedImage,
         fallen: list[Box],
+        pose_evidence: list,
         helpers: list[Box],
         confirmed: bool,
         person_count: int,
@@ -374,6 +399,7 @@ class VisionDetector(Node):
             "camera_id": self.camera_id,
             "zone_id": self.zone_id,
             "mode": self.mode,
+            "detection_backend": self.pipeline.detection_backend,
             "fallen_detected": bool(fallen),
             "fallen_confirmed": confirmed,
             "fallen_count": len(fallen),
@@ -393,6 +419,26 @@ class VisionDetector(Node):
             "location_y": round(target_location[1], 3),
             "location_source": target_location[2],
         }
+        fallen_pose = [
+            evidence for evidence in pose_evidence
+            if evidence.posture == "FALLEN"
+        ]
+        top_pose = max(
+            fallen_pose or pose_evidence,
+            key=lambda evidence: evidence.box.confidence,
+            default=None,
+        )
+        payload.update(
+            {
+                "posture": top_pose.posture if top_pose else "",
+                "pose_aspect_ratio": round(top_pose.aspect_ratio, 3)
+                if top_pose else -1.0,
+                "pose_torso_angle_deg": round(top_pose.torso_angle_deg, 2)
+                if top_pose else -1.0,
+                "pose_visible_keypoints": top_pose.visible_keypoints
+                if top_pose else 0,
+            }
+        )
         self.status_pub.publish(String(data=json.dumps(payload)))
         # 새 사고마다 고유 ID를 만들고 해제 이벤트까지 같은 ID를 유지한다.
         if confirmed and not self.was_confirmed:

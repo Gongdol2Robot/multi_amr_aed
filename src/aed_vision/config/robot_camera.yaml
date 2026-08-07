@@ -8,12 +8,17 @@
     jpeg_quality: 85
     mode: robot
 
-    # fallen_person과 COCO person을 함께 검출한다. fallen_person과 겹치지 않는
-    # person만 구조 인력 후보로 사용해 환자를 구조 인력으로 세지 않는다.
+    # 기본은 실제 사람 Pose 판정이며 mannequin_detect 인자에서 rescue를 쓴다.
+    detection_backend: person_pose
     rescue_weights: package://aed_vision/models/rescue_yolo11n.pt
     person_weights: package://aed_vision/models/coco_yolo11n.pt
+    pose_weights: package://aed_vision/models/yolo11n-pose.pt
     rescue_conf: 0.25
-    person_conf: 0.35
+    person_conf: 0.5
+    pose_keypoint_conf: 0.3
+    pose_min_keypoints: 8
+    pose_min_box_area: 0.02
+    pose_min_torso_keypoints: 3
     detect_people_as_helpers: true
     iou: 0.5
     imgsz: 640
