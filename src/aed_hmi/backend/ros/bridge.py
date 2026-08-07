@@ -67,6 +67,10 @@ class RosBridge:
         self._started = threading.Event()
         # 지난번에 발행자를 못 찾은 토픽. 바뀔 때만 로그를 남기기 위한 것이다.
         self._missing_topics: frozenset = frozenset({"__초기값__"})
+        # 운영자가 지도에서 찍은 자리를 내보내는 발행자. 구독만 하던
+        # 관제에서 유일하게 밖으로 나가는 통로다.
+        self._event_publisher = None
+        self._report_serial = 0
 
     @property
     def connected(self) -> bool:
@@ -115,6 +119,12 @@ class RosBridge:
         from std_msgs.msg import String, UInt32
 
         node = self._node
+        # 운영자가 지도에서 찍은 자리를 발행한다. 검출 노드가 내는 것과
+        # 같은 토픽·같은 타입이라 mission_manager 는 출처를 가리지 않는다.
+        self._event_publisher = node.create_publisher(
+            EmergencyEvent, topics.AGGREGATE_EVENT_TOPIC, topics.state_qos()
+        )
+
         node.create_subscription(
             RobotState, topics.ROBOT_STATE_TOPIC,
             self._handle_robot_state, topics.state_qos(),
@@ -174,6 +184,44 @@ class RosBridge:
                     self._on_frame(stream_id, bytes(message.data)),
                 topics.image_qos(),
             )
+
+    def publish_operator_report(self, x: float, y: float,
+                                zone_id: str = "operator") -> str:
+        """운영자가 지도에서 찍은 자리를 EmergencyEvent 로 낸다.
+
+        검출과 같은 토픽으로 낸다. mission_manager 는 카메라가 봤는지
+        사람이 찍었는지를 가리지 않고 같은 규칙으로 배정한다. source_id 로
+        만 구분이 남는다.
+
+        status 는 바로 CONFIRMED 다. 사람이 지도를 보고 찍은 것이라
+        연속 검출로 확인할 것이 없다.
+        """
+        if self._event_publisher is None or self._node is None:
+            raise RuntimeError("ROS 노드가 아직 안 떴다")
+
+        from aed_interfaces.msg import EmergencyEvent
+
+        self._report_serial += 1
+        now = self._node.get_clock().now().to_msg()
+        event_id = f"op-{int(self._now())}-{self._report_serial:03d}"
+
+        message = EmergencyEvent()
+        message.event_id = event_id
+        message.detected_at = now
+        message.location.header.stamp = now
+        message.location.header.frame_id = "map"
+        message.location.point.x = float(x)
+        message.location.point.y = float(y)
+        message.confidence = 1.0          # 사람이 찍었다
+        message.consecutive_detections = 1
+        message.status = EmergencyEvent.CONFIRMED
+        message.source_id = "operator"
+        message.camera_id = ""
+        message.zone_id = zone_id
+        self._event_publisher.publish(message)
+
+        LOGGER.info("운영자 신고 발행: %s (%.2f, %.2f)", event_id, x, y)
+        return event_id
 
     def _report_matches(self) -> None:
         """발행자를 못 찾은 토픽을 알린다.

@@ -18,7 +18,9 @@
 
 .app__main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  /* 지도가 들어오면서 320px 로는 좁다. 지도는 가로가 세로보다 긴
+     그림(139x88)이라 폭이 곧 크기다. */
+  grid-template-columns: minmax(0, 1fr) 420px;
   gap: var(--gap);
   min-height: 0;
 }
@@ -653,7 +655,9 @@
   /* 로봇 카드에 auto 를 주면 화면이 낮을 때(1366x768) 카드 둘이 자리를
      다 먹고 지도 칸이 0 으로 눌린다. 그러면 지도가 아예 안 보인다.
      카드는 줄어들 수 있게 두고, 지도에는 최소 높이를 보장한다. */
-  grid-template-rows: minmax(0, 1fr) minmax(180px, auto);
+  /* 지도를 주인공으로 둔다. 로봇 카드는 필요한 만큼만 쓰고 나머지는
+     지도에 준다. 낮은 화면(768)에서도 지도가 270px 은 갖는다. */
+  grid-template-rows: minmax(0, auto) minmax(270px, 1fr);
   gap: var(--gap);
   min-height: 0;
 }
@@ -695,21 +699,21 @@
   justify-content: center;
 }
 
-/* 그림에 딱 맞는 상자. 로봇·목표 표시의 % 기준이 된다. */
+/* 그림에 딱 맞는 상자. 로봇·목표 표시의 % 기준이 된다.
+   비율(aspect-ratio)을 이 상자가 들고 있고 그림은 상자를 채운다. 그림에
+   max-width/max-height 를 걸어 두면 둘이 서로를 참조해 실제보다 작게
+   멈춘다. 상자가 먼저 정해지면 칸을 꽉 채운다. */
 .map__inner {
   position: relative;
-  display: block;
+  width: 100%;
   max-width: 100%;
   max-height: 100%;
   line-height: 0;
 }
 
 .map__image {
-  /* 폭에 맞추되 칸 높이를 넘지 않는다. 둘 중 작은 쪽이 이긴다. */
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
+  width: 100%;
+  height: 100%;
   display: block;
   border-radius: 4px;
   /* 88x139 짜리 작은 그림이라 늘리면 흐려진다. 격자를 살려 벽이 또렷하게
@@ -764,4 +768,48 @@
   border: 2px solid var(--danger);
   box-shadow: 0 0 0 4px rgba(255, 77, 94, 0.25);
   animation: detect-blink 1.2s ease-in-out infinite;
+}
+
+/* 지도 위의 좌표 글. 표시 바로 아래에 붙인다. */
+.map__label {
+  position: absolute;
+  transform: translate(-50%, 12px);
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 14px;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: rgba(5, 8, 11, 0.78);
+  color: var(--text-dim);
+  pointer-events: none;
+}
+
+.map__label--target {
+  transform: translate(-50%, -26px);
+  color: var(--danger);
+}
+
+/* 지도를 눌러 신고할 수 있다는 표시 */
+.map__inner--pickable {
+  cursor: crosshair;
+}
+
+.map__picked {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border: 2px solid var(--warn);
+  background: rgba(245, 181, 68, 0.25);
+}
+
+.map__label--picked {
+  transform: translate(-50%, -26px);
+  color: var(--warn);
+}
+
+.map__notice {
+  padding: 4px 12px 8px;
+  font-size: 12px;
+  color: var(--warn);
 }

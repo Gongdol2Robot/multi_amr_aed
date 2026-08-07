@@ -17,12 +17,22 @@
 
 import { useEffect, useState } from 'react';
 
-import { API_BASE, fetchMapMeta } from '../../api/http';
+import { API_BASE, fetchMapMeta, postOperatorReport } from '../../api/http';
 import type { MapMeta, MissionSummary, RobotSnapshot } from '../../types/telemetry';
 
 interface Props {
   robots: RobotSnapshot[];
   missions: MissionSummary[];
+}
+
+/** 그림 안의 백분율 위치 → 지도 좌표(m). 클릭한 자리를 되돌린다. */
+function toMap(meta: MapMeta, ratioX: number, ratioY: number) {
+  const px = ratioX * meta.width;
+  const py = ratioY * meta.height;
+  return {
+    x: px * meta.resolution + meta.origin_x,
+    y: (meta.height - py) * meta.resolution + meta.origin_y,
+  };
 }
 
 /** 지도 좌표(m) → 그림 안의 백분율 위치. CSS 로 그대로 쓴다. */
@@ -38,6 +48,9 @@ function toPercent(meta: MapMeta, x: number, y: number) {
 export function MapView({ robots, missions }: Props) {
   const [meta, setMeta] = useState<MapMeta | null>(null);
   const [failed, setFailed] = useState(false);
+  // 방금 찍은 자리와 그 결과. 보낸 뒤 잠깐 보여주고 지운다.
+  const [picked, setPicked] = useState<{ x: number; y: number } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +77,27 @@ export function MapView({ robots, missions }: Props) {
 
   const target = missions.find((mission) => mission.target.x || mission.target.y);
 
+  const onPick = async (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!meta) return;
+    // 클릭 지점을 그림 안의 비율로 바꾼다. 그림이 확대·축소돼 있어도
+    // 비율은 그대로라 좌표 계산이 흔들리지 않는다.
+    const box = event.currentTarget.getBoundingClientRect();
+    const point = toMap(
+      meta,
+      (event.clientX - box.left) / box.width,
+      (event.clientY - box.top) / box.height,
+    );
+    setPicked(point);
+    setNotice('보내는 중…');
+    try {
+      const result = await postOperatorReport(point.x, point.y);
+      setNotice(`신고 접수 ${result.event_id}`);
+    } catch (error) {
+      setNotice((error as Error).message);
+    }
+    window.setTimeout(() => setNotice(null), 4000);
+  };
+
   return (
     <section className="panel map">
       <header className="panel__title">
@@ -77,12 +111,16 @@ export function MapView({ robots, missions }: Props) {
       <div className="map__frame">
         {/* 표시는 그림 크기를 기준으로 %로 놓는다. 바깥 칸을 기준으로
             두면 그림이 칸보다 작아질 때 표시가 그림 밖으로 밀린다. */}
-        <div className="map__inner">
+        <div
+          className="map__inner map__inner--pickable"
+          style={{ aspectRatio: `${meta.width} / ${meta.height}` }}
+          onClick={onPick}
+          title="누르면 그 자리를 신고로 내보냅니다"
+        >
         <img
           className="map__image"
           src={`${API_BASE}/api/map/image`}
           alt="공용 지도"
-          style={{ aspectRatio: `${meta.width} / ${meta.height}` }}
         />
 
         {/* 목표부터 그린다. 로봇 표시가 그 위에 오게 하려는 것이다. */}
@@ -92,6 +130,14 @@ export function MapView({ robots, missions }: Props) {
             style={toPercent(meta, target.target.x, target.target.y)}
             title={`목표 ${target.target.x.toFixed(2)}, ${target.target.y.toFixed(2)}`}
           />
+        )}
+        {target && (
+          <span
+            className="map__label map__label--target mono"
+            style={toPercent(meta, target.target.x, target.target.y)}
+          >
+            목표 {target.target.x.toFixed(2)}, {target.target.y.toFixed(2)}
+          </span>
         )}
 
         {robots.map((robot) => (
@@ -112,8 +158,38 @@ export function MapView({ robots, missions }: Props) {
             <b>{robot.robot_id.replace('robot', '')}</b>
           </span>
         ))}
+
+        {picked && (
+          <>
+            <span
+              className="map__picked"
+              style={toPercent(meta, picked.x, picked.y)}
+            />
+            <span
+              className="map__label map__label--picked mono"
+              style={toPercent(meta, picked.x, picked.y)}
+            >
+              찍음 {picked.x.toFixed(2)}, {picked.y.toFixed(2)}
+            </span>
+          </>
+        )}
+
+        {/* 좌표는 표시 옆에 글로 찍는다. 지도만으로는 "대략 저쯤"까지고,
+            숫자가 있어야 다른 화면·로그와 맞춰볼 수 있다. */}
+        {robots.map((robot) => (
+          <span
+            key={`${robot.robot_id}-label`}
+            className="map__label mono"
+            style={toPercent(meta, robot.position.x, robot.position.y)}
+          >
+            {robot.robot_id} {robot.position.x.toFixed(2)},{' '}
+            {robot.position.y.toFixed(2)}
+          </span>
+        ))}
         </div>
       </div>
+
+      {notice && <div className="map__notice">{notice}</div>}
     </section>
   );
 }

@@ -54,6 +54,22 @@ export async function fetchResponseStats(): Promise<ResponseTimeStats> {
   return getJson<ResponseTimeStats>('/api/stats/response-time');
 }
 
+/** 운영자가 지도에서 찍은 자리를 보낸다. 관제에서 유일하게 나가는 통로다. */
+export async function postOperatorReport(
+  x: number,
+  y: number,
+): Promise<{ accepted: boolean; event_id: string; via: string }> {
+  const response = await fetch(`${API_BASE}/api/report`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ x, y }),
+  });
+  if (!response.ok) {
+    throw new Error(`신고 실패: HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
 export async function fetchMapMeta(): Promise<MapMeta> {
   return getJson<MapMeta>('/api/map/meta');
 }

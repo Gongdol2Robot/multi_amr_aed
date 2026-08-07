@@ -57,6 +57,27 @@ class MockSimulator:
         # 1 번부터 다시 세면 지난 실행의 임무와 id 가 겹쳐, 서로 다른
         # 출동이 이력에서 한 줄로 합쳐진다. 남아 있는 번호를 이어받는다.
         self._sequence = context.repository.last_event_sequence(EVENT_PREFIX)
+        # 운영자가 지도에서 찍은 자리. 다음 시나리오가 이 좌표로 간다.
+        self._pending_target: Point2D | None = None
+
+    def inject_operator_report(self, x: float, y: float) -> str:
+        """운영자가 지도에서 찍은 자리를 목업에도 넣는다.
+
+        ROS 가 없으면 발행할 곳이 없으므로 시뮬레이터가 직접 이벤트를
+        만든다. 화면 쪽에서 보이는 것은 실제와 같다. 다음 시나리오가
+        이 좌표를 목표로 삼도록 예약해 둔다.
+        """
+        self._sequence += 1
+        event_id = f"op-{self._sequence:04d}"
+        target = Point2D(float(x), float(y))
+        self._pending_target = target
+        self._context.on_event(EmergencyEventSnapshot(
+            event_id=event_id, detected_at=time.time(), location=target,
+            frame_id="map", confidence=1.0, consecutive_detections=1,
+            status=EventStatus.CONFIRMED, source_id="operator",
+            camera_id="", zone_id="operator",
+        ))
+        return event_id
 
     def start(self) -> None:
         self._thread = threading.Thread(
@@ -83,7 +104,10 @@ class MockSimulator:
         self._sequence += 1
         event_id = f"{EVENT_PREFIX}-{self._sequence:04d}"
         mission_id = f"{event_id}-aed"
-        target = random.choice(SCENE_TARGETS)
+        if self._pending_target is not None:
+            target, self._pending_target = self._pending_target, None
+        else:
+            target = random.choice(SCENE_TARGETS)
         now = time.time()
 
         positions = dict(DOCKS)
