@@ -650,10 +650,21 @@
 
 .app__side {
   display: grid;
-  /* 로봇 카드는 내용만큼, 남는 자리는 전부 지도에 준다. */
-  grid-template-rows: auto minmax(0, 1fr);
+  /* 로봇 카드에 auto 를 주면 화면이 낮을 때(1366x768) 카드 둘이 자리를
+     다 먹고 지도 칸이 0 으로 눌린다. 그러면 지도가 아예 안 보인다.
+     카드는 줄어들 수 있게 두고, 지도에는 최소 높이를 보장한다. */
+  grid-template-rows: minmax(0, 1fr) minmax(180px, auto);
   gap: var(--gap);
   min-height: 0;
+}
+
+/* 로봇 카드가 넘치면 그 안에서 스크롤한다. 지도를 밀어내지 않는다. */
+.fleet {
+  min-height: 0;
+}
+
+.fleet .panel__body {
+  overflow-y: auto;
 }
 
 /* 지도 ------------------------------------------------------------- */
