@@ -71,10 +71,16 @@ def generate_launch_description() -> LaunchDescription:
                 choices=["true", "false"],
             ),
             DeclareLaunchArgument(
-                "patient_standoff_distance_m", default_value="0.50"
+                "patient_standoff_distance_m", default_value="0.15"
             ),
             DeclareLaunchArgument(
-                "dual_standoff_min_separation_m", default_value="0.45"
+                "dual_robot_proximity_threshold_m", default_value="0.40"
+            ),
+            DeclareLaunchArgument(
+                "dual_robot_proximity_confirm_sec", default_value="0.50"
+            ),
+            DeclareLaunchArgument(
+                "dual_robot_proximity_grace_sec", default_value="2.0"
             ),
             DeclareLaunchArgument("planner_id", default_value="GridBased"),
             DeclareLaunchArgument(
@@ -153,9 +159,21 @@ def generate_launch_description() -> LaunchDescription:
                             ),
                             value_type=float,
                         ),
-                        "dual_standoff_min_separation_m": ParameterValue(
+                        "dual_robot_proximity_threshold_m": ParameterValue(
                             LaunchConfiguration(
-                                "dual_standoff_min_separation_m"
+                                "dual_robot_proximity_threshold_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "dual_robot_proximity_confirm_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "dual_robot_proximity_confirm_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "dual_robot_proximity_grace_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "dual_robot_proximity_grace_sec"
                             ),
                             value_type=float,
                         ),

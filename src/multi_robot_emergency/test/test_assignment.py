@@ -11,6 +11,7 @@ from multi_robot_emergency.assignment import (
     patient_standoff,
     point_in_polygon,
     point_to_polygon_distance,
+    proximity_retreat_candidate,
     simplify_path,
 )
 
@@ -35,6 +36,33 @@ def test_patient_standoff_faces_patient_from_other_side() -> None:
 def test_patient_standoff_rejects_invalid_distance() -> None:
     with pytest.raises(ValueError):
         patient_standoff((0.0, 0.0), (1.0, 0.0), 0.0)
+
+
+def test_proximity_returns_robot_farther_from_patient() -> None:
+    assert proximity_retreat_candidate(
+        {"robot1": (0.0, 0.0), "robot2": (0.3, 0.0)},
+        (1.0, 0.0),
+        primary_robot="robot2",
+        threshold=0.4,
+    ) == "robot1"
+
+
+def test_proximity_keeps_both_robots_when_separated() -> None:
+    assert proximity_retreat_candidate(
+        {"robot1": (0.0, 0.0), "robot2": (0.5, 0.0)},
+        (1.0, 0.0),
+        primary_robot="robot1",
+        threshold=0.4,
+    ) is None
+
+
+def test_proximity_tie_returns_non_primary_robot() -> None:
+    assert proximity_retreat_candidate(
+        {"robot1": (-0.1, 0.0), "robot2": (0.1, 0.0)},
+        (0.0, 1.0),
+        primary_robot="robot1",
+        threshold=0.4,
+    ) == "robot2"
 
 
 def test_dispatch_candidates_uses_one_robot_below_deadline_risk() -> None:

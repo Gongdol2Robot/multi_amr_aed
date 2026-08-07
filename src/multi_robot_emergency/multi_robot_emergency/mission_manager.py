@@ -45,6 +45,7 @@ from .assignment import (
     path_motion_cost,
     patient_standoff,
     point_to_polygon_distance,
+    proximity_retreat_candidate,
 )
 from .crowd import CrowdSnapshot, CrowdStateFilter
 
@@ -85,8 +86,10 @@ class EmergencyMissionManager(Node):
         self.declare_parameter("target_arrival_time_sec", 30.0)
         self.declare_parameter("dual_dispatch_trigger_ratio", 0.85)
         self.declare_parameter("patient_standoff_enabled", True)
-        self.declare_parameter("patient_standoff_distance_m", 0.50)
-        self.declare_parameter("dual_standoff_min_separation_m", 0.45)
+        self.declare_parameter("patient_standoff_distance_m", 0.15)
+        self.declare_parameter("dual_robot_proximity_threshold_m", 0.40)
+        self.declare_parameter("dual_robot_proximity_confirm_sec", 0.50)
+        self.declare_parameter("dual_robot_proximity_grace_sec", 2.0)
         self.declare_parameter("nominal_linear_speed_mps", 0.20)
         self.declare_parameter("nominal_angular_speed_radps", 0.70)
         self.declare_parameter("slowdown_turn_threshold_deg", 45.0)
@@ -180,8 +183,14 @@ class EmergencyMissionManager(Node):
         self.patient_standoff_distance = float(
             self.get_parameter("patient_standoff_distance_m").value
         )
-        self.dual_standoff_min_separation = float(
-            self.get_parameter("dual_standoff_min_separation_m").value
+        self.dual_robot_proximity_threshold = float(
+            self.get_parameter("dual_robot_proximity_threshold_m").value
+        )
+        self.dual_robot_proximity_confirm = float(
+            self.get_parameter("dual_robot_proximity_confirm_sec").value
+        )
+        self.dual_robot_proximity_grace = float(
+            self.get_parameter("dual_robot_proximity_grace_sec").value
         )
         self.nominal_linear_speed = float(
             self.get_parameter("nominal_linear_speed_mps").value
@@ -259,20 +268,18 @@ class EmergencyMissionManager(Node):
         ):
             raise ValueError("patient_standoff_distance_m must be positive")
         if (
-            not math.isfinite(self.dual_standoff_min_separation)
-            or self.dual_standoff_min_separation < 0.0
+            not math.isfinite(self.dual_robot_proximity_threshold)
+            or self.dual_robot_proximity_threshold <= 0.0
         ):
             raise ValueError(
-                "dual_standoff_min_separation_m must be non-negative"
+                "dual_robot_proximity_threshold_m must be positive"
             )
-        if (
-            self.dual_standoff_min_separation
-            > 2.0 * self.patient_standoff_distance
+        for name, duration in (
+            ("dual_robot_proximity_confirm_sec", self.dual_robot_proximity_confirm),
+            ("dual_robot_proximity_grace_sec", self.dual_robot_proximity_grace),
         ):
-            raise ValueError(
-                "dual_standoff_min_separation_m cannot exceed the "
-                "standoff circle diameter"
-            )
+            if not math.isfinite(duration) or duration < 0.0:
+                raise ValueError(f"{name} must be finite and non-negative")
         if self.nominal_linear_speed <= 0.0:
             raise ValueError("nominal_linear_speed_mps must be positive")
         if self.nominal_angular_speed <= 0.0:
@@ -560,10 +567,16 @@ class EmergencyMissionManager(Node):
         self.return_failed_robots: set[str] = set()
         self.returning_robots: set[str] = set()
         self.dual_dispatch_active = False
+        self.dual_dispatch_started_at: float | None = None
+        self.proximity_close_since: float | None = None
+        self.proximity_return_triggered = False
         self.planning_crowd_snapshot = CrowdSnapshot(
             -1, "UNKNOWN", 0, False, math.inf
         )
         self._automatic_request_timer = None
+        self.proximity_timer = self.create_timer(
+            0.1, self._monitor_dual_robot_proximity
+        )
         if bool(self.get_parameter("automatic_request").value):
             delay = float(
                 self.get_parameter("automatic_request_delay_sec").value
@@ -594,8 +607,13 @@ class EmergencyMissionManager(Node):
         self.get_logger().info(
             "Patient standoff: "
             f"enabled={self.patient_standoff_enabled}, "
-            f"distance={self.patient_standoff_distance:.2f}m, "
-            f"dual separation={self.dual_standoff_min_separation:.2f}m"
+            f"distance={self.patient_standoff_distance:.2f}m"
+        )
+        self.get_logger().info(
+            "Dual proximity return: "
+            f"threshold={self.dual_robot_proximity_threshold:.2f}m, "
+            f"confirm={self.dual_robot_proximity_confirm:.2f}s, "
+            f"grace={self.dual_robot_proximity_grace:.2f}s"
         )
         self.get_logger().info(
             "RViz Publish Point topics: " + ", ".join(click_topics)
@@ -693,6 +711,9 @@ class EmergencyMissionManager(Node):
         self.return_failed_robots.clear()
         self.returning_robots.clear()
         self.dual_dispatch_active = False
+        self.dual_dispatch_started_at = None
+        self.proximity_close_since = None
+        self.proximity_return_triggered = False
         self._publish_dispatched_robots()
         request.header.stamp = self.get_clock().now().to_msg()
         self.active_request_id = (
@@ -803,54 +824,6 @@ class EmergencyMissionManager(Node):
         target.pose.orientation.w = math.cos(facing_yaw * 0.5)
         return target
 
-    def _standoff_pose(
-        self, patient: PoseStamped, radial_angle: float
-    ) -> PoseStamped:
-        """Create one pose on the configured circle facing its center."""
-        target = deepcopy(patient)
-        target.pose.position.x = (
-            patient.pose.position.x
-            + self.patient_standoff_distance * math.cos(radial_angle)
-        )
-        target.pose.position.y = (
-            patient.pose.position.y
-            + self.patient_standoff_distance * math.sin(radial_angle)
-        )
-        target.pose.position.z = 0.0
-        facing_yaw = radial_angle + math.pi
-        target.pose.orientation.x = 0.0
-        target.pose.orientation.y = 0.0
-        target.pose.orientation.z = math.sin(facing_yaw * 0.5)
-        target.pose.orientation.w = math.cos(facing_yaw * 0.5)
-        return target
-
-    def _separate_standoff_targets(self, patient: PoseStamped) -> None:
-        """Move Robot2 around the circle if both stop poses overlap."""
-        if not self.patient_standoff_enabled:
-            return
-        first_id, second_id = self.robot_ids
-        first = self.planning_targets.get(first_id)
-        second = self.planning_targets.get(second_id)
-        if first is None or second is None:
-            return
-        separation = math.hypot(
-            first.pose.position.x - second.pose.position.x,
-            first.pose.position.y - second.pose.position.y,
-        )
-        if separation >= self.dual_standoff_min_separation:
-            return
-        radial_angle = math.atan2(
-            first.pose.position.y - patient.pose.position.y,
-            first.pose.position.x - patient.pose.position.x,
-        )
-        self.planning_targets[second_id] = self._standoff_pose(
-            patient, radial_angle + math.pi / 2.0
-        )
-        self.get_logger().info(
-            f"Separated patient stop poses: {second_id} rotated 90deg "
-            f"around the {self.patient_standoff_distance:.2f}m circle"
-        )
-
     def _calculate_and_assign(self, target: PoseStamped) -> None:
         self._publish_status("CALCULATING", "requesting both Nav2 paths")
         now = time.monotonic()
@@ -875,7 +848,6 @@ class EmergencyMissionManager(Node):
                 )
             except ValueError as error:
                 self.plan_failures[robot_id] = str(error)
-        self._separate_standoff_targets(target)
         for robot_id in self.robot_ids:
             self._publish_distance(robot_id, math.nan)
             self._publish_predicted_eta(robot_id, math.nan)
@@ -1155,6 +1127,9 @@ class EmergencyMissionManager(Node):
                 )
                 dispatch_robot_ids = dispatch_robot_ids[:1]
         self.dual_dispatch_active = len(dispatch_robot_ids) > 1
+        self.dual_dispatch_started_at = (
+            time.monotonic() if self.dual_dispatch_active else None
+        )
         detail = ", ".join(
             (
                 f"{robot_id}={score:.2f}s"
@@ -1423,9 +1398,111 @@ class EmergencyMissionManager(Node):
             f"actual={actual:.2f}s, error={actual - predicted:+.2f}s"
         )
 
+    def _monitor_dual_robot_proximity(self) -> None:
+        """Return the farther robot when a dual dispatch becomes unsafe."""
+        now = time.monotonic()
+        if (
+            not self.navigation_active
+            or not self.dual_dispatch_active
+            or self.proximity_return_triggered
+            or self.dual_dispatch_started_at is None
+            or now - self.dual_dispatch_started_at
+            < self.dual_robot_proximity_grace
+            or self.planning_target is None
+        ):
+            self.proximity_close_since = None
+            return
+
+        active = [
+            robot_id
+            for robot_id in self.dispatched_robots
+            if robot_id not in self.terminal_robots
+            and robot_id not in self.returning_robots
+        ]
+        if len(active) != 2:
+            self.proximity_close_since = None
+            return
+        observations = {
+            robot_id: self.observations.get(robot_id) for robot_id in active
+        }
+        if any(observation is None for observation in observations.values()):
+            self.proximity_close_since = None
+            return
+        if any(
+            now - observation.received_at > self.pose_timeout
+            for observation in observations.values()
+            if observation is not None
+        ):
+            self.proximity_close_since = None
+            return
+
+        positions = {
+            robot_id: (
+                observations[robot_id].pose.pose.position.x,
+                observations[robot_id].pose.pose.position.y,
+            )
+            for robot_id in active
+        }
+        patient = self.planning_target.pose.position
+        retreat_robot = proximity_retreat_candidate(
+            positions,
+            (patient.x, patient.y),
+            primary_robot=self.selected_robot,
+            threshold=self.dual_robot_proximity_threshold,
+        )
+        if retreat_robot is None:
+            self.proximity_close_since = None
+            return
+        if self.proximity_close_since is None:
+            self.proximity_close_since = now
+            return
+        if now - self.proximity_close_since < self.dual_robot_proximity_confirm:
+            return
+
+        keep_robot = next(
+            robot_id for robot_id in active if robot_id != retreat_robot
+        )
+        start_pose = self.dispatch_start_poses.get(retreat_robot)
+        if start_pose is None:
+            self.get_logger().error(
+                f"Cannot proximity-return {retreat_robot}: "
+                "dispatch start pose missing"
+            )
+            self.proximity_return_triggered = True
+            return
+        separation = math.hypot(
+            positions[active[0]][0] - positions[active[1]][0],
+            positions[active[0]][1] - positions[active[1]][1],
+        )
+        self.proximity_return_triggered = True
+        self.excluded_robots.add(retreat_robot)
+        self.selected_robot = keep_robot
+        self._publish_selected_robot(keep_robot)
+        self.get_logger().warning(
+            f"Robots remained {separation:.2f}m apart for "
+            f"{now - self.proximity_close_since:.2f}s; "
+            f"returning farther robot {retreat_robot}, "
+            f"continuing {keep_robot}"
+        )
+        self._publish_status(
+            "PROXIMITY_AVOIDANCE",
+            f"robots={separation:.2f}m; cancel {retreat_robot} and "
+            f"return home; {keep_robot} continues",
+        )
+        self._publish_assignment(
+            retreat_robot,
+            deepcopy(start_pose),
+            role=RobotState.ROLE_RETURN,
+            mission_suffix="proximity-return",
+        )
+
     def _return_late_robots(self, winner: str) -> None:
         for robot_id in sorted(self.dispatched_robots):
-            if robot_id == winner or robot_id in self.terminal_robots:
+            if (
+                robot_id == winner
+                or robot_id in self.terminal_robots
+                or robot_id in self.returning_robots
+            ):
                 continue
             start_pose = self.dispatch_start_poses.get(robot_id)
             if start_pose is None:

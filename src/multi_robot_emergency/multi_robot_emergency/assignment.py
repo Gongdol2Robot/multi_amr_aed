@@ -8,6 +8,42 @@ from collections.abc import Iterable
 Position = tuple[float, float]
 
 
+def proximity_retreat_candidate(
+    robot_positions: dict[str, Position],
+    patient: Position,
+    *,
+    primary_robot: str,
+    threshold: float,
+) -> str | None:
+    """Choose the robot farther from the patient when two robots are close."""
+    if len(robot_positions) != 2:
+        raise ValueError("exactly two robot positions are required")
+    values = (
+        *(value for point in robot_positions.values() for value in point),
+        *patient,
+        threshold,
+    )
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError("proximity inputs must be finite")
+    if threshold <= 0.0:
+        raise ValueError("proximity threshold must be positive")
+    first_id, second_id = robot_positions
+    first = robot_positions[first_id]
+    second = robot_positions[second_id]
+    if math.hypot(first[0] - second[0], first[1] - second[1]) > threshold:
+        return None
+    return max(
+        robot_positions,
+        key=lambda robot_id: (
+            math.hypot(
+                robot_positions[robot_id][0] - patient[0],
+                robot_positions[robot_id][1] - patient[1],
+            ),
+            robot_id != primary_robot,
+        ),
+    )
+
+
 def patient_standoff(
     patient: Position,
     robot: Position,
