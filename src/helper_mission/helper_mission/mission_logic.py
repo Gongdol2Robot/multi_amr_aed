@@ -70,6 +70,7 @@ def vision_stream_timed_out(
 
     아직 메시지를 받지 못했다면 탐색 시작 시각을 기준으로 하고, 한 번이라도
     받았다면 검출값이 true인지 false인지와 무관하게 마지막 수신 시각을 쓴다.
+    따라서 false 메시지가 계속 오면 카메라는 정상 동작 중인 것으로 처리한다.
     """
     if timeout_seconds <= 0.0:
         raise ValueError("timeout_seconds must be positive")

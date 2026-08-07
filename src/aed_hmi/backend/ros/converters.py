@@ -37,6 +37,16 @@ def yaw_from_quaternion(orientation) -> float:
     ))
 
 
+def battery_percentage_100(value: float) -> float:
+    """Accept either ROS fractions or already-normalized percent values."""
+    percentage = float(value)
+    if not math.isfinite(percentage):
+        return -1.0
+    if 0.0 <= percentage <= 1.0:
+        return percentage * 100.0
+    return percentage
+
+
 class SpeedEstimator:
     """연속된 위치에서 속도를 낸다. 로봇마다 하나씩 둔다.
 
@@ -74,7 +84,9 @@ def to_robot_snapshot(
         stamp=ros_time_to_epoch(message.stamp),
         position=Point2D(position.x, position.y),
         yaw_deg=yaw_from_quaternion(message.pose.pose.orientation),
-        battery_percentage=float(message.battery_percentage),
+        battery_percentage=battery_percentage_100(
+            message.battery_percentage
+        ),
         availability=robot_availability(message.availability),
         role=robot_role(message.role),
         mission_id=message.mission_id,
@@ -137,4 +149,3 @@ def to_mission_event(message) -> MissionEvent:
         stamp=ros_time_to_epoch(message.stamp),
         reason=message.reason,
     )
-

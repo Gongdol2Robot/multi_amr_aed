@@ -58,7 +58,7 @@ ros2 launch helper_mission helper_mission.launch.py \
 | `control_period` | `0.1` | 회전 명령 발행 주기(초) |
 | `stop_command_repeats` | `3` | 종료 시 0속도 명령 반복 횟수 |
 | `vision_stale_seconds` | `1.0` | Vision true 신호의 최대 유효 시간 |
-| `vision_timeout_seconds` | `300.0` | Vision 메시지 단절 안전 정지 시간 |
+| `vision_timeout_seconds` | `300.0` | Vision 메시지 단절 안전 정지 시간(5분) |
 | `helper_wait_timeout` | `0.0` | 탐색 제한 시간, 0이면 무제한 |
 | `buzzer_period` | `1.0` | 호출음 반복 주기(초) |
 | `buzzer_frequencies` | `880,660` | 임시 호출 2음(Hz) |

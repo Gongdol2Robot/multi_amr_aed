@@ -29,21 +29,15 @@ var/
 # Runtime output
 bags/
 captures/
-# tools/survey 의 측량 사진은 제외하지 않는다. 호모그래피를 다시 계산하거나
-# 왜 그 값이 나왔는지 확인할 때 필요한 근거 자료이고, 장당 60KB 수준이다.
+tools/survey/*.jpg
 data/
 datasets/
-hard_negatives/
 runs/
-finetune_runs/
-test_captures/
 *.db
 *.sqlite
 *.sqlite3
 
-# slam_toolbox 직렬화 결과. 스캔을 통째로 담아 수백 MB가 나온다.
-# 지도 자체는 map.pgm/map.yaml로 충분하고, posegraph는 이어서 매핑할
-# 사람만 로컬에 두면 된다.
+# slam_toolbox 직렬화 결과는 수백 MB가 될 수 있어 로컬에만 둔다.
 maps/*.posegraph
 maps/*.data
 
@@ -54,6 +48,8 @@ models/*.pt
 models/*.pth
 vision_training/models/*.pt
 vision_training/caterpillar_fall_pose_best.pt
+vision_training/finetune_runs/
+vision_training/hard_negatives/
 
 # Keep directory placeholders
 !models/.gitkeep

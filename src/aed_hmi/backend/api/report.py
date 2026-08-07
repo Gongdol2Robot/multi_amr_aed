@@ -15,7 +15,6 @@ event_id 로 "내가 찍은 그 신고"를 이력에서 찾는다. WebSocket 으
 배정하고, 무엇이 신고했는지는 `source_id` 에만 남는다. 사람이 찍었다고
 다른 경로를 만들면 배정 규칙이 두 벌이 된다.
 
-목업에서는 ROS 가 없으므로 시뮬레이터에 바로 넣는다. 화면 쪽 동작은 같다.
 """
 
 import logging
@@ -51,9 +50,4 @@ async def report(request: Request, body: OperatorReport):
             raise HTTPException(status_code=503, detail=str(error))
         return {"accepted": True, "event_id": event_id, "via": "ros"}
 
-    simulator = getattr(context, "simulator", None)
-    if simulator is not None:
-        event_id = simulator.inject_operator_report(body.x, body.y)
-        return {"accepted": True, "event_id": event_id, "via": "mock"}
-
-    raise HTTPException(status_code=503, detail="ROS 도 목업도 안 떠 있다")
+    raise HTTPException(status_code=503, detail="ROS bridge가 연결되지 않았다")

@@ -183,8 +183,8 @@ def main() -> int:
     )
     parser.add_argument("--nav", action="store_true", help="Nav2 까지 점검")
     parser.add_argument("--detect", action="store_true", help="검출 노드까지 점검")
-    parser.add_argument("--host", default="192.168.107.102")
-    parser.add_argument("--namespace", default="robot2")
+    parser.add_argument("--host", default="192.168.107.101")
+    parser.add_argument("--namespace", default="robot1")
     args = parser.parse_args()
 
     if not check_env():

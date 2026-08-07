@@ -15,7 +15,7 @@ notebooks/ Google Colab GPU 학습 노트북
 
 ## Google Colab GPU 학습
 
-`notebooks/caterpillar_fall_pose_colab.ipynb`를 Google Drive에 업로드하거나
+`training/caterpillar_fall_pose_colab.ipynb`를 Google Drive에 업로드하거나
 Colab에서 직접 연 뒤 위 셀부터 순서대로 실행합니다.
 
 ```text

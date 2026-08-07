@@ -3,7 +3,7 @@
 멀티 AMR 시스템에서 공통으로 사용하는 ROS 2 인터페이스입니다.
 
 - `EmergencyEvent`: 감지 시각, 위치, 신뢰도와 이벤트 상태
-- `RobotState`: 로봇 위치, 가용성, 배터리, 현재 역할과 미션
+- `RobotState`: 로봇 위치, 가용성, 배터리, 현재 역할과 이벤트별 경로비용
 - `MissionAssignment`: 단일 활성 로봇의 AED 임무와 재할당 버전
 - `MissionStatus`: 출동·도착·장애·취소·복구 대기 상태
 - `Heartbeat`: Mission Manager와 로봇 사이의 양방향 생존 신호

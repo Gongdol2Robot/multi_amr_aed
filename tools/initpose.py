@@ -115,9 +115,7 @@ def publish(number, entry, covariance):
     publisher = node.create_publisher(
         PoseWithCovarianceStamped, topic, QoSProfile(depth=1)
     )
-    # discovery server 환경에서는 구독자 매칭이 십수 초 걸리기도 한다.
-    # 5초로 끊으면 AMCL이 멀쩡히 떠 있는데도 "구독자 없음"으로 실패한다.
-    deadline = node.get_clock().now().nanoseconds + 30_000_000_000
+    deadline = node.get_clock().now().nanoseconds + 5_000_000_000
     sent = 0
     while node.get_clock().now().nanoseconds < deadline and sent < 5:
         if publisher.get_subscription_count() > 0:

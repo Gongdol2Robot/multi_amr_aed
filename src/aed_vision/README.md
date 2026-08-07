@@ -41,6 +41,32 @@
 
 실행 launch는 카메라별 `vision_detector` 노드 하나만 시작합니다.
 
+### 검출 confidence를 0.25로 둔 이유
+
+구조 대상 검출의 기본 confidence 임계값인 `rescue_conf`는 `0.25`입니다.
+응급상황에서는 오검출보다 쓰러진 사람을 놓치는 미검출의 비용이 더 크므로,
+1차 YOLO 검출에서는 재현율(recall)을 우선해 후보를 넓게 받도록 설정했습니다.
+
+낮은 임계값에서 발생할 수 있는 순간적인 오검출을 곧바로 응급상황으로 처리하지는
+않습니다. 각 프레임에서 confidence가 `0.25` 이상인 `fallen_person`을 후보로 받고,
+최근 10프레임 중 6프레임 이상에서 후보가 검출될 때만 응급상황을 확정합니다.
+이 6프레임은 연속일 필요가 없습니다.
+
+```text
+YOLO confidence >= 0.25
+        ↓ 후보 검출 — recall 우선
+최근 10프레임 중 6프레임 이상 검출
+        ↓ 시간적 검증 — 순간 오검출 억제
+EmergencyEvent.CONFIRMED
+```
+
+따라서 `0.25` 하나만으로 응급상황을 확정하는 구조가 아니라, 낮은 임계값으로
+후보를 확보한 뒤 다중 프레임 검증으로 신뢰도를 보완하는 구조입니다. 다만
+`0.25`는 현재 기본 설정값이며 현장 데이터로 최적값이 검증된 수치는 아닙니다.
+최종 배포 전에는 실제 카메라 위치·조명·거리에서 precision, recall, 오검출률과
+미검출률을 측정해 `rescue_conf`, `confirmation_window`, `confirmation_hits`를 함께
+조정해야 합니다.
+
 ## 설치
 
 ```bash
@@ -94,6 +120,7 @@ ros2 launch aed_vision camera_vision.launch.py \
 - `camera_device`: USB 웹캠 장치 경로. 기본값은 `/dev/video2`이며 가능하면
   재부팅 후에도 유지되는 `/dev/v4l/by-id/...` 경로 사용 권장
 - `inference_device`: YOLO 추론 장치 (`"cuda:0"`은 첫 GPU, `"cpu"`는 CPU)
+- `rescue_conf`: 구조 대상 YOLO의 1차 후보 confidence 임계값. 기본값은 `0.25`
 - `location_x`, `location_y`: 해당 고정 카메라 구조 지점의 map 좌표
 - `homography_camera_id`: 카메라별 측량 설정 ID (`cam1` 또는 `cam2`)
 - `homography_margin_m`: 측량 영역 경계에서 허용할 좌표 여유

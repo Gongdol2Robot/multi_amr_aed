@@ -18,3 +18,21 @@
 
 두 로봇은 동일한 파일을 사용하고 namespace만 `/robot1`, `/robot2`로
 분리합니다.
+
+## Central dispatch
+
+각 로봇 PC에서 Nav2를 따로 실행한 뒤 중앙 PC에서 경로비용 계산과 미션 배정을
+실행합니다. 이 런치는 Nav2나 RViz를 실행하지 않습니다.
+
+```bash
+ros2 launch aed_bringup central_dispatch.launch.py
+```
+
+기본값은 거리 비교 전용입니다. RViz의 **Publish Point**로 좌표를 클릭하면
+로봇별 Nav2 경로거리와 선택 결과를 발행합니다.
+
+```bash
+ros2 topic echo /aed/path_distance/robot1
+ros2 topic echo /aed/path_distance/robot2
+ros2 topic echo /aed/selected_robot
+```

@@ -1,3 +1,6 @@
+import os
+from glob import glob
+
 from setuptools import find_packages, setup
 
 
@@ -13,6 +16,10 @@ setup(
             ["resource/" + package_name],
         ),
         ("share/" + package_name, ["package.xml"]),
+        (
+            os.path.join("share", package_name, "launch"),
+            glob("launch/*.launch.py"),
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -23,6 +30,7 @@ setup(
     entry_points={
         "console_scripts": [
             "hmi_node = aed_hmi.hmi_node:main",
+            "hmi_backend = backend.main:main",
         ],
     },
 )

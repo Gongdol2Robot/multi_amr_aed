@@ -98,7 +98,6 @@ async def health(request: Request):
     return {
         "ok": True,
         "ros_connected": snapshot.ros_connected,
-        "mock": context.settings.mock,
         "robots": len(snapshot.robots),
         "streams_online": sum(1 for item in snapshot.streams if item.online),
         "websocket_clients": context.hub.client_count,

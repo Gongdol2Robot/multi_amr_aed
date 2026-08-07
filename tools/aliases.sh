@@ -11,6 +11,11 @@ aedenv() {
   source "$AED_WS/install/setup.bash"
 }
 
+aedbuild() {
+  (cd "$AED_WS" && source /opt/ros/humble/setup.bash && \
+    PYTHONNOUSERSITE=1 colcon build --symlink-install "$@")
+}
+
 roskill() {
   local uid workspace_pattern
   uid="$(id -u)"
@@ -36,9 +41,53 @@ robotstart() {
   disown
 }
 
+_preflight_robot() {
+  local n="$1" host="$2"
+  shift 2
+
+  # aed_interfaces 등 overlay 타입까지 preflight에서 확인할 수 있게 환경을 갱신한다.
+  aedenv
+  python3 "$AED_WS/tools/preflight.py" \
+    --namespace "robot$n" \
+    --host "$host" \
+    "$@"
+}
+
+pf1() {
+  _preflight_robot 1 "${ROBOT1_IP:-192.168.107.101}" "$@"
+}
+
+pf2() {
+  _preflight_robot 2 "${ROBOT2_IP:-192.168.107.102}" "$@"
+}
+
+pfboth() {
+  local rc=0
+
+  echo "===== robot1 preflight ====="
+  pf1 "$@" || rc=1
+  echo
+  echo "===== robot2 preflight ====="
+  pf2 "$@" || rc=1
+
+  return "$rc"
+}
+
+# 기존 pf 사용법도 유지한다: pf 1, pf 2, pf 1 --nav
 pf() {
-  local n=${1:-1} host=${2:-192.168.0.2}
-  python3 "$AED_WS/tools/preflight.py" --namespace "robot$n" --host "$host"
+  local n="${1:-1}"
+  if [ "$#" -gt 0 ]; then
+    shift
+  fi
+
+  case "$n" in
+    1) pf1 "$@" ;;
+    2) pf2 "$@" ;;
+    *)
+      echo "사용: pf <1|2> [--localization|--nav|--detect]" >&2
+      return 2
+      ;;
+  esac
 }
 
 fit() {
@@ -68,24 +117,16 @@ drive() {
     -r /cmd_vel:=/robot$n/cmd_vel
 }
 
-# SLAM과 Nav2가 떠 있어야 한다. 미탐색 경계로 갈 목표만 Nav2에 던진다.
 explore() {
   "$AED_WS/tools/explore.sh" "${1:-1}"
 }
 
-# 지도는 slam_toolbox가 살아 있는 동안에만 저장할 수 있다. SLAM 터미널을
-# 먼저 끄면 그때까지 돈 것이 전부 사라진다.
-#
-# slam_toolbox의 save_map 서비스는 쓰지 않는다. 내부에서 map_saver를 띄우는데
-# 대기 시간이 2초로 고정이라 discovery server 환경에서는 지도를 못 받고
-# result=255로 실패한다. map_saver_cli를 직접 부르고 시간을 넉넉히 준다.
 savemap() {
   local n=${1:-1} name=${2:-map}
   mkdir -p "$AED_WS/maps"
   ros2 run nav2_map_server map_saver_cli \
     -f "$AED_WS/maps/$name" -t "/robot$n/map" \
     --ros-args -p save_map_timeout:=15.0 || return 1
-  # posegraph는 이어서 매핑할 때만 필요하다. 수백 MB라 git에는 올리지 않는다.
   ros2 service call /robot$n/slam_toolbox/serialize_map \
     slam_toolbox/srv/SerializePoseGraph "{filename: '$AED_WS/maps/$name'}"
 }
@@ -96,12 +137,9 @@ loc() {
     namespace:=/robot$n map:="$map"
 }
 
-# 두 로봇이 지도는 공유하지만 Dock 위치가 달라 초기 위치는 각자 다르다.
-# 좌표는 src/aed_bringup/config/dock_poses.yaml 에서 읽는다.
-#   initpose 2            robot2 의 Dock 위치를 발행
-#   initpose 1 --record   현재 위치를 robot1 항목에 기록
 initpose() {
-  local n=${1:-1}; shift 2>/dev/null || true
+  local n=${1:-1}
+  shift 2>/dev/null || true
   python3 "$AED_WS/tools/initpose.py" "$n" "$@"
 }
 
@@ -121,8 +159,34 @@ rv() {
   ros2 launch turtlebot4_viz view_robot.launch.py namespace:=/robot$n
 }
 
+mapnav() {
+  local n=${1:-1}
+  aedenv
+  ros2 launch turtlebot4_map_navigation map_navigation.launch.py \
+    namespace:="robot$n" rviz:=true
+}
+
+vision() {
+  local dev=${1:-0}
+  ros2 run aed_vision webcam_publisher --ros-args -p device:="$dev"
+}
+
 manager() {
   ros2 run mission_manager mission_manager
+}
+
+# a1inteli에서 이관한 단일 중앙 노드: RViz 클릭마다 두 Nav2 경로를 직접 비교한다.
+central() {
+  local dispatch=${1:-false}
+  local target_time=${2:-30.0}
+  local trigger_ratio=${3:-0.85}
+  local dual_dispatch=${4:-true}
+  aedenv
+  ros2 launch multi_robot_emergency central_dispatch.launch.py \
+    dispatch_enabled:="$dispatch" \
+    target_arrival_time_sec:="$target_time" \
+    dual_dispatch_trigger_ratio:="$trigger_ratio" \
+    dual_dispatch_enabled:="$dual_dispatch"
 }
 
 executor() {
@@ -141,6 +205,12 @@ recover() {
   "$AED_WS/tools/nav_recovery.sh" "${1:-1}"
 }
 
+survey() {
+  local label=${1:?"사용: survey <라벨> [로봇번호]"} n=${2:-1}
+  ROBOT_NS="/robot$n" python3 "$AED_WS/tools/survey_point.py" "$label" \
+    --ros-args -r /tf:=/robot$n/tf -r /tf_static:=/robot$n/tf_static
+}
+
 bagrec() {
   local n=${1:-1}
   mkdir -p "$AED_WS/bags"
@@ -151,5 +221,6 @@ bagrec() {
     /robot$n/mission_status /aed/emergency_event /aed/robot_state
 }
 
+alias detect='vision'
 alias mstate='ros2 topic echo /aed/robot_state'
 alias estate='ros2 topic echo /aed/emergency_event'

@@ -81,7 +81,7 @@
 
 <h1>SysMon 설계 — Multi-AMR AED 관제 화면</h1>
 <p class="lede">
-  화면 구성(UI mock-up) · 웹 페이지 구조 · DB 테이블 구조 ·
+  화면 구성(UI 설계안) · 웹 페이지 구조 · DB 테이블 구조 ·
   <b>기동에서 화면 반영까지의 적재 로직</b>
 </p>
 
@@ -93,7 +93,7 @@
 </div>
 
 <!-- ============================================================ -->
-<h2>1. 화면 구성 (UI mock-up)</h2>
+<h2>1. 화면 구성 (UI 설계안)</h2>
 
 <p>
   관제실 화면 한 장에 모든 것이 들어갑니다. 창 크기가 바뀌어도
@@ -329,7 +329,7 @@
         fill="none" stroke="currentColor" stroke-width="1.5"/>
   <text x="480" y="200" font-size="13" text-anchor="middle" fill="currentColor" font-weight="700">③ lifespan startup</text>
   <text x="480" y="217" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.7">hub.start() · RosBridge.start()</text>
-  <text x="480" y="231" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.7">(--mock 이면 MockSimulator)</text>
+  <text x="480" y="231" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.7">실제 ROS 토픽 구독 시작</text>
   <line x1="480" y1="238" x2="480" y2="264" stroke="currentColor" stroke-width="1.5" marker-end="url(#a2)"/>
 
   <!-- 단계 4 -->
@@ -421,9 +421,8 @@
 <p>
   <code>CREATE TABLE IF NOT EXISTS</code> 라서 파일이 없으면 만들고 있으면
   그대로 씁니다. 행이 0 이어도 통계는 <code>null</code> 로 나가고 화면은
-  "기록 없음"을 그립니다. 저장소를 갓 받은 사람이
-  <code>python3 -m backend.main --mock</code> 한 줄로 화면을 볼 수 있어야
-  하기 때문입니다.
+  "기록 없음"을 그립니다. ROS 데이터가 아직 수신되지 않은 상태에서도
+  서버와 화면 자체는 정상적으로 시작하고 연결 대기 상태를 표시합니다.
 </p>
 
 <!-- ============================================================ -->
@@ -574,14 +573,13 @@
   <tr><td>③ 영상</td><td><code>api/video.py</code></td><td>MJPEG</td></tr>
   <tr><td>①~⑤ 화면</td><td><code>frontend/src/components/</code></td><td>layout · video · robot · mission</td></tr>
   <tr><td>타입 정의</td><td><code>domain/models.py</code> ↔ <code>frontend/src/types/telemetry.ts</code></td><td>1:1. 한쪽을 고치면 다른 쪽도 고친다</td></tr>
-  <tr><td>장비 없이 재생</td><td><code>mock/simulator.py</code> · <code>mock/frames.py</code></td><td>ROS 메시지만 가짜. 그 뒤는 실제와 같은 코드</td></tr>
 </table>
 
 <div class="note">
   <b><code>domain/</code> 은 ROS 도 HTTP 도 모릅니다.</b>
   <code>aed_interfaces</code> 를 import 하는 곳은 <code>ros/</code> 뿐입니다.
-  그래서 로봇 없이 전체 로직을 시험할 수 있고, 리뷰할 때도 ROS 를 몰라도
-  읽힙니다. 이것이 이 구조의 유일한 주장입니다.
+  그래서 도메인 계산은 ROS 실행 없이 단위 테스트할 수 있고, 리뷰할 때도
+  ROS 를 몰라도 읽힙니다. 이것이 이 구조의 유일한 주장입니다.
 </div>
 
 <!-- ============================================================ -->
