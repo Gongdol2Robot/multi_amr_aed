@@ -131,12 +131,32 @@ def count_crowd_people(
     return count
 
 
-def classify_crowd(person_count: int, crowded_threshold: int) -> str:
-    """ROI 내 사람 수를 중앙 시스템이 사용할 혼잡도 문자열로 변환한다.
+def classify_crowd(person_count: int) -> int:
+    """ROI 내 사람 수를 0~3 혼잡 등급으로 변환한다.
 
-    임계값과 같거나 많으면 CROWDED, 적으면 CLEAR이다. open 카메라의
-    NOT_APPLICABLE은 이 함수 밖의 VisionDetector 모드 분기에서 처리한다.
+    3등급은 사람이 정확히 3명인 경우뿐 아니라 3명 이상인 모든 경우를
+    포함한다. open 카메라의 NOT_APPLICABLE 처리는 추론 파이프라인에서 한다.
     """
-    if crowded_threshold < 1:
-        raise ValueError("crowded_threshold must be at least 1")
-    return "CROWDED" if person_count >= crowded_threshold else "CLEAR"
+    if person_count < 0:
+        raise ValueError("person_count must be non-negative")
+    return min(person_count, 3)
+
+
+def crowd_time_multiplier(person_count: int) -> float | None:
+    """사람 수에 따른 이동 시간 배율을 반환한다.
+
+    0명은 패널티 없음, 1명은 10%, 2명은 20%를 가산한다. 3명 이상은
+    통행 불가이므로 계산 가능한 이동 시간이 없음을 뜻하는 None을 반환한다.
+    """
+    level = classify_crowd(person_count)
+    if level == 3:
+        return None
+    return 1.0 + level * 0.1
+
+
+def apply_crowd_time_penalty(base_time: float, person_count: int) -> float | None:
+    """기본 이동 시간에 혼잡 패널티를 적용한다."""
+    if base_time < 0.0:
+        raise ValueError("base_time must be non-negative")
+    multiplier = crowd_time_multiplier(person_count)
+    return None if multiplier is None else base_time * multiplier

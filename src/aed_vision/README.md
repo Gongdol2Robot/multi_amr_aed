@@ -110,7 +110,7 @@ ros2 launch aed_vision camera_vision.launch.py \
 | `/<camera_id>/image_raw/compressed` | `sensor_msgs/CompressedImage` | 로컬 웹캠 JPEG |
 | `/<camera_id>/vision/emergency_event` | `aed_interfaces/EmergencyEvent` | 확정 또는 해제된 구조 이벤트 |
 | `/<camera_id>/vision/status` | `std_msgs/String` | 전체 검출 상태 JSON |
-| `/<camera_id>/vision/crowd_level` | `std_msgs/String` | `NOT_APPLICABLE`, `CLEAR`, `CROWDED` |
+| `/<camera_id>/vision/crowd_level` | `std_msgs/String` | `NOT_APPLICABLE`, `0`, `1`, `2`, `3` (3은 3명 이상) |
 | `/<camera_id>/vision/person_count` | `std_msgs/UInt32` | 골목 ROI 내 유효 person 수 |
 | `/<camera_id>/vision/fallen_location` | `geometry_msgs/PointStamped` | 호모그래피로 계산한 구조 대상 map 좌표 |
 | `/<camera_id>/vision/heartbeat` | `aed_interfaces/Heartbeat` | 초당 노드 생존 신호 |
@@ -129,7 +129,9 @@ ros2 launch aed_vision camera_vision.launch.py \
   "fallen_max_confidence": 0.91,
   "helper_count": 0,
   "person_count": 3,
-  "crowd_level": "CROWDED",
+  "crowd_level": 3,
+  "crowd_time_multiplier": null,
+  "crowd_traversable": false,
   "confirmation_hits": 7,
   "inference_ms": 42.5
 }
@@ -140,15 +142,16 @@ ros2 launch aed_vision camera_vision.launch.py \
 `crowd_roi`는 `[left, top, right, bottom]` 순서이며 영상 너비·높이에 대한
 0.0~1.0 비율입니다. 현재 골목 카메라는 `[0.375, 0.0, 1.0, 0.5]`로 영상
 상단의 오른쪽 62.5% 영역을 사용합니다. 이 영역은 1번 터틀봇의 골목 진입
-경로이며, 여기서
-`CROWDED`가 나오면 인파 때문에 1번 터틀봇의 접근 경로가 막힌 상황으로
-해석합니다. 실제 이동 통로에 맞게 디버그 영상의 청록색 사각형을 보면서
+경로입니다. 실제 이동 통로에 맞게 디버그 영상의 청록색 사각형을 보면서
 조정해야 합니다.
 
-현재 혼잡 기준은 **쓰러진 대상 외의 실제 사람 2명 이상**입니다. 파인튜닝
+혼잡 등급은 쓰러진 대상 외의 실제 사람 수를 사용합니다. 파인튜닝
 모델의 `fallen_person` bbox와 COCO YOLO11n의 `person` bbox가 겹치면 동일한
 쓰러진 대상으로 판단해 사람 수에서 제외합니다. 제외 후 우상단 ROI에 남은
-person이 0~1명이면 `CLEAR`, 2명 이상이면 `CROWDED`입니다.
+person이 0명이면 시간 패널티가 없고, 1명이면 10%, 2명이면 20%를 더합니다.
+3명 이상은 모두 3등급이며 이동 불가로 판단합니다. `status` JSON의
+`crowd_time_multiplier`는 각각 `1.0`, `1.1`, `1.2`, `null`이고,
+`crowd_traversable`은 3등급부터 `false`입니다.
 
 혼잡도는 골목 카메라에서만 의미가 있으므로 `camera_open`은 항상
 `NOT_APPLICABLE`을 발행합니다. 중앙 Mission Manager는 이 값을 사람 수 0과

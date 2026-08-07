@@ -260,6 +260,8 @@ class VisionDetector(Node):
                 result.crowd_level,
                 result.inference_ms,
                 target_location,
+                result.crowd_time_multiplier,
+                result.crowd_traversable,
             )
             publish_debug = bool(
                 self.get_parameter("publish_debug_image").value
@@ -319,9 +321,11 @@ class VisionDetector(Node):
         helpers: list[Box],
         confirmed: bool,
         person_count: int,
-        crowd_level: str,
+        crowd_level: int | None,
         inference_ms: float,
         target_location: tuple[float, float, str],
+        crowd_time_multiplier: float | None,
+        crowd_traversable: bool,
     ) -> None:
         """프레임 상태를 발행하고 확정 상태의 상승/하강 에지를 이벤트로 만든다.
 
@@ -329,7 +333,10 @@ class VisionDetector(Node):
         CONFIRMED, True→False일 때 CANCELED를 한 번만 발행한다.
         """
         self.person_count_pub.publish(UInt32(data=person_count))
-        self.crowd_pub.publish(String(data=crowd_level))
+        crowd_value = (
+            "NOT_APPLICABLE" if crowd_level is None else str(crowd_level)
+        )
+        self.crowd_pub.publish(String(data=crowd_value))
         payload = {
             "camera_id": self.camera_id,
             "zone_id": self.zone_id,
@@ -343,6 +350,8 @@ class VisionDetector(Node):
             "helper_count": len(helpers),
             "person_count": person_count,
             "crowd_level": crowd_level,
+            "crowd_time_multiplier": crowd_time_multiplier,
+            "crowd_traversable": crowd_traversable,
             "confirmation_hits": self.confirmation.hit_count,
             "inference_ms": round(inference_ms, 2),
             "location_x": round(target_location[0], 3),
