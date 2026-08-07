@@ -2,13 +2,21 @@
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description() -> LaunchDescription:
     """Start no Nav2 or RViz processes; those run on each robot PC."""
+    crowd_config = PathJoinSubstitution(
+        [
+            FindPackageShare("multi_robot_emergency"),
+            "config",
+            "crowd_zones.yaml",
+        ]
+    )
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -60,6 +68,7 @@ def generate_launch_description() -> LaunchDescription:
                 name="emergency_mission_manager",
                 output="screen",
                 parameters=[
+                    crowd_config,
                     {
                         "robot_ids": ["robot1", "robot2"],
                         "dispatch_enabled": ParameterValue(

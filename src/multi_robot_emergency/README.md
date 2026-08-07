@@ -81,9 +81,10 @@ ros2 topic pub --once /emergency/request geometry_msgs/msg/PoseStamped \
 
 1. `/robot1/amcl_pose`, `/robot2/amcl_pose` 최신 상태 확인
 2. 두 `/<robot>/compute_path_to_pose` Action에 같은 목표 동시 요청
-3. 반환된 `nav_msgs/Path`의 모든 구간 길이 합산
-4. 경로 실패/시간 초과 로봇 제외
-5. 가장 짧은 로봇의 `/<robot>/navigate_to_pose`에만 목표 전송
+3. 반환된 `nav_msgs/Path`의 모든 구간 길이와 회전 비용 계산
+4. Camera2가 판정한 혼잡 상태와 골목 통과 길이를 ETA에 반영
+5. 경로 실패/시간 초과 로봇 제외
+6. 최종 ETA가 가장 짧은 로봇에만 임무 전송
 
 결과 확인:
 
@@ -114,6 +115,45 @@ ros2 topic echo /emergency/eta/result
 
 - `/emergency/candidate_path/robot1`
 - `/emergency/candidate_path/robot2`
+
+## Camera2 혼잡도 연동
+
+중앙 노드는 사람 수로 혼잡 여부를 다시 판정하지 않습니다. 비전 팀이 발행한
+`/camera_alley/vision/crowd_level`(`std_msgs/msg/String`)을 최종 판정으로
+구독합니다. `/camera_alley/vision/person_count`(`std_msgs/msg/UInt32`)은
+로그와 상태 확인에만 사용합니다.
+
+임시 단계는 `CLEAR`, `BUSY`, `CROWDED`, `BLOCKED`입니다. 중앙은 문자열의
+목록 순서를 혼잡 단계로 사용하며 사람 수로 단계를 다시 판정하지 않습니다.
+팀원이 단계명을 변경하면 `config/crowd_zones.yaml`의
+`crowd_level_names`만 실제 발행 문자열과 맞추면 됩니다.
+
+- 더 높은 단계가 0.5초 유지되면 중앙 단계를 상향
+- 더 낮은 단계가 1.5초 유지되면 중앙 단계를 하향
+- crowd level이 2초 이상 끊기면 `UNKNOWN`으로 처리하고 페널티 미적용
+- 한 긴급 요청의 두 후보는 요청 시점에 고정한 동일 상태로 비교
+
+혼잡 구역은 같은 설정 파일의 `crowd_zone_polygon`에 공용 `map` 좌표의
+`x, y` 쌍으로 저장합니다. 최종 ETA는 다음과 같습니다.
+
+```text
+base_eta = 거리 / 0.20 + 회전각 / 0.70 + 큰 코너 수 * 4.0
+crowd_delay = 골목 내부 거리 * (1 / 단계속도 - 1 / 0.20)
+final_eta = base_eta + crowd_delay
+```
+
+단계별 기본 속도는 `0.20, 0.15, 0.10m/s`이며 `BLOCKED` 단계에서는 해당
+구역을 지나는 후보 경로를 제외합니다. `CLEAR` 또는 `UNKNOWN`이면
+`crowd_delay`는 0입니다. RViz 표시 토픽과 확인용 토픽은 다음과 같습니다.
+
+```bash
+ros2 topic echo /camera_alley/vision/crowd_level
+ros2 topic echo /camera_alley/vision/person_count
+ros2 topic echo /emergency/crowd/state
+ros2 topic echo /emergency/crowd_markers
+ros2 topic echo /emergency/crowded_path_distance/robot1
+ros2 topic echo /emergency/crowd_delay/robot1
+```
 
 ## DB 연동용 ETA 토픽
 

@@ -1,0 +1,23 @@
+emergency_mission_manager:
+  ros__parameters:
+    # Camera2 owns this classification. Replace these temporary names when
+    # the vision team publishes its final stage names. The list order is the
+    # severity/ETA level; person_count remains diagnostic only.
+    crowd_level_names: ["CLEAR", "BUSY", "CROWDED", "BLOCKED"]
+    crowd_state_timeout_sec: 2.0
+    crowd_increase_confirm_sec: 0.5
+    crowd_decrease_hold_sec: 1.5
+
+    # Camera2 alley polygon in the shared map frame (flat x,y pairs).
+    # 2026-08-07 현장 측량 네 점을 모두 포함하는 회전 외접 직사각형이다.
+    # 골목 장축은 map X축 기준 +10.58deg이며 측량한 위쪽 장변과 평행하다.
+    crowd_zone_polygon:
+      [-3.0420, 1.6450,
+       -2.8859, 0.8092,
+       -1.0119, 1.1592,
+       -1.1680, 1.9950]
+
+    # One speed for each stage above. BLOCKED excludes a candidate path that
+    # intersects the zone; its speed is retained only for list consistency.
+    crowd_level_speeds_mps: [0.20, 0.15, 0.10, 0.05]
+    crowd_blocking_level: 3

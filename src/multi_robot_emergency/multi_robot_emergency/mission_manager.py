@@ -11,6 +11,7 @@ import time
 from action_msgs.msg import GoalStatus
 from aed_interfaces.msg import MissionAssignment, MissionStatus, RobotState
 from geometry_msgs.msg import (
+    Point,
     PointStamped,
     PoseStamped,
     PoseWithCovarianceStamped,
@@ -27,10 +28,16 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
-from std_msgs.msg import Float32, String
+from std_msgs.msg import Float32, String, UInt32
 from visualization_msgs.msg import Marker, MarkerArray
 
-from .assignment import path_length, path_motion_cost
+from .assignment import (
+    crowd_delay_seconds,
+    path_length,
+    path_length_in_polygon,
+    path_motion_cost,
+)
+from .crowd import CrowdSnapshot, CrowdStateFilter
 
 
 @dataclass
@@ -63,6 +70,36 @@ class EmergencyMissionManager(Node):
         self.declare_parameter("slowdown_turn_threshold_deg", 45.0)
         self.declare_parameter("slowdown_penalty_sec", 4.0)
         self.declare_parameter("path_simplification_tolerance_m", 0.10)
+        self.declare_parameter(
+            "crowd_person_count_topic",
+            "/camera_alley/vision/person_count",
+        )
+        self.declare_parameter(
+            "crowd_level_topic", "/camera_alley/vision/crowd_level"
+        )
+        self.declare_parameter(
+            "crowd_level_names", ["CLEAR", "BUSY", "CROWDED", "BLOCKED"]
+        )
+        self.declare_parameter("crowd_state_timeout_sec", 2.0)
+        self.declare_parameter("crowd_increase_confirm_sec", 0.5)
+        self.declare_parameter("crowd_decrease_hold_sec", 1.5)
+        self.declare_parameter(
+            "crowd_level_speeds_mps", [0.20, 0.15, 0.10, 0.05]
+        )
+        self.declare_parameter("crowd_blocking_level", 3)
+        self.declare_parameter(
+            "crowd_zone_polygon",
+            [
+                -1.6129,
+                1.8464,
+                -1.9610,
+                2.2231,
+                -2.9529,
+                2.0745,
+                -2.8543,
+                1.4191,
+            ],
+        )
         self.declare_parameter("planner_id", "GridBased")
         self.declare_parameter("dispatch_enabled", False)
         self.declare_parameter("automatic_request", False)
@@ -113,6 +150,24 @@ class EmergencyMissionManager(Node):
         self.path_simplification_tolerance = float(
             self.get_parameter("path_simplification_tolerance_m").value
         )
+        self.crowd_level_speeds = [
+            float(value)
+            for value in self.get_parameter("crowd_level_speeds_mps").value
+        ]
+        self.crowd_blocking_level = int(
+            self.get_parameter("crowd_blocking_level").value
+        )
+        polygon_values = [
+            float(value)
+            for value in self.get_parameter("crowd_zone_polygon").value
+        ]
+        if len(polygon_values) < 6 or len(polygon_values) % 2:
+            raise ValueError(
+                "crowd_zone_polygon must contain at least three x,y pairs"
+            )
+        self.crowd_zone_polygon = list(
+            zip(polygon_values[::2], polygon_values[1::2])
+        )
         self.planner_id = str(self.get_parameter("planner_id").value)
         self.dispatch_enabled = bool(
             self.get_parameter("dispatch_enabled").value
@@ -143,6 +198,36 @@ class EmergencyMissionManager(Node):
                 "path_simplification_tolerance_m must be finite and "
                 "non-negative"
             )
+        crowd_level_names = [
+            str(value)
+            for value in self.get_parameter("crowd_level_names").value
+        ]
+        if len(self.crowd_level_speeds) != len(crowd_level_names):
+            raise ValueError(
+                "crowd_level_speeds_mps must match crowd_level_names"
+            )
+        if not all(
+            0.0 < speed <= self.nominal_linear_speed
+            for speed in self.crowd_level_speeds
+        ):
+            raise ValueError(
+                "crowd speeds must be positive and no faster than normal"
+            )
+        if not 1 <= self.crowd_blocking_level < len(crowd_level_names):
+            raise ValueError("crowd_blocking_level is outside stage range")
+        self.crowd_filter = CrowdStateFilter(
+            level_names=crowd_level_names,
+            state_timeout_sec=float(
+                self.get_parameter("crowd_state_timeout_sec").value
+            ),
+            increase_confirm_sec=float(
+                self.get_parameter("crowd_increase_confirm_sec").value
+            ),
+            decrease_hold_sec=float(
+                self.get_parameter("crowd_decrease_hold_sec").value
+            ),
+        )
+        self.raw_crowd_level = "UNKNOWN"
         if self.docked_start_offset < 0.0:
             raise ValueError("docked_start_offset_m must be non-negative")
 
@@ -205,6 +290,28 @@ class EmergencyMissionManager(Node):
         self.eta_result_publisher = self.create_publisher(
             String, "/emergency/eta/result", eta_result_qos
         )
+        self.crowd_state_publisher = self.create_publisher(
+            String, "/emergency/crowd/state", latched_qos
+        )
+        self.crowd_marker_publisher = self.create_publisher(
+            MarkerArray, "/emergency/crowd_markers", latched_qos
+        )
+        self.crowded_distance_publishers = {
+            robot_id: self.create_publisher(
+                Float32,
+                f"/emergency/crowded_path_distance/{robot_id}",
+                latched_qos,
+            )
+            for robot_id in self.robot_ids
+        }
+        self.crowd_delay_publishers = {
+            robot_id: self.create_publisher(
+                Float32,
+                f"/emergency/crowd_delay/{robot_id}",
+                latched_qos,
+            )
+            for robot_id in self.robot_ids
+        }
 
         self.observations: dict[str, RobotObservation] = {}
         self.dock_states: dict[str, bool] = {}
@@ -221,6 +328,18 @@ class EmergencyMissionManager(Node):
             "/aed/mission_status",
             self._on_mission_status,
             20,
+        )
+        self.crowd_person_count_subscription = self.create_subscription(
+            UInt32,
+            str(self.get_parameter("crowd_person_count_topic").value),
+            self._on_crowd_person_count,
+            10,
+        )
+        self.crowd_level_subscription = self.create_subscription(
+            String,
+            str(self.get_parameter("crowd_level_topic").value),
+            self._on_raw_crowd_level,
+            10,
         )
         self.planner_clients = {
             robot_id: ActionClient(
@@ -282,7 +401,8 @@ class EmergencyMissionManager(Node):
         self.planning_active = False
         self.pending_plans: set[str] = set()
         self.plan_results: dict[
-            str, tuple[Path, float, float, float, int]
+            str,
+            tuple[Path, float, float, float, int, float, float, float, str],
         ] = {}
         self.plan_failures: dict[str, str] = {}
         self.planning_target: PoseStamped | None = None
@@ -297,6 +417,9 @@ class EmergencyMissionManager(Node):
         self._last_feedback_log = 0.0
         self.navigation_started_at: float | None = None
         self.navigation_predicted_eta: float | None = None
+        self.planning_crowd_snapshot = CrowdSnapshot(
+            -1, "UNKNOWN", 0, False, math.inf
+        )
         self._automatic_request_timer = None
         if bool(self.get_parameter("automatic_request").value):
             delay = float(
@@ -307,6 +430,7 @@ class EmergencyMissionManager(Node):
             )
 
         self._publish_status("IDLE", "waiting for an emergency request")
+        self._publish_crowd_state(self.planning_crowd_snapshot)
         self.get_logger().info(
             "Emergency request: ros2 topic pub --once /emergency/request "
             "geometry_msgs/msg/PoseStamped "
@@ -319,6 +443,11 @@ class EmergencyMissionManager(Node):
         )
         self.get_logger().info(
             "RViz Publish Point topics: " + ", ".join(click_topics)
+        )
+        self.get_logger().info(
+            "Crowd input: "
+            f"{self.get_parameter('crowd_level_topic').value}; "
+            "person_count is diagnostics only"
         )
 
     def _on_pose(
@@ -344,6 +473,18 @@ class EmergencyMissionManager(Node):
 
     def _on_dock_status(self, robot_id: str, message: DockStatus) -> None:
         self.dock_states[robot_id] = bool(message.is_docked)
+
+    def _on_crowd_person_count(self, message: UInt32) -> None:
+        """Keep the count for diagnostics; vision owns classification."""
+        self.crowd_filter.update_person_count(int(message.data))
+
+    def _on_raw_crowd_level(self, message: String) -> None:
+        """Consume the final crowd decision made by the vision node."""
+        self.raw_crowd_level = message.data.strip() or "UNKNOWN"
+        snapshot = self.crowd_filter.update_level(
+            self.raw_crowd_level, time.monotonic()
+        )
+        self._publish_crowd_state(snapshot)
 
     def _on_request(self, message: PoseStamped) -> None:
         request = deepcopy(message)
@@ -392,6 +533,14 @@ class EmergencyMissionManager(Node):
     def _calculate_and_assign(self, target: PoseStamped) -> None:
         self._publish_status("CALCULATING", "requesting both Nav2 paths")
         now = time.monotonic()
+        self.planning_crowd_snapshot = self.crowd_filter.snapshot(now)
+        self._publish_crowd_state(self.planning_crowd_snapshot)
+        crowd = self.planning_crowd_snapshot
+        self.get_logger().info(
+            f"Crowd snapshot: level={crowd.name}, "
+            f"people={crowd.person_count}, fresh={crowd.fresh}, "
+            f"raw={self.raw_crowd_level}"
+        )
         self.planning_active = True
         self.planning_target = deepcopy(target)
         self.pending_plans.clear()
@@ -401,6 +550,7 @@ class EmergencyMissionManager(Node):
             self._publish_distance(robot_id, math.nan)
             self._publish_predicted_eta(robot_id, math.nan)
             self._publish_actual_eta(robot_id, math.nan)
+            self._publish_crowd_metrics(robot_id, math.nan, math.nan)
 
         for robot_id in self.robot_ids:
             client = self.planner_clients[robot_id]
@@ -522,7 +672,7 @@ class EmergencyMissionManager(Node):
                 if self.planning_target is not None
                 else None
             )
-            eta, turn_angle, slowdown_count = path_motion_cost(
+            base_eta, turn_angle, slowdown_count = path_motion_cost(
                 points,
                 linear_speed=self.nominal_linear_speed,
                 angular_speed=self.nominal_angular_speed,
@@ -534,6 +684,33 @@ class EmergencyMissionManager(Node):
                 initial_yaw=initial_yaw,
                 final_yaw=final_yaw,
             )
+            crowded_distance = path_length_in_polygon(
+                points, self.crowd_zone_polygon
+            )
+            crowd = self.planning_crowd_snapshot
+            if (
+                crowd.fresh
+                and crowd.level >= self.crowd_blocking_level
+                and crowded_distance > 1e-6
+            ):
+                self._record_plan_failure(
+                    robot_id,
+                    serial,
+                    f"crowd stage {crowd.name}: blocked zone intersects "
+                    f"{crowded_distance:.2f}m of path",
+                )
+                return
+            crowd_speed = self._crowd_speed(crowd)
+            crowd_delay = (
+                crowd_delay_seconds(
+                    crowded_distance,
+                    normal_speed=self.nominal_linear_speed,
+                    crowded_speed=crowd_speed,
+                )
+                if crowd.fresh and crowd.level > 0
+                else 0.0
+            )
+            eta = base_eta + crowd_delay
         except ValueError as error:
             self._record_plan_failure(robot_id, serial, str(error))
             return
@@ -544,15 +721,24 @@ class EmergencyMissionManager(Node):
             eta,
             turn_angle,
             slowdown_count,
+            base_eta,
+            crowded_distance,
+            crowd_delay,
+            crowd.name,
         )
         self.path_publishers[robot_id].publish(path)
         self._publish_distance(robot_id, distance)
         self._publish_predicted_eta(robot_id, eta)
+        self._publish_crowd_metrics(
+            robot_id, crowded_distance, crowd_delay
+        )
         self.pending_plans.discard(robot_id)
         self.get_logger().info(
             f"Candidate {robot_id}: distance={distance:.2f}m, "
             f"turn={math.degrees(turn_angle):.1f}deg, "
-            f"slowdowns={slowdown_count}, eta={eta:.2f}s"
+            f"slowdowns={slowdown_count}, base_eta={base_eta:.2f}s, "
+            f"crowd={crowd.name}, crowded_distance={crowded_distance:.2f}m, "
+            f"crowd_delay={crowd_delay:.2f}s, final_eta={eta:.2f}s"
         )
         if not self.pending_plans:
             self._finish_planning(serial)
@@ -567,6 +753,7 @@ class EmergencyMissionManager(Node):
         self.path_publishers[robot_id].publish(Path())
         self._publish_distance(robot_id, math.nan)
         self._publish_predicted_eta(robot_id, math.nan)
+        self._publish_crowd_metrics(robot_id, math.nan, math.nan)
         self.get_logger().warning(f"Candidate {robot_id} excluded: {reason}")
         if not self.pending_plans:
             self._finish_planning(serial)
@@ -581,6 +768,7 @@ class EmergencyMissionManager(Node):
             self.path_publishers[robot_id].publish(Path())
             self._publish_distance(robot_id, math.nan)
             self._publish_predicted_eta(robot_id, math.nan)
+            self._publish_crowd_metrics(robot_id, math.nan, math.nan)
         self.pending_plans.clear()
         self._finish_planning(serial)
 
@@ -619,7 +807,9 @@ class EmergencyMissionManager(Node):
                 f"{robot_id}={score:.2f}s"
                 f"({self.plan_results[robot_id][1]:.2f}m, "
                 f"{math.degrees(self.plan_results[robot_id][3]):.1f}deg, "
-                f"slow={self.plan_results[robot_id][4]})"
+                f"slow={self.plan_results[robot_id][4]}, "
+                f"crowd={self.plan_results[robot_id][8]}, "
+                f"delay={self.plan_results[robot_id][7]:.2f}s)"
             )
             for robot_id, score in ranked
         )
@@ -874,6 +1064,9 @@ class EmergencyMissionManager(Node):
             label.text = f"{robot_id}{suffix}"
             markers.markers.append(label)
         self.robot_marker_publisher.publish(markers)
+        self._publish_crowd_state(
+            self.crowd_filter.snapshot(time.monotonic())
+        )
 
     def _publish_selected_robot(self, robot_id: str) -> None:
         message = String()
@@ -895,10 +1088,117 @@ class EmergencyMissionManager(Node):
         message.data = float(elapsed)
         self.actual_eta_publishers[robot_id].publish(message)
 
+    def _publish_crowd_metrics(
+        self, robot_id: str, crowded_distance: float, delay: float
+    ) -> None:
+        distance_message = Float32()
+        distance_message.data = float(crowded_distance)
+        self.crowded_distance_publishers[robot_id].publish(distance_message)
+        delay_message = Float32()
+        delay_message.data = float(delay)
+        self.crowd_delay_publishers[robot_id].publish(delay_message)
+
+    def _publish_crowd_state(self, snapshot: CrowdSnapshot) -> None:
+        message = String()
+        message.data = json.dumps(
+            {
+                "age_sec": (
+                    round(snapshot.age_sec, 3)
+                    if math.isfinite(snapshot.age_sec)
+                    else None
+                ),
+                "fresh": snapshot.fresh,
+                "level": snapshot.level,
+                "level_name": snapshot.name,
+                "person_count": snapshot.person_count,
+                "raw_level": self.raw_crowd_level,
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        self.crowd_state_publisher.publish(message)
+        self._publish_crowd_markers(snapshot)
+
+    def _crowd_speed(self, snapshot: CrowdSnapshot) -> float:
+        if snapshot.fresh and snapshot.level > 0:
+            return self.crowd_level_speeds[snapshot.level]
+        return self.nominal_linear_speed
+
+    def _publish_crowd_markers(self, snapshot: CrowdSnapshot) -> None:
+        """Show the monitored map polygon and current stage in RViz."""
+        stamp = self.get_clock().now().to_msg()
+        vertices = [
+            Point(x=x, y=y, z=0.03)
+            for x, y in self.crowd_zone_polygon
+        ]
+        center_x = sum(point.x for point in vertices) / len(vertices)
+        center_y = sum(point.y for point in vertices) / len(vertices)
+        colors = {
+            -1: (0.55, 0.55, 0.55),
+            0: (0.10, 0.85, 0.20),
+            1: (1.00, 0.85, 0.05),
+            2: (1.00, 0.40, 0.05),
+            3: (0.95, 0.05, 0.05),
+        }
+        red, green, blue = colors.get(snapshot.level, colors[3])
+
+        area = Marker()
+        area.header.frame_id = self.map_frame
+        area.header.stamp = stamp
+        area.ns = "crowd_zone"
+        area.id = 0
+        area.type = Marker.TRIANGLE_LIST
+        area.action = Marker.ADD
+        area.pose.orientation.w = 1.0
+        center = Point(x=center_x, y=center_y, z=0.03)
+        for index, vertex in enumerate(vertices):
+            area.points.extend(
+                [center, vertex, vertices[(index + 1) % len(vertices)]]
+            )
+        area.color.r = red
+        area.color.g = green
+        area.color.b = blue
+        area.color.a = 0.28
+
+        outline = Marker()
+        outline.header = deepcopy(area.header)
+        outline.ns = "crowd_zone"
+        outline.id = 1
+        outline.type = Marker.LINE_STRIP
+        outline.action = Marker.ADD
+        outline.pose.orientation.w = 1.0
+        outline.points = vertices + [vertices[0]]
+        outline.scale.x = 0.06
+        outline.color.r = red
+        outline.color.g = green
+        outline.color.b = blue
+        outline.color.a = 0.95
+
+        label = Marker()
+        label.header = deepcopy(area.header)
+        label.ns = "crowd_zone"
+        label.id = 2
+        label.type = Marker.TEXT_VIEW_FACING
+        label.action = Marker.ADD
+        label.pose.position = Point(x=center_x, y=center_y, z=0.35)
+        label.pose.orientation.w = 1.0
+        label.scale.z = 0.22
+        label.color.r = red
+        label.color.g = green
+        label.color.b = blue
+        label.color.a = 1.0
+        label.text = (
+            f"ALLEY: {snapshot.name}\npeople={snapshot.person_count}"
+        )
+        markers = MarkerArray()
+        markers.markers = [area, outline, label]
+        self.crowd_marker_publisher.publish(markers)
+
     def _publish_eta_result(
         self, robot_id: str, predicted: float, actual: float
     ) -> None:
         stamp = self.get_clock().now()
+        candidate = self.plan_results.get(robot_id)
         message = String()
         message.data = json.dumps(
             {
@@ -909,6 +1209,18 @@ class EmergencyMissionManager(Node):
                 "error_sec": round(actual - predicted, 3),
                 "status": "ARRIVED",
                 "stamp_sec": round(stamp.nanoseconds / 1e9, 9),
+                "base_eta_sec": (
+                    round(candidate[5], 3) if candidate is not None else None
+                ),
+                "crowd_level": (
+                    candidate[8] if candidate is not None else "UNKNOWN"
+                ),
+                "crowded_distance_m": (
+                    round(candidate[6], 3) if candidate is not None else None
+                ),
+                "crowd_delay_sec": (
+                    round(candidate[7], 3) if candidate is not None else None
+                ),
             },
             separators=(",", ":"),
             sort_keys=True,

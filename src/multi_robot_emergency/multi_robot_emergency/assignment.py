@@ -28,6 +28,75 @@ def path_length(points: Iterable[Position]) -> float:
     )
 
 
+def point_in_polygon(point: Position, polygon: Iterable[Position]) -> bool:
+    """Return whether a point lies inside or on a polygon boundary."""
+    x, y = point
+    vertices = list(polygon)
+    if len(vertices) < 3:
+        raise ValueError("polygon must contain at least three points")
+    if not all(
+        math.isfinite(value) for vertex in vertices for value in vertex
+    ):
+        raise ValueError("polygon must contain only finite values")
+
+    inside = False
+    for index, first in enumerate(vertices):
+        second = vertices[(index + 1) % len(vertices)]
+        dx = second[0] - first[0]
+        dy = second[1] - first[1]
+        cross = (x - first[0]) * dy - (y - first[1]) * dx
+        if abs(cross) <= 1e-9:
+            dot = (x - first[0]) * dx + (y - first[1]) * dy
+            if -1e-9 <= dot <= dx * dx + dy * dy + 1e-9:
+                return True
+        if (first[1] > y) != (second[1] > y):
+            intersection = (
+                (second[0] - first[0])
+                * (y - first[1])
+                / (second[1] - first[1])
+                + first[0]
+            )
+            if x < intersection:
+                inside = not inside
+    return inside
+
+
+def path_length_in_polygon(
+    points: Iterable[Position], polygon: Iterable[Position]
+) -> float:
+    """Approximate path length in a polygon using dense-path midpoints."""
+    point_list = list(points)
+    polygon_list = list(polygon)
+    path_length(point_list)
+    point_in_polygon((0.0, 0.0), polygon_list)
+    result = 0.0
+    for start, end in zip(point_list, point_list[1:]):
+        segment_length = math.hypot(end[0] - start[0], end[1] - start[1])
+        midpoint = ((start[0] + end[0]) * 0.5, (start[1] + end[1]) * 0.5)
+        if point_in_polygon(midpoint, polygon_list):
+            result += segment_length
+    return result
+
+
+def crowd_delay_seconds(
+    crowded_distance: float,
+    *,
+    normal_speed: float,
+    crowded_speed: float,
+) -> float:
+    """Return only the extra time beyond the base normal-speed cost."""
+    values = (crowded_distance, normal_speed, crowded_speed)
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError("crowd delay inputs must be finite")
+    if crowded_distance < 0.0:
+        raise ValueError("crowded_distance must be non-negative")
+    if normal_speed <= 0.0 or crowded_speed <= 0.0:
+        raise ValueError("crowd speeds must be positive")
+    if crowded_speed > normal_speed:
+        raise ValueError("crowded_speed must not exceed normal_speed")
+    return crowded_distance * (1.0 / crowded_speed - 1.0 / normal_speed)
+
+
 def simplify_path(
     points: Iterable[Position], tolerance: float
 ) -> list[Position]:
