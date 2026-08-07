@@ -46,6 +46,7 @@ from .assignment import (
     patient_standoff,
     point_to_polygon_distance,
     proximity_retreat_candidate,
+    should_switch_for_live_eta,
 )
 from .crowd import CrowdSnapshot, CrowdStateFilter
 
@@ -82,6 +83,11 @@ class EmergencyMissionManager(Node):
         self.declare_parameter("planning_timeout_sec", 30.0)
         self.declare_parameter("dispatch_retry_timeout_sec", 15.0)
         self.declare_parameter("assignment_ack_timeout_sec", 3.0)
+        self.declare_parameter("live_replan_enabled", True)
+        self.declare_parameter("live_replan_interval_sec", 3.0)
+        self.declare_parameter("live_replan_timeout_sec", 4.0)
+        self.declare_parameter("live_replan_min_eta_gain_sec", 2.0)
+        self.declare_parameter("live_replan_switch_ratio", 0.85)
         self.declare_parameter("dual_dispatch_enabled", True)
         self.declare_parameter("target_arrival_time_sec", 30.0)
         self.declare_parameter("dual_dispatch_trigger_ratio", 0.85)
@@ -168,6 +174,21 @@ class EmergencyMissionManager(Node):
         self.assignment_ack_timeout = float(
             self.get_parameter("assignment_ack_timeout_sec").value
         )
+        self.live_replan_enabled = bool(
+            self.get_parameter("live_replan_enabled").value
+        )
+        self.live_replan_interval = float(
+            self.get_parameter("live_replan_interval_sec").value
+        )
+        self.live_replan_timeout = float(
+            self.get_parameter("live_replan_timeout_sec").value
+        )
+        self.live_replan_min_eta_gain = float(
+            self.get_parameter("live_replan_min_eta_gain_sec").value
+        )
+        self.live_replan_switch_ratio = float(
+            self.get_parameter("live_replan_switch_ratio").value
+        )
         self.dual_dispatch_enabled = bool(
             self.get_parameter("dual_dispatch_enabled").value
         )
@@ -249,6 +270,24 @@ class EmergencyMissionManager(Node):
             raise ValueError("dispatch_retry_timeout_sec must be positive")
         if self.assignment_ack_timeout <= 0.0:
             raise ValueError("assignment_ack_timeout_sec must be positive")
+        for name, duration in (
+            ("live_replan_interval_sec", self.live_replan_interval),
+            ("live_replan_timeout_sec", self.live_replan_timeout),
+        ):
+            if not math.isfinite(duration) or duration <= 0.0:
+                raise ValueError(f"{name} must be finite and positive")
+        if (
+            not math.isfinite(self.live_replan_min_eta_gain)
+            or self.live_replan_min_eta_gain < 0.0
+        ):
+            raise ValueError(
+                "live_replan_min_eta_gain_sec must be finite and non-negative"
+            )
+        if (
+            not math.isfinite(self.live_replan_switch_ratio)
+            or not 0.0 < self.live_replan_switch_ratio <= 1.0
+        ):
+            raise ValueError("live_replan_switch_ratio must be in (0, 1]")
         if (
             not math.isfinite(self.target_arrival_time)
             or self.target_arrival_time <= 0.0
@@ -275,8 +314,14 @@ class EmergencyMissionManager(Node):
                 "dual_robot_proximity_threshold_m must be positive"
             )
         for name, duration in (
-            ("dual_robot_proximity_confirm_sec", self.dual_robot_proximity_confirm),
-            ("dual_robot_proximity_grace_sec", self.dual_robot_proximity_grace),
+            (
+                "dual_robot_proximity_confirm_sec",
+                self.dual_robot_proximity_confirm,
+            ),
+            (
+                "dual_robot_proximity_grace_sec",
+                self.dual_robot_proximity_grace,
+            ),
         ):
             if not math.isfinite(duration) or duration < 0.0:
                 raise ValueError(f"{name} must be finite and non-negative")
@@ -570,12 +615,29 @@ class EmergencyMissionManager(Node):
         self.dual_dispatch_started_at: float | None = None
         self.proximity_close_since: float | None = None
         self.proximity_return_triggered = False
+        self.live_replan_active = False
+        self.live_replan_serial = 0
+        self.live_replan_started_at = 0.0
+        self.live_replan_next_at = time.monotonic() + self.live_replan_interval
+        self.live_replan_pending: set[str] = set()
+        self.live_replan_results: dict[
+            str,
+            tuple[Path, float, float, float, int, float, float, float, str],
+        ] = {}
+        self.live_replan_failures: dict[str, str] = {}
+        self.live_replan_crowd_snapshot = CrowdSnapshot(
+            -1, "UNKNOWN", 0, False, math.inf
+        )
+        self.live_reassignment_done = False
         self.planning_crowd_snapshot = CrowdSnapshot(
             -1, "UNKNOWN", 0, False, math.inf
         )
         self._automatic_request_timer = None
         self.proximity_timer = self.create_timer(
             0.1, self._monitor_dual_robot_proximity
+        )
+        self.live_replan_timer = self.create_timer(
+            0.5, self._monitor_live_replan
         )
         if bool(self.get_parameter("automatic_request").value):
             delay = float(
@@ -597,12 +659,14 @@ class EmergencyMissionManager(Node):
             f"Dispatch enabled: {self.dispatch_enabled}; "
             f"robots={self.robot_ids}"
         )
+        trigger_eta = (
+            self.target_arrival_time * self.dual_dispatch_trigger_ratio
+        )
         self.get_logger().info(
             "Dual dispatch: "
             f"enabled={self.dual_dispatch_enabled}, "
             f"target={self.target_arrival_time:.1f}s, "
-            "trigger="
-            f"{self.target_arrival_time * self.dual_dispatch_trigger_ratio:.1f}s"
+            f"trigger={trigger_eta:.1f}s"
         )
         self.get_logger().info(
             "Patient standoff: "
@@ -614,6 +678,13 @@ class EmergencyMissionManager(Node):
             f"threshold={self.dual_robot_proximity_threshold:.2f}m, "
             f"confirm={self.dual_robot_proximity_confirm:.2f}s, "
             f"grace={self.dual_robot_proximity_grace:.2f}s"
+        )
+        self.get_logger().info(
+            "Live ETA reassignment: "
+            f"enabled={self.live_replan_enabled}, "
+            f"interval={self.live_replan_interval:.1f}s, "
+            f"gain>={self.live_replan_min_eta_gain:.1f}s, "
+            f"ratio<={self.live_replan_switch_ratio:.2f}"
         )
         self.get_logger().info(
             "RViz Publish Point topics: " + ", ".join(click_topics)
@@ -657,11 +728,29 @@ class EmergencyMissionManager(Node):
 
     def _on_raw_crowd_level(self, message: String) -> None:
         """Consume the final crowd decision made by the vision node."""
+        previous = self.crowd_filter.snapshot(time.monotonic())
         self.raw_crowd_level = message.data.strip() or "UNKNOWN"
         snapshot = self.crowd_filter.update_level(
             self.raw_crowd_level, time.monotonic()
         )
         self._publish_crowd_state(snapshot)
+        if (
+            self.navigation_active
+            and snapshot.fresh
+            and snapshot.level != previous.level
+        ):
+            # Give both Nav2 costmaps time to consume a changed keepout mask,
+            # then compare fresh paths instead of waiting for the periodic run.
+            self.live_replan_next_at = time.monotonic() + (
+                self.crowd_keepout_settle
+                if snapshot.level >= self.crowd_blocking_level
+                or previous.level >= self.crowd_blocking_level
+                else 0.0
+            )
+            self.get_logger().info(
+                "Crowd stage changed during navigation: "
+                f"{previous.name}->{snapshot.name}; scheduling live ETA check"
+            )
 
     def _on_map(self, message: OccupancyGrid) -> None:
         """Keep one shared map template for the dynamic keepout mask."""
@@ -714,6 +803,12 @@ class EmergencyMissionManager(Node):
         self.dual_dispatch_started_at = None
         self.proximity_close_since = None
         self.proximity_return_triggered = False
+        self.live_replan_active = False
+        self.live_replan_pending.clear()
+        self.live_replan_results.clear()
+        self.live_replan_failures.clear()
+        self.live_reassignment_done = False
+        self.live_replan_next_at = time.monotonic() + self.live_replan_interval
         self._publish_dispatched_robots()
         request.header.stamp = self.get_clock().now().to_msg()
         self.active_request_id = (
@@ -1148,10 +1243,13 @@ class EmergencyMissionManager(Node):
             )
         dispatch_detail = "+".join(dispatch_robot_ids)
         if self.dual_dispatch_active:
+            trigger_eta = (
+                self.target_arrival_time * self.dual_dispatch_trigger_ratio
+            )
             detail += (
                 "; dual dispatch: fastest ETA "
                 f"{ranked[0][1]:.2f}s >= trigger "
-                f"{self.target_arrival_time * self.dual_dispatch_trigger_ratio:.2f}s"
+                f"{trigger_eta:.2f}s"
             )
         self._publish_status(
             "ASSIGNED",
@@ -1337,6 +1435,15 @@ class EmergencyMissionManager(Node):
     def _handle_navigation_failure(
         self, failed_robot: str, reason: str
     ) -> None:
+        # DDS or a Nav2 cancel completion can deliver the same terminal state
+        # more than once. Never publish two replacement assignments for one
+        # failed goal.
+        if failed_robot in self.terminal_robots:
+            self.get_logger().warning(
+                f"Ignoring duplicate terminal status from {failed_robot}: "
+                f"{reason}"
+            )
+            return
         started_at = self.navigation_started_at.pop(failed_robot, None)
         if started_at is not None:
             elapsed = time.monotonic() - started_at
@@ -1398,6 +1505,309 @@ class EmergencyMissionManager(Node):
             f"actual={actual:.2f}s, error={actual - predicted:+.2f}s"
         )
 
+    def _monitor_live_replan(self) -> None:
+        """Periodically compare fresh remaining ETAs while one robot runs."""
+        now = time.monotonic()
+        if self.live_replan_active:
+            if now - self.live_replan_started_at >= self.live_replan_timeout:
+                for robot_id in tuple(self.live_replan_pending):
+                    self.live_replan_failures[robot_id] = "live plan timeout"
+                self.live_replan_pending.clear()
+                self._finish_live_replan(self.live_replan_serial)
+            return
+        if (
+            not self.live_replan_enabled
+            or not self.dispatch_enabled
+            or not self.navigation_active
+            or self.planning_active
+            or self.dual_dispatch_active
+            or self.live_reassignment_done
+            or now < self.live_replan_next_at
+        ):
+            return
+
+        active = [
+            robot_id
+            for robot_id in self.dispatched_robots
+            if robot_id not in self.terminal_robots
+            and robot_id not in self.returning_robots
+        ]
+        standby = [
+            robot_id
+            for robot_id in self.robot_ids
+            if robot_id not in self.dispatched_robots
+            and robot_id not in self.excluded_robots
+            and robot_id in self.planning_targets
+        ]
+        if len(active) != 1 or not standby:
+            self.live_replan_next_at = now + self.live_replan_interval
+            return
+
+        candidates = [active[0], standby[0]]
+        self.live_replan_serial += 1
+        serial = self.live_replan_serial
+        self.live_replan_active = True
+        self.live_replan_started_at = now
+        self.live_replan_pending.clear()
+        self.live_replan_results.clear()
+        self.live_replan_failures.clear()
+        self.live_replan_crowd_snapshot = self.crowd_filter.snapshot(now)
+
+        for robot_id in candidates:
+            client = self.planner_clients[robot_id]
+            if not client.server_is_ready():
+                self.live_replan_failures[robot_id] = (
+                    f"/{robot_id}/compute_path_to_pose unavailable"
+                )
+                continue
+            goal = ComputePathToPose.Goal()
+            goal.goal = deepcopy(self.planning_targets[robot_id])
+            goal.goal.header.stamp = self.get_clock().now().to_msg()
+            goal.planner_id = self.planner_id
+            # Let each planner use its own latest TF pose. This avoids using
+            # a stale AMCL sample while the robot is moving.
+            goal.use_start = False
+            self.live_replan_pending.add(robot_id)
+            client.send_goal_async(goal).add_done_callback(
+                lambda future, rid=robot_id, run=serial:
+                self._on_live_plan_response(rid, run, future)
+            )
+
+        if not self.live_replan_pending:
+            self._finish_live_replan(serial)
+
+    def _on_live_plan_response(
+        self, robot_id: str, serial: int, future
+    ) -> None:
+        if (
+            not self.live_replan_active
+            or serial != self.live_replan_serial
+            or robot_id not in self.live_replan_pending
+        ):
+            return
+        try:
+            handle = future.result()
+        except Exception as error:
+            self._record_live_plan_failure(
+                robot_id, serial, f"request error: {error}"
+            )
+            return
+        if not handle.accepted:
+            self._record_live_plan_failure(
+                robot_id, serial, "planner rejected live goal"
+            )
+            return
+        handle.get_result_async().add_done_callback(
+            lambda result, rid=robot_id, run=serial:
+            self._on_live_plan_result(rid, run, result)
+        )
+
+    def _on_live_plan_result(self, robot_id: str, serial: int, future) -> None:
+        if (
+            not self.live_replan_active
+            or serial != self.live_replan_serial
+            or robot_id not in self.live_replan_pending
+        ):
+            return
+        try:
+            wrapped = future.result()
+            status = int(wrapped.status)
+            path = wrapped.result.path
+        except Exception as error:
+            self._record_live_plan_failure(
+                robot_id, serial, f"result error: {error}"
+            )
+            return
+        if status != GoalStatus.STATUS_SUCCEEDED:
+            self._record_live_plan_failure(
+                robot_id, serial, f"planner result status={status}"
+            )
+            return
+        if not path.poses:
+            self._record_live_plan_failure(
+                robot_id, serial, "planner returned empty live path"
+            )
+            return
+
+        try:
+            points = [
+                (pose.pose.position.x, pose.pose.position.y)
+                for pose in path.poses
+            ]
+            distance = path_length(points)
+            observation = self.observations.get(robot_id)
+            initial_yaw = (
+                self._quaternion_yaw(observation.pose)
+                if observation is not None
+                else None
+            )
+            final_yaw = self._quaternion_yaw(
+                self.planning_targets[robot_id]
+            )
+            base_eta, turn_angle, slowdown_count = path_motion_cost(
+                points,
+                linear_speed=self.nominal_linear_speed,
+                angular_speed=self.nominal_angular_speed,
+                slowdown_turn_threshold=self.slowdown_turn_threshold,
+                slowdown_penalty=self.slowdown_penalty,
+                simplification_tolerance=self.path_simplification_tolerance,
+                initial_yaw=initial_yaw,
+                final_yaw=final_yaw,
+            )
+            crowded_distance = path_length_in_polygon(
+                points, self.crowd_zone_polygon
+            )
+            crowd = self.live_replan_crowd_snapshot
+            if (
+                crowd.fresh
+                and crowd.level >= self.crowd_blocking_level
+                and crowded_distance > 1e-6
+            ):
+                raise ValueError(
+                    f"crowd stage {crowd.name}: blocked zone intersects "
+                    f"{crowded_distance:.2f}m of live path"
+                )
+            crowd_delay = (
+                crowd_delay_seconds(
+                    crowded_distance,
+                    normal_speed=self.nominal_linear_speed,
+                    crowded_speed=self._crowd_speed(crowd),
+                )
+                if crowd.fresh and crowd.level > 0
+                else 0.0
+            )
+            eta = base_eta + crowd_delay
+        except ValueError as error:
+            self._record_live_plan_failure(robot_id, serial, str(error))
+            return
+
+        result = (
+            path,
+            distance,
+            eta,
+            turn_angle,
+            slowdown_count,
+            base_eta,
+            crowded_distance,
+            crowd_delay,
+            crowd.name,
+        )
+        self.live_replan_results[robot_id] = result
+        self.live_replan_pending.discard(robot_id)
+        self.get_logger().info(
+            f"Live candidate {robot_id}: remaining={distance:.2f}m, "
+            f"eta={eta:.2f}s, crowd={crowd.name}"
+        )
+        if not self.live_replan_pending:
+            self._finish_live_replan(serial)
+
+    def _record_live_plan_failure(
+        self, robot_id: str, serial: int, reason: str
+    ) -> None:
+        if (
+            not self.live_replan_active
+            or serial != self.live_replan_serial
+            or robot_id not in self.live_replan_pending
+        ):
+            return
+        self.live_replan_pending.discard(robot_id)
+        self.live_replan_failures[robot_id] = reason
+        self.get_logger().warning(
+            f"Live candidate {robot_id} unavailable: {reason}"
+        )
+        if not self.live_replan_pending:
+            self._finish_live_replan(serial)
+
+    def _finish_live_replan(self, serial: int) -> None:
+        if not self.live_replan_active or serial != self.live_replan_serial:
+            return
+        self.live_replan_active = False
+        now = time.monotonic()
+        self.live_replan_next_at = now + self.live_replan_interval
+        if not self.navigation_active or self.dual_dispatch_active:
+            return
+        active = [
+            robot_id
+            for robot_id in self.dispatched_robots
+            if robot_id not in self.terminal_robots
+            and robot_id not in self.returning_robots
+        ]
+        if len(active) != 1:
+            return
+        current = active[0]
+        alternatives = [
+            robot_id
+            for robot_id in self.robot_ids
+            if robot_id != current
+            and robot_id not in self.dispatched_robots
+            and robot_id not in self.excluded_robots
+            and robot_id in self.live_replan_results
+        ]
+        if not alternatives:
+            return
+        replacement = min(
+            alternatives,
+            key=lambda rid: self.live_replan_results[rid][2],
+        )
+        replacement_eta = self.live_replan_results[replacement][2]
+        current_result = self.live_replan_results.get(current)
+        current_eta = (
+            current_result[2] if current_result is not None else math.inf
+        )
+        should_switch = should_switch_for_live_eta(
+            current_eta,
+            replacement_eta,
+            minimum_gain=self.live_replan_min_eta_gain,
+            switch_ratio=self.live_replan_switch_ratio,
+        )
+        if not should_switch:
+            self.get_logger().info(
+                f"Live ETA keeps {current}: current={current_eta:.2f}s, "
+                f"standby {replacement}={replacement_eta:.2f}s"
+            )
+            return
+
+        for robot_id, result in self.live_replan_results.items():
+            self.plan_results[robot_id] = result
+            self.path_publishers[robot_id].publish(result[0])
+            self._publish_distance(robot_id, result[1])
+            self._publish_predicted_eta(robot_id, result[2])
+            self._publish_crowd_metrics(robot_id, result[6], result[7])
+        start_pose = self.dispatch_start_poses.get(current)
+        if start_pose is None:
+            self.get_logger().error(
+                f"Cannot live-reassign {current}: dispatch start pose missing"
+            )
+            return
+        self.dispatch_start_poses[replacement] = (
+            self._capture_dispatch_start_pose(replacement)
+        )
+        self.live_reassignment_done = True
+        self.selected_robot = replacement
+        self.ranked_candidates = [replacement, current]
+        self._publish_selected_robot(replacement)
+        reason = self.live_replan_failures.get(current, "")
+        self._publish_status(
+            "REASSIGNING",
+            f"live ETA switch {current}->{replacement}; "
+            f"current={current_eta:.2f}s, replacement={replacement_eta:.2f}s"
+            + (f"; {reason}" if reason else ""),
+        )
+        # A return assignment cancels the old delivery goal. The standby then
+        # receives the patient target using the newly measured ETA/path.
+        self._publish_assignment(
+            current,
+            deepcopy(start_pose),
+            role=RobotState.ROLE_RETURN,
+            mission_suffix="live-return",
+        )
+        self._publish_assignment(
+            replacement,
+            deepcopy(self.planning_targets[replacement]),
+            role=RobotState.ROLE_AED_DELIVERY,
+            mission_suffix="live-aed",
+        )
+
     def _monitor_dual_robot_proximity(self) -> None:
         """Return the farther robot when a dual dispatch becomes unsafe."""
         now = time.monotonic()
@@ -1456,7 +1866,10 @@ class EmergencyMissionManager(Node):
         if self.proximity_close_since is None:
             self.proximity_close_since = now
             return
-        if now - self.proximity_close_since < self.dual_robot_proximity_confirm:
+        if (
+            now - self.proximity_close_since
+            < self.dual_robot_proximity_confirm
+        ):
             return
 
         keep_robot = next(

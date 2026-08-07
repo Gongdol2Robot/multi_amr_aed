@@ -111,6 +111,30 @@ def dispatch_candidates(
     return [candidates[0][0]]
 
 
+def should_switch_for_live_eta(
+    current_eta: float,
+    replacement_eta: float,
+    *,
+    minimum_gain: float,
+    switch_ratio: float,
+) -> bool:
+    """Return whether a fresh standby ETA safely beats the active robot."""
+    if not math.isfinite(replacement_eta) or replacement_eta < 0.0:
+        return False
+    if math.isinf(current_eta) and current_eta > 0.0:
+        return True
+    if not math.isfinite(current_eta) or current_eta < 0.0:
+        return False
+    if not math.isfinite(minimum_gain) or minimum_gain < 0.0:
+        raise ValueError("minimum_gain must be finite and non-negative")
+    if not math.isfinite(switch_ratio) or not 0.0 < switch_ratio <= 1.0:
+        raise ValueError("switch_ratio must be in (0, 1]")
+    return (
+        replacement_eta + minimum_gain <= current_eta
+        and replacement_eta <= current_eta * switch_ratio
+    )
+
+
 def normalize_angle(angle: float) -> float:
     """Wrap an angle to the [-pi, pi] interval."""
     return math.atan2(math.sin(angle), math.cos(angle))

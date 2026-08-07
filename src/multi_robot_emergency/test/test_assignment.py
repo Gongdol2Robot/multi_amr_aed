@@ -12,6 +12,7 @@ from multi_robot_emergency.assignment import (
     point_in_polygon,
     point_to_polygon_distance,
     proximity_retreat_candidate,
+    should_switch_for_live_eta,
     simplify_path,
 )
 
@@ -99,6 +100,27 @@ def test_dispatch_candidates_can_be_disabled() -> None:
         target_arrival_time=30.0,
         trigger_ratio=0.85,
     ) == ["robot1"]
+
+
+def test_live_eta_switch_requires_absolute_and_relative_gain() -> None:
+    assert should_switch_for_live_eta(
+        20.0, 15.0, minimum_gain=2.0, switch_ratio=0.85
+    )
+    assert not should_switch_for_live_eta(
+        20.0, 18.0, minimum_gain=2.0, switch_ratio=0.85
+    )
+    assert not should_switch_for_live_eta(
+        10.0, 8.0, minimum_gain=3.0, switch_ratio=0.85
+    )
+
+
+def test_live_eta_switches_when_current_path_disappears() -> None:
+    assert should_switch_for_live_eta(
+        math.inf, 12.0, minimum_gain=2.0, switch_ratio=0.85
+    )
+    assert not should_switch_for_live_eta(
+        12.0, math.inf, minimum_gain=2.0, switch_ratio=0.85
+    )
 
 
 @pytest.mark.parametrize(

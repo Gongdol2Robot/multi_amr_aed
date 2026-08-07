@@ -51,6 +51,31 @@ def generate_launch_description() -> LaunchDescription:
                 "assignment_ack_timeout_sec", default_value="3.0"
             ),
             DeclareLaunchArgument(
+                "blocked_timeout_sec",
+                default_value="5.0",
+                description=(
+                    "Declare a moving robot blocked after this many seconds "
+                    "without measurable progress"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "live_replan_enabled",
+                default_value="true",
+                choices=["true", "false"],
+            ),
+            DeclareLaunchArgument(
+                "live_replan_interval_sec", default_value="3.0"
+            ),
+            DeclareLaunchArgument(
+                "live_replan_timeout_sec", default_value="4.0"
+            ),
+            DeclareLaunchArgument(
+                "live_replan_min_eta_gain_sec", default_value="2.0"
+            ),
+            DeclareLaunchArgument(
+                "live_replan_switch_ratio", default_value="0.85"
+            ),
+            DeclareLaunchArgument(
                 "dual_dispatch_enabled",
                 default_value="true",
                 choices=["true", "false"],
@@ -135,6 +160,28 @@ def generate_launch_description() -> LaunchDescription:
                             LaunchConfiguration("assignment_ack_timeout_sec"),
                             value_type=float,
                         ),
+                        "live_replan_enabled": ParameterValue(
+                            LaunchConfiguration("live_replan_enabled"),
+                            value_type=bool,
+                        ),
+                        "live_replan_interval_sec": ParameterValue(
+                            LaunchConfiguration("live_replan_interval_sec"),
+                            value_type=float,
+                        ),
+                        "live_replan_timeout_sec": ParameterValue(
+                            LaunchConfiguration("live_replan_timeout_sec"),
+                            value_type=float,
+                        ),
+                        "live_replan_min_eta_gain_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "live_replan_min_eta_gain_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "live_replan_switch_ratio": ParameterValue(
+                            LaunchConfiguration("live_replan_switch_ratio"),
+                            value_type=float,
+                        ),
                         "dual_dispatch_enabled": ParameterValue(
                             LaunchConfiguration("dual_dispatch_enabled"),
                             value_type=bool,
@@ -214,6 +261,10 @@ def generate_launch_description() -> LaunchDescription:
                         LaunchConfiguration("dispatch_retry_timeout_sec"),
                         value_type=float,
                     ),
+                    "blocked_timeout_sec": ParameterValue(
+                        LaunchConfiguration("blocked_timeout_sec"),
+                        value_type=float,
+                    ),
                 }],
             ),
             Node(
@@ -227,6 +278,10 @@ def generate_launch_description() -> LaunchDescription:
                     "navigate_action": "/robot2/navigate_to_pose",
                     "dispatch_retry_timeout_sec": ParameterValue(
                         LaunchConfiguration("dispatch_retry_timeout_sec"),
+                        value_type=float,
+                    ),
+                    "blocked_timeout_sec": ParameterValue(
+                        LaunchConfiguration("blocked_timeout_sec"),
                         value_type=float,
                     ),
                 }],
