@@ -13,7 +13,7 @@ from aed_interfaces.msg import EmergencyEvent, Heartbeat
 from geometry_msgs.msg import PointStamped
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
-from std_msgs.msg import String, UInt32
+from std_msgs.msg import Bool, String, UInt32
 
 from .camera_source import DirectCameraSource
 from .detection_logic import (
@@ -43,12 +43,15 @@ PARAMETER_DEFAULTS = (
     ("person_weights", ""),
     ("rescue_conf", 0.25),
     ("person_conf", 0.25),
+    ("detect_people_as_helpers", False),
     ("iou", 0.5),
     ("imgsz", 640),
     ("inference_device", ""),
     # 검출 확정과 혼잡도
     ("confirmation_window", 10),
     ("confirmation_hits", 6),
+    ("helper_confirmation_window", 6),
+    ("helper_confirmation_hits", 3),
     ("crowd_roi", [0.0, 0.0, 1.0, 1.0]),
     ("crowded_person_threshold", 3),
     ("fallen_person_overlap_iou", 0.4),
@@ -82,10 +85,13 @@ class VisionDetector(Node):
         self.camera_id = str(self.get_parameter("camera_id").value)
         self.zone_id = str(self.get_parameter("zone_id").value)
         self.mode = str(self.get_parameter("mode").value).lower()
-        if self.mode not in ("open", "alley"):
-            raise ValueError("mode must be 'open' or 'alley'")
+        if self.mode not in ("open", "alley", "robot"):
+            raise ValueError("mode must be 'open', 'alley', or 'robot'")
         # 인파 모델은 연산량을 줄이기 위해 alley 모드에서만 메모리에 올린다.
         self.enable_crowd = self.mode == "alley"
+        self.detect_people_as_helpers = bool(
+            self.get_parameter("detect_people_as_helpers").value
+        )
         self.frame_id = str(self.get_parameter("location_frame_id").value)
         self.location_x = float(self.get_parameter("location_x").value)
         self.location_y = float(self.get_parameter("location_y").value)
@@ -113,6 +119,15 @@ class VisionDetector(Node):
         window = int(self.get_parameter("confirmation_window").value)
         hits = int(self.get_parameter("confirmation_hits").value)
         self.confirmation = TemporalConfirmation(window, hits)
+        helper_window = int(
+            self.get_parameter("helper_confirmation_window").value
+        )
+        helper_hits = int(
+            self.get_parameter("helper_confirmation_hits").value
+        )
+        self.helper_confirmation = TemporalConfirmation(
+            helper_window, helper_hits
+        )
         # was_confirmed는 매 프레임 이벤트를 반복 발행하지 않고 상태가 바뀔 때만
         # CONFIRMED/CANCELED 이벤트를 한 번씩 발행하기 위한 이전 상태이다.
         self.was_confirmed = False
@@ -157,6 +172,7 @@ class VisionDetector(Node):
             rescue_weights=str(self.get_parameter("rescue_weights").value),
             person_weights=str(self.get_parameter("person_weights").value),
             enable_crowd=self.enable_crowd,
+            detect_people_as_helpers=self.detect_people_as_helpers,
             rescue_conf=float(self.get_parameter("rescue_conf").value),
             person_conf=float(self.get_parameter("person_conf").value),
             iou=float(self.get_parameter("iou").value),
@@ -179,6 +195,12 @@ class VisionDetector(Node):
         )
         self.person_count_pub = self.create_publisher(
             UInt32, f"{prefix}/person_count", 10
+        )
+        self.helper_count_pub = self.create_publisher(
+            UInt32, f"{prefix}/helper_count", 10
+        )
+        self.helper_confirmed_pub = self.create_publisher(
+            Bool, f"{prefix}/helper_confirmed", 10
         )
         self.fallen_location_pub = self.create_publisher(
             PointStamped, f"{prefix}/fallen_location", 10
@@ -209,7 +231,8 @@ class VisionDetector(Node):
         self.heartbeat_timer = self.create_timer(1.0, self._publish_heartbeat)
         self.get_logger().info(
             f"camera={self.camera_id} mode={self.mode} image={image_topic} "
-            f"crowd_detection={self.enable_crowd}"
+            f"crowd_detection={self.enable_crowd} "
+            f"people_as_helpers={self.detect_people_as_helpers}"
         )
 
     def _declare_parameters(self) -> None:
@@ -226,7 +249,9 @@ class VisionDetector(Node):
             return
         self._process_frame(frame, message)
 
-    def _process_frame(self, frame: np.ndarray, source: CompressedImage) -> None:
+    def _process_frame(
+        self, frame: np.ndarray, source: CompressedImage
+    ) -> None:
         """디코딩된 한 프레임의 구조·혼잡 검출과 결과 발행을 수행한다."""
         if self.busy:
             return
@@ -293,7 +318,8 @@ class VisionDetector(Node):
             x, y, margin=self.homography_margin
         ):
             self.get_logger().warning(
-                f"Detected location is outside surveyed area: ({x:.2f}, {y:.2f}); "
+                "Detected location is outside surveyed area: "
+                f"({x:.2f}, {y:.2f}); "
                 "publishing extrapolated homography coordinates",
                 throttle_duration_sec=5.0,
             )
@@ -333,6 +359,10 @@ class VisionDetector(Node):
         CONFIRMED, True→False일 때 CANCELED를 한 번만 발행한다.
         """
         self.person_count_pub.publish(UInt32(data=person_count))
+        helper_count = len(helpers)
+        helper_confirmed = self.helper_confirmation.update(helper_count > 0)
+        self.helper_count_pub.publish(UInt32(data=helper_count))
+        self.helper_confirmed_pub.publish(Bool(data=helper_confirmed))
         crowd_value = (
             "NOT_APPLICABLE" if crowd_level is None else str(crowd_level)
         )
@@ -347,7 +377,9 @@ class VisionDetector(Node):
             "fallen_max_confidence": max(
                 (box.confidence for box in fallen), default=0.0
             ),
-            "helper_count": len(helpers),
+            "helper_count": helper_count,
+            "helper_confirmed": helper_confirmed,
+            "helper_confirmation_hits": self.helper_confirmation.hit_count,
             "person_count": person_count,
             "crowd_level": crowd_level,
             "crowd_time_multiplier": crowd_time_multiplier,

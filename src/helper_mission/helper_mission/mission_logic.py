@@ -1,114 +1,53 @@
-"""ROS-independent helper mission decision helpers."""
+"""ROS 없이 시험할 수 있는 현장 구조 인력 탐색 판정 함수."""
 
-from dataclasses import dataclass
 from math import isfinite
-from typing import Iterable, Optional
 
 
-@dataclass(frozen=True)
-class Candidate:
-    """The fields needed to choose a robot for a helper mission."""
+def helper_confirmation_is_fresh(
+    *,
+    confirmed: bool,
+    observed_at: float | None,
+    now: float,
+    stale_seconds: float,
+) -> bool:
+    """Vision의 true 관측이 유효 시간 안에 들어왔는지 반환한다.
 
-    robot_id: str
-    available: bool
-    network_ok: bool
-    localization_ok: bool
-    nav2_ok: bool
-    emergency_stop: bool
-    path_valid: bool
-    battery_percentage: float
-    path_cost: float
-
-
-def select_helper_robot(
-    candidates: Iterable[Candidate], excluded_robot_id: str
-) -> Optional[str]:
+    오래된 true 값을 계속 믿으면 카메라가 끊긴 뒤에도 회전을 멈출 수 있으므로
+    수신 시각과 현재 시각이 유한하고 관측 나이가 제한 이내일 때만 인정한다.
     """
-    Select one healthy reserve robot deterministically.
+    if stale_seconds <= 0.0:
+        raise ValueError("stale_seconds must be positive")
+    if not confirmed or observed_at is None:
+        return False
+    if not isfinite(observed_at) or not isfinite(now):
+        return False
+    age = now - observed_at
+    return 0.0 <= age <= stale_seconds
 
-    A non-negative path cost wins first. When no planner cost is available,
-    battery and robot ID provide a stable fallback order.
+
+def vision_stream_timed_out(
+    *,
+    search_started_at: float,
+    last_observed_at: float | None,
+    now: float,
+    timeout_seconds: float,
+) -> bool:
+    """Vision 신호가 지정 시간 동안 없었는지 안전 정지용으로 판정한다.
+
+    아직 한 번도 수신하지 못했다면 탐색 시작 시각을, 한 번이라도 수신했다면
+    마지막 수신 시각을 기준으로 한다. false 메시지도 카메라 생존 신호이므로
+    last_observed_at을 갱신하면 타임아웃을 막는다.
     """
-    eligible = [
-        candidate
-        for candidate in candidates
-        if candidate.robot_id != excluded_robot_id
-        and candidate.available
-        and candidate.network_ok
-        and candidate.localization_ok
-        and candidate.nav2_ok
-        and not candidate.emergency_stop
-        and candidate.path_valid
-        and candidate.battery_percentage >= 20.0
-    ]
-    if not eligible:
-        return None
-
-    def rank(candidate: Candidate):
-        """경로비용·배터리·로봇 ID 순으로 비교 가능한 정렬 키를 만든다."""
-        has_cost = isfinite(candidate.path_cost) and candidate.path_cost >= 0.0
-        return (
-            0 if has_cost else 1,
-            candidate.path_cost if has_cost else 0.0,
-            -candidate.battery_percentage,
-            candidate.robot_id,
-        )
-
-    return min(eligible, key=rank).robot_id
-
-
-class PresenceGate:
-    """Require fresh, repeated helper observations for a hold duration."""
-
-    def __init__(
-        self,
-        minimum_evidence: int,
-        maximum_distance: float,
-        hold_seconds: float,
-        stale_seconds: float,
-    ) -> None:
-        """검출 근거·거리·연속 시간·데이터 만료 기준을 저장한다."""
-        self.minimum_evidence = minimum_evidence
-        self.maximum_distance = maximum_distance
-        self.hold_seconds = hold_seconds
-        self.stale_seconds = stale_seconds
-        self._qualifying_since = None
-        self._last_observed_at = None
-        self._distance = float("inf")
-
-    @property
-    def distance(self) -> float:
-        """가장 최근에 관측한 로봇과 구조 인력 사이 거리를 반환한다."""
-        return self._distance
-
-    def observe(
-        self,
-        *,
-        helper_count: int,
-        evidence_count: int,
-        distance: float,
-        observed_at: float,
-    ) -> None:
-        """새 검출값이 기준을 만족하는지 평가하고 연속 관측 시작점을 갱신한다."""
-        qualifies = (
-            helper_count > 0
-            and evidence_count >= self.minimum_evidence
-            and isfinite(distance)
-            and 0.0 <= distance <= self.maximum_distance
-        )
-        self._last_observed_at = observed_at
-        self._distance = distance
-        if qualifies:
-            if self._qualifying_since is None:
-                self._qualifying_since = observed_at
-        else:
-            self._qualifying_since = None
-
-    def confirmed(self, now: float) -> bool:
-        """최신 검출이 만료되지 않고 요구 시간 동안 연속됐는지 반환한다."""
-        if self._last_observed_at is None or self._qualifying_since is None:
-            return False
-        if now - self._last_observed_at > self.stale_seconds:
-            self._qualifying_since = None
-            return False
-        return now - self._qualifying_since >= self.hold_seconds
+    if timeout_seconds <= 0.0:
+        raise ValueError("timeout_seconds must be positive")
+    if not isfinite(search_started_at) or not isfinite(now):
+        return True
+    reference = (
+        search_started_at
+        if last_observed_at is None
+        else last_observed_at
+    )
+    if not isfinite(reference):
+        return True
+    age = now - reference
+    return age < 0.0 or age >= timeout_seconds

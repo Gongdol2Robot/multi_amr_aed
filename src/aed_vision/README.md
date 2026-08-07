@@ -180,3 +180,24 @@ ros2 topic echo /camera_alley/vision/fallen_location
 메시지 타입은 `geometry_msgs/msg/PointStamped`, `frame_id`는 `map`입니다.
 측량 신뢰 영역 밖의 좌표도 외삽값으로 발행하므로 이동에 사용할 때는 오차를
 감안해야 합니다.
+
+## 로봇 카메라 구조 인력 검출
+
+AED 도착 뒤 현장 탐색에는 TurtleBot4 OAK-D용 프로필을 사용합니다.
+
+```bash
+ros2 launch aed_vision robot_vision.launch.py robot_id:=robot1
+```
+
+`robot` 모드는 파인튜닝 모델의 `fallen_person`과 COCO 모델의 `person`을 함께
+검출합니다. 두 bbox가 겹치는 person은 환자로 보고 제외하며, 남은 person을
+구조 인력 후보로 사용합니다. 최근 6프레임 중 3프레임 이상 후보가 있으면
+다음 로봇 namespace 토픽이 `true`가 됩니다.
+
+```bash
+ros2 topic echo /robot1/vision/helper_count
+ros2 topic echo /robot1/vision/helper_confirmed
+```
+
+`helper_mission_controller`는 `helper_confirmed=true`의 최신 수신값을 확인하는
+즉시 제자리 회전과 반복 호출음을 중지합니다.

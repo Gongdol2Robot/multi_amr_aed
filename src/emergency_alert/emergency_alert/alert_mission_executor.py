@@ -1,13 +1,17 @@
 """AED 배정을 받아 Undock, 경보 재생, Nav2 이동을 순서대로 수행한다."""
 
+from math import isfinite
+
 from action_msgs.msg import GoalStatus
 from aed_interfaces.msg import MissionAssignment, MissionStatus, RobotState
 from irobot_create_msgs.action import Undock
-from irobot_create_msgs.msg import AudioNote, AudioNoteVector
 from nav2_msgs.action import NavigateToPose
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
+
+from emergency_alert.alert_logic import TonePattern
+from emergency_alert.audio_output import AudioOutput
 
 
 class AlertMissionExecutor(Node):
@@ -59,46 +63,39 @@ class AlertMissionExecutor(Node):
         )
         self.alarm_period = float(self.get_parameter("alarm_period").value)
         self.note_duration = float(self.get_parameter("note_duration").value)
-        self.frequencies = (
-            int(self.get_parameter("high_frequency").value),
-            int(self.get_parameter("low_frequency").value),
+        travel_frequencies = (
+            self.get_parameter("high_frequency").value,
+            self.get_parameter("low_frequency").value,
         )
         self.terminal_note_duration = float(
             self.get_parameter("terminal_note_duration").value
         )
-        self.arrival_frequencies = tuple(
-            int(frequency)
-            for frequency in self.get_parameter("arrival_frequencies").value
+        self.travel_pattern = TonePattern.from_values(
+            travel_frequencies, self.note_duration
         )
-        self.interrupted_frequencies = tuple(
-            int(frequency)
-            for frequency in self.get_parameter(
-                "interrupted_frequencies"
-            ).value
+        self.arrival_pattern = TonePattern.from_values(
+            self.get_parameter("arrival_frequencies").value,
+            self.terminal_note_duration,
         )
-        if self.server_timeout <= 0.0:
+        self.interrupted_pattern = TonePattern.from_values(
+            self.get_parameter("interrupted_frequencies").value,
+            self.terminal_note_duration,
+        )
+        if self.alarm_period < self.travel_pattern.total_duration:
+            raise ValueError(
+                "alarm_period must be at least the travel pattern duration"
+            )
+        if not isfinite(self.server_timeout) or self.server_timeout <= 0.0:
             raise ValueError("action_server_timeout must be positive")
-        if self.alarm_period <= 0.0:
+        if not isfinite(self.alarm_period) or self.alarm_period <= 0.0:
             raise ValueError("alarm_period must be positive")
-        if self.note_duration <= 0.0:
+        if not isfinite(self.note_duration) or self.note_duration <= 0.0:
             raise ValueError("note_duration must be positive")
-        if self.terminal_note_duration <= 0.0:
+        if (
+            not isfinite(self.terminal_note_duration)
+            or self.terminal_note_duration <= 0.0
+        ):
             raise ValueError("terminal_note_duration must be positive")
-        if any(frequency <= 0 for frequency in self.frequencies):
-            raise ValueError("alarm frequencies must be positive")
-        if not self.arrival_frequencies or any(
-            frequency <= 0 for frequency in self.arrival_frequencies
-        ):
-            raise ValueError(
-                "arrival_frequencies must contain positive values"
-            )
-        if not self.interrupted_frequencies or any(
-            frequency <= 0 for frequency in self.interrupted_frequencies
-        ):
-            raise ValueError(
-                "interrupted_frequencies must contain positive values"
-            )
-
         self.undock_client = ActionClient(
             self,
             Undock,
@@ -109,10 +106,8 @@ class AlertMissionExecutor(Node):
             NavigateToPose,
             str(self.get_parameter("navigate_action").value),
         )
-        self.audio_publisher = self.create_publisher(
-            AudioNoteVector,
-            str(self.get_parameter("audio_topic").value),
-            10,
+        self.audio = AudioOutput(
+            self, str(self.get_parameter("audio_topic").value)
         )
         self.status_publisher = self.create_publisher(
             MissionStatus,
@@ -344,50 +339,28 @@ class AlertMissionExecutor(Node):
         ``append=False``를 사용해 Create3의 기존 음계 큐를 교체한다. 따라서
         오래된 음계가 계속 누적되지 않고 최신 경보 패턴만 재생된다.
         """
-        self._publish_note_sequence(self.frequencies, self.note_duration)
+        self.audio.play(self.travel_pattern)
 
     def _play_arrival_alert(self) -> None:
         """낮은 음에서 높은 음으로 올라가는 도착 완료음을 한 번 재생한다."""
-        self._publish_note_sequence(
-            self.arrival_frequencies,
-            self.terminal_note_duration,
-        )
+        self.audio.play(self.arrival_pattern)
         self.get_logger().info("Arrival alert published")
 
     def _play_interrupted_alert(self) -> None:
         """높은 음에서 낮은 음으로 내려가는 출동 중단음을 한 번 재생한다."""
-        self._publish_note_sequence(
-            self.interrupted_frequencies,
-            self.terminal_note_duration,
-        )
+        self.audio.play(self.interrupted_pattern)
         self.get_logger().warning("Mission interrupted alert published")
-
-    def _publish_note_sequence(self, frequencies, duration: float) -> None:
-        """주파수 목록을 AudioNoteVector 하나로 변환해 오디오 큐에 넣는다."""
-        message = AudioNoteVector()
-        message.append = False
-        seconds = int(duration)
-        nanoseconds = int((duration - seconds) * 1_000_000_000)
-        for frequency in frequencies:
-            note = AudioNote()
-            note.frequency = frequency
-            note.max_runtime.sec = seconds
-            note.max_runtime.nanosec = nanoseconds
-            message.notes.append(note)
-        self.audio_publisher.publish(message)
 
     def _stop_alarm(self) -> None:
         """
-        빈 AudioNoteVector를 발행해 현재 경보 큐를 지운다.
+        공통 오디오 출력에 정지 명령을 보내 현재 경보 큐를 지운다.
 
         도착뿐 아니라 Nav2 오류, Goal 취소, 새 임무 수신, 노드 종료에서도
         호출되어 로봇에 경보음이 남는 것을 방지한다.
         """
         was_active = self.alarm_active
         self.alarm_active = False
-        stop_message = AudioNoteVector()
-        stop_message.append = False
-        self.audio_publisher.publish(stop_message)
+        self.audio.stop()
         if was_active:
             self.get_logger().info("Travel alarm stopped")
 
