@@ -24,6 +24,9 @@ def _launch_nodes(context):
         "helper_wait_timeout": float(
             LaunchConfiguration("helper_wait_timeout").perform(context)
         ),
+        "vision_timeout_seconds": float(
+            LaunchConfiguration("vision_timeout_seconds").perform(context)
+        ),
     }
     nodes = [
         Node(
@@ -56,6 +59,10 @@ def generate_launch_description():
             DeclareLaunchArgument("rotation_speed_rps", default_value="0.35"),
             # 0은 구조 인력이 감지될 때까지 무제한으로 회전·호출한다.
             DeclareLaunchArgument("helper_wait_timeout", default_value="0.0"),
+            # Vision 신호가 5분 동안 끊기면 회전과 호출음을 안전 정지한다.
+            DeclareLaunchArgument(
+                "vision_timeout_seconds", default_value="300.0"
+            ),
             OpaqueFunction(function=_launch_nodes),
         ]
     )

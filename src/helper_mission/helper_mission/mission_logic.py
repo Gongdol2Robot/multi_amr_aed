@@ -23,3 +23,31 @@ def helper_confirmation_is_fresh(
         return False
     age = now - observed_at
     return 0.0 <= age <= stale_seconds
+
+
+def vision_stream_timed_out(
+    *,
+    search_started_at: float,
+    last_observed_at: float | None,
+    now: float,
+    timeout_seconds: float,
+) -> bool:
+    """Vision 신호가 지정 시간 동안 없었는지 안전 정지용으로 판정한다.
+
+    아직 한 번도 수신하지 못했다면 탐색 시작 시각을, 한 번이라도 수신했다면
+    마지막 수신 시각을 기준으로 한다. false 메시지도 카메라 생존 신호이므로
+    last_observed_at을 갱신하면 타임아웃을 막는다.
+    """
+    if timeout_seconds <= 0.0:
+        raise ValueError("timeout_seconds must be positive")
+    if not isfinite(search_started_at) or not isfinite(now):
+        return True
+    reference = (
+        search_started_at
+        if last_observed_at is None
+        else last_observed_at
+    )
+    if not isfinite(reference):
+        return True
+    age = now - reference
+    return age < 0.0 or age >= timeout_seconds

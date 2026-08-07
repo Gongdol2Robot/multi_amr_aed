@@ -4,7 +4,10 @@ import math
 
 import pytest
 
-from helper_mission.mission_logic import helper_confirmation_is_fresh
+from helper_mission.mission_logic import (
+    helper_confirmation_is_fresh,
+    vision_stream_timed_out,
+)
 
 
 def test_accepts_recent_confirmed_helper():
@@ -40,4 +43,47 @@ def test_rejects_invalid_stale_duration():
             observed_at=1.0,
             now=1.0,
             stale_seconds=0.0,
+        )
+
+
+def test_vision_times_out_five_minutes_after_search_without_messages():
+    """탐색 시작 후 Vision 메시지가 전혀 없으면 정확히 300초에 만료된다."""
+    assert not vision_stream_timed_out(
+        search_started_at=100.0,
+        last_observed_at=None,
+        now=399.999,
+        timeout_seconds=300.0,
+    )
+    assert vision_stream_timed_out(
+        search_started_at=100.0,
+        last_observed_at=None,
+        now=400.0,
+        timeout_seconds=300.0,
+    )
+
+
+def test_vision_timeout_uses_latest_true_or_false_message():
+    """검출 여부와 무관하게 마지막 Vision 메시지부터 5분을 다시 계산한다."""
+    assert not vision_stream_timed_out(
+        search_started_at=100.0,
+        last_observed_at=350.0,
+        now=649.0,
+        timeout_seconds=300.0,
+    )
+    assert vision_stream_timed_out(
+        search_started_at=100.0,
+        last_observed_at=350.0,
+        now=650.0,
+        timeout_seconds=300.0,
+    )
+
+
+def test_vision_timeout_rejects_invalid_duration():
+    """0 이하의 카메라 생존 타임아웃 설정은 구성 오류로 처리한다."""
+    with pytest.raises(ValueError):
+        vision_stream_timed_out(
+            search_started_at=1.0,
+            last_observed_at=None,
+            now=1.0,
+            timeout_seconds=0.0,
         )

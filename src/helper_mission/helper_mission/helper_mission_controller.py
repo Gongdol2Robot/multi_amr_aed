@@ -17,7 +17,10 @@ from rclpy.node import Node
 from rclpy.task import Future
 from std_msgs.msg import Bool, String
 
-from helper_mission.mission_logic import helper_confirmation_is_fresh
+from helper_mission.mission_logic import (
+    helper_confirmation_is_fresh,
+    vision_stream_timed_out,
+)
 
 try:
     from irobot_create_msgs.msg import AudioNote, AudioNoteVector
@@ -44,6 +47,7 @@ class HelperMissionController(Node):
         self.declare_parameter("rotation_speed_rps", 0.35)
         self.declare_parameter("control_period", 0.1)
         self.declare_parameter("vision_stale_seconds", 1.0)
+        self.declare_parameter("vision_timeout_seconds", 300.0)
         # 0은 구조 인력이 올 때까지 시간 제한 없이 계속 탐색한다.
         self.declare_parameter("helper_wait_timeout", 0.0)
         self.declare_parameter("buzzer_period", 1.0)
@@ -58,6 +62,7 @@ class HelperMissionController(Node):
         self.rotation_speed = self._positive("rotation_speed_rps")
         self.control_period = self._positive("control_period")
         self.vision_stale = self._positive("vision_stale_seconds")
+        self.vision_timeout = self._positive("vision_timeout_seconds")
         self.wait_timeout = float(
             self.get_parameter("helper_wait_timeout").value
         )
@@ -174,6 +179,18 @@ class HelperMissionController(Node):
                         goal_handle, result, GuideHelper.Result.CANCELED
                     )
                 now = time.monotonic()
+                if vision_stream_timed_out(
+                    search_started_at=started_at,
+                    last_observed_at=self.helper_observed_at,
+                    now=now,
+                    timeout_seconds=self.vision_timeout,
+                ):
+                    return self._terminate(
+                        goal_handle,
+                        result,
+                        GuideHelper.Result.NAVIGATION_FAILED,
+                        "aed_vision signal missing for 300 seconds",
+                    )
                 if self._vision_confirmed(now):
                     self._stop_rotation()
                     self._stop_audio()
