@@ -38,6 +38,7 @@ from .assignment import (
     path_length,
     path_length_in_polygon,
     path_motion_cost,
+    patient_standoff,
     point_to_polygon_distance,
 )
 from .crowd import CrowdSnapshot, CrowdStateFilter
@@ -71,6 +72,9 @@ class EmergencyMissionManager(Node):
         self.declare_parameter("dual_dispatch_enabled", True)
         self.declare_parameter("target_arrival_time_sec", 30.0)
         self.declare_parameter("dual_dispatch_trigger_ratio", 0.85)
+        self.declare_parameter("patient_standoff_enabled", True)
+        self.declare_parameter("patient_standoff_distance_m", 0.50)
+        self.declare_parameter("dual_standoff_min_separation_m", 0.45)
         self.declare_parameter("nominal_linear_speed_mps", 0.20)
         self.declare_parameter("nominal_angular_speed_radps", 0.70)
         self.declare_parameter("slowdown_turn_threshold_deg", 45.0)
@@ -158,6 +162,15 @@ class EmergencyMissionManager(Node):
         self.dual_dispatch_trigger_ratio = float(
             self.get_parameter("dual_dispatch_trigger_ratio").value
         )
+        self.patient_standoff_enabled = bool(
+            self.get_parameter("patient_standoff_enabled").value
+        )
+        self.patient_standoff_distance = float(
+            self.get_parameter("patient_standoff_distance_m").value
+        )
+        self.dual_standoff_min_separation = float(
+            self.get_parameter("dual_standoff_min_separation_m").value
+        )
         self.nominal_linear_speed = float(
             self.get_parameter("nominal_linear_speed_mps").value
         )
@@ -227,6 +240,26 @@ class EmergencyMissionManager(Node):
         ):
             raise ValueError(
                 "dual_dispatch_trigger_ratio must be in the (0, 1] interval"
+            )
+        if (
+            not math.isfinite(self.patient_standoff_distance)
+            or self.patient_standoff_distance <= 0.0
+        ):
+            raise ValueError("patient_standoff_distance_m must be positive")
+        if (
+            not math.isfinite(self.dual_standoff_min_separation)
+            or self.dual_standoff_min_separation < 0.0
+        ):
+            raise ValueError(
+                "dual_standoff_min_separation_m must be non-negative"
+            )
+        if (
+            self.dual_standoff_min_separation
+            > 2.0 * self.patient_standoff_distance
+        ):
+            raise ValueError(
+                "dual_standoff_min_separation_m cannot exceed the "
+                "standoff circle diameter"
             )
         if self.nominal_linear_speed <= 0.0:
             raise ValueError("nominal_linear_speed_mps must be positive")
@@ -480,6 +513,7 @@ class EmergencyMissionManager(Node):
         ] = {}
         self.plan_failures: dict[str, str] = {}
         self.planning_target: PoseStamped | None = None
+        self.planning_targets: dict[str, PoseStamped] = {}
         self.planning_timer = None
         self.selected_robot = ""
         self.ranked_candidates: list[str] = []
@@ -530,6 +564,12 @@ class EmergencyMissionManager(Node):
             f"target={self.target_arrival_time:.1f}s, "
             "trigger="
             f"{self.target_arrival_time * self.dual_dispatch_trigger_ratio:.1f}s"
+        )
+        self.get_logger().info(
+            "Patient standoff: "
+            f"enabled={self.patient_standoff_enabled}, "
+            f"distance={self.patient_standoff_distance:.2f}m, "
+            f"dual separation={self.dual_standoff_min_separation:.2f}m"
         )
         self.get_logger().info(
             "RViz Publish Point topics: " + ", ".join(click_topics)
@@ -614,6 +654,7 @@ class EmergencyMissionManager(Node):
         self.navigation_started_at.clear()
         self.navigation_predicted_eta.clear()
         self.dispatch_start_poses.clear()
+        self.planning_targets.clear()
         self.dispatched_robots.clear()
         self.terminal_robots.clear()
         self.arrived_robots.clear()
@@ -677,6 +718,81 @@ class EmergencyMissionManager(Node):
         )
         self._on_request(request)
 
+    def _make_standoff_target(
+        self, robot_id: str, patient: PoseStamped
+    ) -> PoseStamped:
+        """Place a robot on the standoff circle facing the patient."""
+        if not self.patient_standoff_enabled:
+            return deepcopy(patient)
+        observation = self.observations.get(robot_id)
+        if observation is None:
+            raise ValueError("no AMCL pose for patient standoff")
+        robot_position = observation.pose.pose.position
+        patient_position = patient.pose.position
+        stop_x, stop_y, facing_yaw = patient_standoff(
+            (patient_position.x, patient_position.y),
+            (robot_position.x, robot_position.y),
+            self.patient_standoff_distance,
+            fallback_robot_yaw=self._quaternion_yaw(observation.pose),
+        )
+        target = deepcopy(patient)
+        target.pose.position.x = stop_x
+        target.pose.position.y = stop_y
+        target.pose.position.z = 0.0
+        target.pose.orientation.x = 0.0
+        target.pose.orientation.y = 0.0
+        target.pose.orientation.z = math.sin(facing_yaw * 0.5)
+        target.pose.orientation.w = math.cos(facing_yaw * 0.5)
+        return target
+
+    def _standoff_pose(
+        self, patient: PoseStamped, radial_angle: float
+    ) -> PoseStamped:
+        """Create one pose on the configured circle facing its center."""
+        target = deepcopy(patient)
+        target.pose.position.x = (
+            patient.pose.position.x
+            + self.patient_standoff_distance * math.cos(radial_angle)
+        )
+        target.pose.position.y = (
+            patient.pose.position.y
+            + self.patient_standoff_distance * math.sin(radial_angle)
+        )
+        target.pose.position.z = 0.0
+        facing_yaw = radial_angle + math.pi
+        target.pose.orientation.x = 0.0
+        target.pose.orientation.y = 0.0
+        target.pose.orientation.z = math.sin(facing_yaw * 0.5)
+        target.pose.orientation.w = math.cos(facing_yaw * 0.5)
+        return target
+
+    def _separate_standoff_targets(self, patient: PoseStamped) -> None:
+        """Move Robot2 around the circle if both stop poses overlap."""
+        if not self.patient_standoff_enabled:
+            return
+        first_id, second_id = self.robot_ids
+        first = self.planning_targets.get(first_id)
+        second = self.planning_targets.get(second_id)
+        if first is None or second is None:
+            return
+        separation = math.hypot(
+            first.pose.position.x - second.pose.position.x,
+            first.pose.position.y - second.pose.position.y,
+        )
+        if separation >= self.dual_standoff_min_separation:
+            return
+        radial_angle = math.atan2(
+            first.pose.position.y - patient.pose.position.y,
+            first.pose.position.x - patient.pose.position.x,
+        )
+        self.planning_targets[second_id] = self._standoff_pose(
+            patient, radial_angle + math.pi / 2.0
+        )
+        self.get_logger().info(
+            f"Separated patient stop poses: {second_id} rotated 90deg "
+            f"around the {self.patient_standoff_distance:.2f}m circle"
+        )
+
     def _calculate_and_assign(self, target: PoseStamped) -> None:
         self._publish_status("CALCULATING", "requesting both Nav2 paths")
         now = time.monotonic()
@@ -693,6 +809,15 @@ class EmergencyMissionManager(Node):
         self.pending_plans.clear()
         self.plan_results.clear()
         self.plan_failures.clear()
+        self.planning_targets.clear()
+        for robot_id in self.robot_ids:
+            try:
+                self.planning_targets[robot_id] = (
+                    self._make_standoff_target(robot_id, target)
+                )
+            except ValueError as error:
+                self.plan_failures[robot_id] = str(error)
+        self._separate_standoff_targets(target)
         for robot_id in self.robot_ids:
             self._publish_distance(robot_id, math.nan)
             self._publish_predicted_eta(robot_id, math.nan)
@@ -700,6 +825,8 @@ class EmergencyMissionManager(Node):
             self._publish_crowd_metrics(robot_id, math.nan, math.nan)
 
         for robot_id in self.robot_ids:
+            if robot_id in self.plan_failures:
+                continue
             client = self.planner_clients[robot_id]
             if not client.wait_for_server(timeout_sec=1.0):
                 self.plan_failures[robot_id] = (
@@ -708,7 +835,7 @@ class EmergencyMissionManager(Node):
                 continue
 
             goal = ComputePathToPose.Goal()
-            goal.goal = deepcopy(target)
+            goal.goal = deepcopy(self.planning_targets[robot_id])
             stamp = self.get_clock().now().to_msg()
             goal.goal.header.stamp = stamp
             goal.planner_id = self.planner_id
@@ -815,8 +942,8 @@ class EmergencyMissionManager(Node):
                 else None
             )
             final_yaw = (
-                self._quaternion_yaw(self.planning_target)
-                if self.planning_target is not None
+                self._quaternion_yaw(self.planning_targets[robot_id])
+                if robot_id in self.planning_targets
                 else None
             )
             base_eta, turn_angle, slowdown_count = path_motion_cost(
@@ -880,12 +1007,14 @@ class EmergencyMissionManager(Node):
             robot_id, crowded_distance, crowd_delay
         )
         self.pending_plans.discard(robot_id)
+        stop = self.planning_targets[robot_id].pose.position
         self.get_logger().info(
             f"Candidate {robot_id}: distance={distance:.2f}m, "
             f"turn={math.degrees(turn_angle):.1f}deg, "
             f"slowdowns={slowdown_count}, base_eta={base_eta:.2f}s, "
             f"crowd={crowd.name}, crowded_distance={crowded_distance:.2f}m, "
-            f"crowd_delay={crowd_delay:.2f}s, final_eta={eta:.2f}s"
+            f"crowd_delay={crowd_delay:.2f}s, final_eta={eta:.2f}s, "
+            f"patient_stop=({stop.x:.2f}, {stop.y:.2f})"
         )
         if not self.pending_plans:
             self._finish_planning(serial)
@@ -1009,7 +1138,7 @@ class EmergencyMissionManager(Node):
             )
             self._publish_assignment(
                 robot_id,
-                deepcopy(self.planning_target),
+                deepcopy(self.planning_targets[robot_id]),
                 role=RobotState.ROLE_AED_DELIVERY,
                 mission_suffix="aed",
             )
@@ -1218,7 +1347,7 @@ class EmergencyMissionManager(Node):
         )
         self._publish_assignment(
             next_robot,
-            deepcopy(self.planning_target),
+            deepcopy(self.planning_targets[next_robot]),
             role=RobotState.ROLE_AED_DELIVERY,
             mission_suffix="aed",
         )

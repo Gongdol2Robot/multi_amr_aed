@@ -65,6 +65,17 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "dual_dispatch_trigger_ratio", default_value="0.85"
             ),
+            DeclareLaunchArgument(
+                "patient_standoff_enabled",
+                default_value="true",
+                choices=["true", "false"],
+            ),
+            DeclareLaunchArgument(
+                "patient_standoff_distance_m", default_value="0.50"
+            ),
+            DeclareLaunchArgument(
+                "dual_standoff_min_separation_m", default_value="0.45"
+            ),
             DeclareLaunchArgument("planner_id", default_value="GridBased"),
             DeclareLaunchArgument(
                 "automatic_request",
@@ -129,6 +140,22 @@ def generate_launch_description() -> LaunchDescription:
                         "dual_dispatch_trigger_ratio": ParameterValue(
                             LaunchConfiguration(
                                 "dual_dispatch_trigger_ratio"
+                            ),
+                            value_type=float,
+                        ),
+                        "patient_standoff_enabled": ParameterValue(
+                            LaunchConfiguration("patient_standoff_enabled"),
+                            value_type=bool,
+                        ),
+                        "patient_standoff_distance_m": ParameterValue(
+                            LaunchConfiguration(
+                                "patient_standoff_distance_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "dual_standoff_min_separation_m": ParameterValue(
+                            LaunchConfiguration(
+                                "dual_standoff_min_separation_m"
                             ),
                             value_type=float,
                         ),

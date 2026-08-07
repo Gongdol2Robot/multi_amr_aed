@@ -8,6 +8,33 @@ from collections.abc import Iterable
 Position = tuple[float, float]
 
 
+def patient_standoff(
+    patient: Position,
+    robot: Position,
+    distance: float,
+    *,
+    fallback_robot_yaw: float = 0.0,
+) -> tuple[float, float, float]:
+    """Return a stop point on the patient circle and a patient-facing yaw."""
+    values = (*patient, *robot, distance, fallback_robot_yaw)
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError("patient standoff inputs must be finite")
+    if distance <= 0.0:
+        raise ValueError("patient standoff distance must be positive")
+
+    dx = robot[0] - patient[0]
+    dy = robot[1] - patient[1]
+    radial_angle = (
+        fallback_robot_yaw + math.pi
+        if math.hypot(dx, dy) <= 1e-6
+        else math.atan2(dy, dx)
+    )
+    stop_x = patient[0] + distance * math.cos(radial_angle)
+    stop_y = patient[1] + distance * math.sin(radial_angle)
+    facing_yaw = normalize_angle(radial_angle + math.pi)
+    return stop_x, stop_y, facing_yaw
+
+
 def dispatch_candidates(
     ranked_candidates: Iterable[tuple[str, float]],
     *,

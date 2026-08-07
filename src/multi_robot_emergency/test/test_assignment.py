@@ -8,10 +8,33 @@ from multi_robot_emergency.assignment import (
     path_length,
     path_length_in_polygon,
     path_motion_cost,
+    patient_standoff,
     point_in_polygon,
     point_to_polygon_distance,
     simplify_path,
 )
+
+
+def test_patient_standoff_stops_half_meter_before_patient() -> None:
+    stop_x, stop_y, yaw = patient_standoff(
+        (0.0, 0.0), (-2.0, 0.0), 0.5
+    )
+    assert stop_x == pytest.approx(-0.5)
+    assert stop_y == pytest.approx(0.0)
+    assert yaw == pytest.approx(0.0)
+
+
+def test_patient_standoff_faces_patient_from_other_side() -> None:
+    stop_x, stop_y, yaw = patient_standoff(
+        (1.0, 2.0), (4.0, 2.0), 0.5
+    )
+    assert math.hypot(stop_x - 1.0, stop_y - 2.0) == pytest.approx(0.5)
+    assert yaw == pytest.approx(math.pi)
+
+
+def test_patient_standoff_rejects_invalid_distance() -> None:
+    with pytest.raises(ValueError):
+        patient_standoff((0.0, 0.0), (1.0, 0.0), 0.0)
 
 
 def test_dispatch_candidates_uses_one_robot_below_deadline_risk() -> None:

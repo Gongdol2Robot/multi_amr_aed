@@ -90,6 +90,23 @@ ros2 topic pub --once /emergency/request geometry_msgs/msg/PoseStamped \
   "{header: {frame_id: map}, pose: {position: {x: 1.2, y: 2.4}, orientation: {w: 1.0}}}"
 ```
 
+요청 좌표는 로봇이 그대로 밟고 지나갈 Nav2 Goal이 아니라 **환자의 위치**로
+취급합니다. 기본 설정에서는 각 로봇의 현재 위치와 환자 위치를 잇는 방향을
+기준으로 환자에게서 0.50m 떨어진 지점을 Nav2 Goal로 만들고, 최종 자세는
+환자를 바라보도록 설정합니다. 따라서 경로 거리와 ETA도 실제 0.50m 정지
+지점까지 계산됩니다. 두 로봇의 정지점이 겹치면 Robot 2 정지점을 환자
+주위로 90도 이동시켜 최소 0.45m 간격을 확보합니다.
+
+```bash
+ros2 launch multi_robot_emergency central_dispatch.launch.py \
+  patient_standoff_enabled:=true \
+  patient_standoff_distance_m:=0.50 \
+  dual_standoff_min_separation_m:=0.45
+```
+
+검출 노드가 이미 안전 정지 좌표를 발행하는 경우에만
+`patient_standoff_enabled:=false`로 끕니다.
+
 또는 RViz 툴바에서 **Publish Point**를 선택하고 지도 좌표를 클릭합니다.
 `/clicked_point`, `/robot1/clicked_point`, `/robot2/clicked_point`를 모두
 구독하므로 중앙 노드는 계속 켜둔 상태에서 어느 RViz에서든 클릭할 때마다
@@ -98,7 +115,8 @@ ros2 topic pub --once /emergency/request geometry_msgs/msg/PoseStamped \
 중앙 노드는 다음 순서로 처리합니다.
 
 1. `/robot1/amcl_pose`, `/robot2/amcl_pose` 최신 상태 확인
-2. 두 `/<robot>/compute_path_to_pose` Action에 같은 목표 동시 요청
+2. 환자 앞 0.50m에 로봇별 정지 목표를 만들고 두
+   `/<robot>/compute_path_to_pose` Action에 동시 요청
 3. 반환된 `nav_msgs/Path`의 모든 구간 길이와 회전 비용 계산
 4. Camera2가 판정한 혼잡 상태와 골목 통과 길이를 ETA에 반영
 5. 경로 실패/시간 초과 로봇 제외
