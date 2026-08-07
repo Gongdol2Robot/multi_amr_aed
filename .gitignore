@@ -48,6 +48,8 @@ models/*.pt
 models/*.pth
 vision_training/models/*.pt
 vision_training/caterpillar_fall_pose_best.pt
+vision_training/finetune_runs/
+vision_training/hard_negatives/
 
 # Keep directory placeholders
 !models/.gitkeep
