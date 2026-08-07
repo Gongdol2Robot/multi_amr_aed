@@ -25,6 +25,7 @@ captures/
 data/
 datasets/
 runs/
+logs/
 *.db
 *.sqlite
 *.sqlite3

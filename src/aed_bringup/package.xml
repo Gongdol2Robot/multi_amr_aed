@@ -8,8 +8,12 @@
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>nav2_regulated_pure_pursuit_controller</exec_depend>
   <exec_depend>turtlebot4_navigation</exec_depend>
+  <exec_depend>turtlebot4_viz</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

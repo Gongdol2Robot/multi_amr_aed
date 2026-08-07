@@ -37,8 +37,12 @@ robotstart() {
 }
 
 pf() {
-  local n=${1:-1} host=${2:-192.168.0.2}
-  python3 "$AED_WS/tools/preflight.py" --namespace "robot$n" --host "$host"
+  local n=${1:-1}
+  if [[ -n "${2:-}" ]]; then
+    python3 "$AED_WS/tools/preflight.py" --namespace "robot$n" --host "$2"
+  else
+    python3 "$AED_WS/tools/preflight.py" --namespace "robot$n"
+  fi
 }
 
 fit() {
@@ -63,11 +67,35 @@ loc() {
     namespace:=/robot$n map:="$map"
 }
 
-initpose() {
+# loc + rv를 한 번에. 맵/RViz를 보려고 매번 터미널 두 개를 따로 켜지
+# 않아도 되도록 묶은 것.
+locview() {
+  local n=${1:-1} map=${2:-$AED_WS/maps/map.yaml}
+  ros2 launch aed_bringup localization_view.launch.py \
+    namespace:=/robot$n map:="$map"
+}
+
+# turtlebot4_map_navigation의 map_navigation.launch.py 실행 + 화면 출력을
+# 파일로도 저장. output='screen'인 노드 로그는 화면에만 나가고 파일에는
+# 안 남아서(launch.log에는 프로세스 시작/종료 이벤트만 기록됨), 나중에
+# 다시 확인하려면(Claude에게 보여주는 것 포함) 이렇게 tee로 남겨야 한다.
+mapnav() {
   local n=${1:-1}
-  ros2 topic pub --times 3 /robot$n/initialpose \
-    geometry_msgs/msg/PoseWithCovarianceStamped \
-    "{header: {frame_id: 'map'}, pose: {pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}, covariance: [0.25,0,0,0,0,0, 0,0.25,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0.0685]}}"
+  aedenv
+  mkdir -p "$AED_WS/logs"
+  local file="$AED_WS/logs/mapnav_robot${n}_$(date +%Y%m%d_%H%M%S).log"
+  echo "로그 저장: $file"
+  ros2 launch turtlebot4_map_navigation map_navigation.launch.py \
+    namespace:="robot$n" rviz:=true 2>&1 | tee "$file"
+}
+
+# 두 로봇이 지도는 공유하지만 Dock 위치가 달라 초기 위치는 각자 다르다.
+# 좌표는 src/aed_bringup/config/dock_poses.yaml 에서 읽는다.
+#   initpose 2            robot2 의 Dock 위치를 발행
+#   initpose 1 --record   현재 위치를 robot1 항목에 기록
+initpose() {
+  local n=${1:-1}; shift 2>/dev/null || true
+  python3 "$AED_WS/tools/initpose.py" "$n" "$@"
 }
 
 nav() {

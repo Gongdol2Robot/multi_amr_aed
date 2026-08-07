@@ -183,9 +183,20 @@ def main() -> int:
     )
     parser.add_argument("--nav", action="store_true", help="Nav2 까지 점검")
     parser.add_argument("--detect", action="store_true", help="검출 노드까지 점검")
-    parser.add_argument("--host", default="192.168.107.102")
-    parser.add_argument("--namespace", default="robot2")
+    parser.add_argument(
+        "--host", default=None,
+        help="기본값: --namespace의 로봇 번호로 192.168.107.10N 자동 계산",
+    )
+    parser.add_argument("--namespace", default="robot1")
     args = parser.parse_args()
+
+    if args.host is None:
+        digits = "".join(ch for ch in args.namespace if ch.isdigit())
+        if not digits:
+            print(f"오류: --namespace '{args.namespace}'에서 로봇 번호를 못 찾았습니다. "
+                  "--host를 직접 지정하세요.", file=sys.stderr)
+            return 1
+        args.host = f"192.168.107.{100 + int(digits)}"
 
     if not check_env():
         return 1
