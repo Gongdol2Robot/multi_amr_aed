@@ -4,7 +4,6 @@
 #
 # ROS 쪽(rclpy, aed_interfaces, sensor_msgs, std_msgs)은 여기 없다. 그것들은
 # /opt/ros/humble 과 colcon build 로 들어오지 pip 으로 넣는 것이 아니다.
-# 그래서 이 목록만 설치하면 --mock 은 ROS 없이 그대로 뜬다.
 #
 # 버전을 하한만 적는 이유: 팀원마다 배포판 파이썬이 달라 정확히 고정하면
 # 누군가는 설치가 막힌다. 상한을 안 두는 대신, 큰 버전이 올라 깨지면
@@ -22,7 +21,6 @@ websockets>=12.0
 # 남의 extras 에 기대지 않는다.
 PyYAML>=6.0
 
-# --mock 이 영상 프레임을 만들 때 쓴다. ROS 에 붙여 쓸 때는 시스템에 이미
-# 깔린 python3-opencv 를 그대로 써도 된다.
+# 지도 이미지를 읽고 PNG로 변환할 때 쓴다.
 opencv-python>=4.8
 numpy>=1.24

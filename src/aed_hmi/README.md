@@ -56,25 +56,14 @@ HMI 지도 클릭은 `/aed/emergency_event`를 발행하며
 평소처럼 중앙 제어를 별도 터미널에서 `dispatch_enabled:=true`로 실행해야
 합니다. HMI를 종료해도 중앙 제어와 주행은 계속 동작합니다.
 
-### 장비 없이 (화면 개발·시연용)
-
-```bash
-python3 -m backend.main --mock
-```
-
-신고 → 배정 → 이동 → 도착 → 복귀를 반복 재생합니다. 3번에 1번은 경로
-장애를 만들어 재할당 화면도 나옵니다. 로봇을 다른 팀원이 쓰고 있어도
-화면 작업이 막히지 않게 하려고 넣었습니다.
-
 ## 필요한 것
 
 ```bash
 pip install -r src/aed_hmi/requirements.txt
 ```
 
-**`--mock` 은 ROS 없이 돕니다.** rclpy 도 aed_interfaces 도 없는 PC 에서
-이 목록만 설치하면 4분할 영상과 이력까지 그대로 뜹니다(rclpy 없는
-가상환경에서 확인). ROS 에 붙일 때만 `colcon build` 가 필요합니다.
+HMI 백엔드는 실제 ROS 토픽만 사용합니다. 실행 전에 ROS 환경과 빌드한
+워크스페이스를 source해야 합니다.
 
 Node는 18 이상이 필요합니다(Vite 요구). 없으면 sudo 없이 설치할 수 있습니다.
 
@@ -90,12 +79,15 @@ git clone git@github.com:Gongdol2Robot/multi_amr_aed.git
 cd multi_amr_aed
 
 pip install -r src/aed_hmi/requirements.txt
-cd src/aed_hmi/frontend && npm install && cd -
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --packages-select \
+  aed_interfaces robot_state_monitor aed_hmi
+source install/setup.bash
 
-# 터미널 1
-cd src/aed_hmi && python3 -m backend.main --mock
-# 터미널 2
-cd src/aed_hmi/frontend && npm run dev      # http://localhost:5173
+# 터미널 1: 실제 ROS 상태와 HMI 백엔드
+ros2 launch aed_hmi hmi_runtime.launch.py
+# 터미널 2: 화면
+cd src/aed_hmi/frontend && npm install && npm run dev
 ```
 
 시연 영상(`docs/videos/`)도 저장소에 들어 있어 따로 받을 것이 없습니다.
@@ -120,7 +112,6 @@ backend/
 ├── store/      SQLite 스키마와 질의. SQL은 여기 밖으로 안 나간다
 ├── stream/     현재 상태 취합, 영상 버퍼, WebSocket 허브
 ├── api/        HTTP·WebSocket 라우터. 로직 없이 연결만 한다
-├── mock/       장비 없이 도는 시나리오
 └── context.py  위의 것들을 묶어 프로세스 하나로 만든다
 
 frontend/src/
@@ -131,8 +122,9 @@ frontend/src/
 └── styles/     테마와 배치
 ```
 
-`domain/`이 ROS를 모르게 둔 것이 이 구조의 핵심입니다. 그래야 로봇 없이
-전체 로직을 시험할 수 있고, 리뷰할 때도 ROS를 몰라도 읽힙니다.
+`domain/`이 ROS를 모르게 둔 것이 이 구조의 핵심입니다. 메시지 변환과 계산을
+ROS 실행 상태와 분리해 단위 테스트할 수 있고, 리뷰할 때도 ROS를 몰라도
+읽힙니다.
 
 ## 인터페이스 사용
 

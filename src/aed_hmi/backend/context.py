@@ -1,10 +1,7 @@
 """프로세스 하나가 들고 있는 것들을 한 곳에 모은다.
 
 라우터마다 전역 변수를 두면 시험할 때 갈아끼울 수 없다. 여기 담아 두고
-app.state 에 붙여 두면, 시험에서는 가짜 저장소를 넣은 Context 를 만들면 된다.
-
-ROS 없이도 뜬다. 로봇이 없거나 다른 사람이 쓰고 있을 때 화면 작업을 계속할
-수 있어야 하기 때문이고, 그 경우 mock 시뮬레이터가 대신 상태를 만든다.
+app.state 에 붙여 두면 시험에서는 임시 저장소를 넣은 Context 를 만들면 된다.
 """
 
 import logging
@@ -24,8 +21,6 @@ LOGGER = logging.getLogger(__name__)
 @dataclass
 class Settings:
     database_path: str = "var/aed_hmi.sqlite3"
-    # ROS 없이 띄우는 모드. 로봇을 못 쓰는 동안 화면을 개발할 때 쓴다.
-    mock: bool = False
     # 로봇 상태를 몇 초마다 저장할지. 전량 저장하면 DB 가 금방 커진다.
     robot_sample_interval_s: float = 1.0
     host: str = "0.0.0.0"
@@ -44,12 +39,11 @@ class Context:
         self.live = LiveState()
         self.frames = FrameRegistry(DEFAULT_STREAMS)
         self.hub = Hub(self.build_snapshot)
-        self.bridge = None          # RosBridge 또는 None(mock)
-        self.simulator = None       # MockSimulator 또는 None
+        self.bridge = None
         self._last_sample_at: dict[str, float] = {}
 
     # ------------------------------------------------------------------
-    # ROS(또는 시뮬레이터)가 부르는 입구
+    # ROS bridge가 부르는 입구
     # ------------------------------------------------------------------
 
     def on_robot(self, robot) -> None:
@@ -113,9 +107,7 @@ class Context:
     # ------------------------------------------------------------------
 
     def build_snapshot(self):
-        connected = bool(
-            self.bridge.connected if self.bridge else self.simulator
-        )
+        connected = bool(self.bridge and self.bridge.connected)
         # 검출 수는 영상 토픽이 아니라 EmergencyEvent 에서 온다. 영상 갈래와
         # 이벤트를 여기서 맞붙인다. stream_id 와 camera_id 가 같은 이름을
         # 쓰기로 한 약속이 이 연결의 전부다.
@@ -131,6 +123,4 @@ class Context:
     def shutdown(self) -> None:
         if self.bridge is not None:
             self.bridge.stop()
-        if self.simulator is not None:
-            self.simulator.stop()
         self.repository.close()

@@ -351,15 +351,11 @@ PY
 | `crowd_level` | 메시지에는 넣었으나 DB·화면이 안 읽음 | `emergency_events` 에 컬럼 추가 | "왜 2대가 갔나"를 못 되짚음 |
 | 속도 | `RobotState.speed_mps` 를 넣었으나 화면이 연속 pose 로 직접 계산 | monitor 가 채우면 그 값 쓰기 | 받는 쪽마다 값이 달라질 수 있음 |
 
-지금 화면이 도는 것은 목업(`backend/mock/`)이 이 통신들을 흉내내기
-때문이다. **DB 부터 화면까지는 실제 경로 그대로**고, 가짜인 것은 ROS
-메시지를 만드는 부분뿐이다.
+HMI는 실제 `RosBridge`가 수신한 ROS 메시지만 저장하고 화면에 전달한다.
+ROS가 연결되지 않으면 가짜 데이터를 만들지 않고 연결 대기 상태를 표시한다.
 
 ```
-[진짜] MockSimulator → context.on_* → repository.insert_* → SQLite
-                                                              ↓
-[진짜]        화면 ← /api/missions ← recent_missions() ←──────┘
+[ROS] RosBridge → context.on_* → repository.insert_* → SQLite
+                                                    ↓
+      화면 ← /api/missions ← recent_missions() ←────┘
 ```
-
-위 표의 노드들이 채워지면 `MockSimulator` 자리에 `RosBridge` 가 들어가고,
-그 아래는 손대지 않는다.

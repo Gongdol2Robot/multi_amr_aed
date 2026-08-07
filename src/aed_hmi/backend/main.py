@@ -2,10 +2,6 @@
 
 실행:
   python3 -m backend.main                 ROS 에 붙는다
-  python3 -m backend.main --mock          ROS 없이 가짜 상태로 돈다
-
---mock 은 로봇을 못 쓸 때 화면을 만들기 위한 것이다. 실제 시나리오를 그대로
-재생하므로 시연에도 쓴다.
 """
 
 import argparse
@@ -24,17 +20,6 @@ LOGGER = logging.getLogger(__name__)
 
 def _start(context: Context, settings: Settings) -> None:
     context.hub.start()
-    if settings.mock:
-        from .mock.frames import MockFrameSource
-        from .mock.simulator import MockSimulator
-
-        context.simulator = MockSimulator(context)
-        context.simulator.start()
-        context.mock_frames = MockFrameSource(context)
-        context.mock_frames.start()
-        LOGGER.warning("MOCK 모드 — ROS 에 붙지 않는다")
-        return
-
     from .ros.bridge import RosBridge
 
     context.bridge = RosBridge(
@@ -56,8 +41,6 @@ def _start(context: Context, settings: Settings) -> None:
 
 async def _stop(context: Context) -> None:
     await context.hub.stop()
-    if getattr(context, "mock_frames", None) is not None:
-        context.mock_frames.stop()
     context.shutdown()
 
 
@@ -98,20 +81,13 @@ def create_app(settings: Settings) -> FastAPI:
 def parse_args() -> Settings:
     parser = argparse.ArgumentParser(description="Multi-AMR AED 관제 서버")
     parser.add_argument(
-        "--mock", action="store_true",
-        help="ROS 없이 가짜 상태로 실행한다",
-    )
-    parser.add_argument(
         "--db", default=os.environ.get("AED_HMI_DB", "var/aed_hmi.sqlite3"),
         help="SQLite 파일 경로",
     )
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
-    return Settings(
-        database_path=args.db, mock=args.mock,
-        host=args.host, port=args.port,
-    )
+    return Settings(database_path=args.db, host=args.host, port=args.port)
 
 
 def main() -> None:

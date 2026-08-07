@@ -9,10 +9,9 @@
   로봇 카메라   : turtlebot4 기본 OAK-D
   ETA 측정      : multi_robot_emergency/mission_manager.py
 
-**이 파일은 rclpy 없이도 import 되어야 한다.** context.py 가 화면 구성을
-얻으려고 여기를 읽는데, 그때 rclpy 를 끌어오면 ROS 가 없는 PC 에서는
---mock 조차 못 뜬다. 화면만 만드는 사람이 ROS 를 깔아야 할 이유는 없다.
-그래서 QoS 는 모듈을 읽을 때가 아니라 실제로 구독할 때 만든다.
+**이 파일은 rclpy 없이도 import 되어야 한다.** 토픽 이름과 영상 구성을
+검증하는 단위 테스트에서 ROS 초기화가 필요하지 않아야 한다. 그래서 QoS는
+모듈을 읽을 때가 아니라 실제로 구독할 때 만든다.
 """
 
 import os
