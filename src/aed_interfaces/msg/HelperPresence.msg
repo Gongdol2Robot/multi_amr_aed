@@ -1,0 +1,7 @@
+string event_id
+string robot_id
+uint16 helper_count
+uint16 evidence_count
+float32 distance_m
+geometry_msgs/PoseStamped helper_pose
+builtin_interfaces/Time stamp
