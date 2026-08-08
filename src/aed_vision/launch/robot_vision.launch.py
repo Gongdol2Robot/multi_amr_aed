@@ -41,6 +41,9 @@ def _create_robot_vision(context):
                 {
                     "camera_id": robot_id,
                     "zone_id": f"{robot_id}_view",
+                    # TurtleBot CDR 경로에 이미 들어오는 작은 preview를 재사용한다.
+                    # 메인 compressed 토픽을 새로 원격 구독하면 로봇 WiFi 큐가
+                    # 밀리므로, 추론 입력은 preview Image로 유지한다.
                     "image_topic": (
                         f"/{robot_id}/oakd/rgb/preview/image_raw"
                     ),
