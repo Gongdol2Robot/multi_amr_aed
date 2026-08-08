@@ -48,17 +48,7 @@ async def response_time(request: Request):
 @router.get("/stats/travel-time")
 async def travel_time(request: Request):
     """출동 지시에서 도착까지. ETA 추정이 맞는지 견주는 기준이 된다."""
-    from ..domain import eta
-
-    stats = request.app.state.context.repository.travel_time_stats()
-    # 지금 ETA 가 어떤 가정 위에 서 있는지 같이 내보낸다. 실측 평균과
-    # 크게 어긋나면 이 값들을 조정해야 한다는 뜻이다.
-    stats["assumptions"] = {
-        "cruise_speed_mps": eta.CRUISE_SPEED_MPS,
-        "cruise_efficiency": eta.CRUISE_EFFICIENCY,
-        "detour_factor": eta.DETOUR_FACTOR,
-    }
-    return stats
+    return request.app.state.context.repository.travel_time_stats()
 
 
 @router.get("/stats/eta-accuracy")

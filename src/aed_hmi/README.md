@@ -148,7 +148,9 @@ ROS 실행 상태와 분리해 단위 테스트할 수 있고, 리뷰할 때도 
 /{camera_id}/vision/emergency_event         EmergencyEvent   (vision_detector)
 /{camera_id}/vision/person_count            UInt32           (vision_detector)
 /{camera_id}/vision/debug/compressed        CompressedImage  (검출 표시된 영상)
-/{robot_id}/oakd/rgb/image_raw/compressed   CompressedImage
+/{robot_id}/oakd/rgb/preview/image_raw      Image (HMI에서 JPEG 변환)
+/{robot_id}/lidar_state                    String (sensor_recovery watchdog)
+/{robot_id}/fallback_state                 String (Depth/cmd_vel 전환 상태)
 /emergency/eta/result                       String (JSON)    (multi_robot_emergency)
 ```
 

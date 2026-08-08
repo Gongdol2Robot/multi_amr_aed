@@ -5,6 +5,8 @@ app.state 에 붙여 두면 시험에서는 임시 저장소를 넣은 Context �
 """
 
 import logging
+import math
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -41,6 +43,8 @@ class Context:
         self.hub = Hub(self.build_snapshot)
         self.bridge = None
         self._last_sample_at: dict[str, float] = {}
+        self._latest_predicted_eta: dict[str, float] = {}
+        self._active_eta_mission: dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # ROS bridge가 부르는 입구
@@ -71,6 +75,24 @@ class Context:
         """vision_detector 가 매 프레임 내는 사람 수. 검출 표시의 근거다."""
         self.live.put_person_count(stream_id, count)
 
+    def on_lidar_state(self, robot_id: str, state: str) -> None:
+        self.live.put_lidar_state(robot_id, state)
+
+    def on_fallback_state(self, robot_id: str, state: str) -> None:
+        self.live.put_fallback_state(robot_id, state)
+
+    def on_predicted_eta(self, robot_id: str, seconds: float) -> None:
+        """Use the mission manager's ETA as the sole HMI ETA source."""
+        mission_id = self._active_eta_mission.get(robot_id)
+        if math.isfinite(seconds) and seconds >= 0.0:
+            self._latest_predicted_eta[robot_id] = seconds
+            if mission_id is not None:
+                self.live.set_mission_eta(mission_id, seconds, time.time())
+        else:
+            self._latest_predicted_eta.pop(robot_id, None)
+            if mission_id is not None:
+                self.live.set_mission_eta(mission_id, None, time.time())
+
     def on_eta_record(self, record) -> None:
         """도착 예상·실제 한 쌍. 통계로만 쓰므로 화면 상태에는 안 넣는다."""
         try:
@@ -82,7 +104,20 @@ class Context:
         self, mission_id: str, version: int, event_id: str, robot_id: str,
         role: str, target: Point2D, assigned_at: float,
     ) -> None:
-        self.live.set_mission_target(mission_id, assigned_at, target)
+        initial_eta = (
+            self._latest_predicted_eta.get(robot_id)
+            if role == "aed_delivery"
+            else None
+        )
+        if role == "aed_delivery":
+            self._active_eta_mission[robot_id] = mission_id
+        else:
+            self._active_eta_mission.pop(robot_id, None)
+        self.live.set_mission_target(
+            mission_id, assigned_at, target,
+            initial_eta_seconds=initial_eta,
+            current_eta_seconds=initial_eta,
+        )
         try:
             self.repository.insert_assignment(
                 mission_id, version, event_id, robot_id, role,

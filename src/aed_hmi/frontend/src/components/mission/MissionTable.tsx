@@ -113,6 +113,8 @@ export function MissionTable() {
               <th>접수</th>
               <th>도착</th>
               <th>응답시간</th>
+              <th>예상시간</th>
+              <th>오차율</th>
               <th>재할당</th>
               <th>사유</th>
             </tr>
@@ -120,7 +122,7 @@ export function MissionTable() {
           <tbody>
             {missions.length === 0 && (
               <tr>
-                <td colSpan={8} className="table__empty">
+                <td colSpan={10} className="table__empty">
                   기록 없음
                 </td>
               </tr>
@@ -138,6 +140,29 @@ export function MissionTable() {
                   <td className="mono">{clockText(mission.arrived_at)}</td>
                   <td className="mono">
                     {durationText(mission.response_seconds)}
+                  </td>
+                  <td
+                    className="mono"
+                    title={
+                      mission.actual_travel_seconds == null
+                        ? undefined
+                        : `실제 주행 ${durationText(mission.actual_travel_seconds)}`
+                    }
+                  >
+                    {durationText(mission.predicted_eta_seconds)}
+                  </td>
+                  <td
+                    className={
+                      mission.eta_error_rate_percent == null
+                        ? 'mono'
+                        : mission.eta_error_rate_percent <= 15
+                          ? 'mono table__eta-ok'
+                          : 'mono table__eta-warn'
+                    }
+                  >
+                    {mission.eta_error_rate_percent == null
+                      ? '—'
+                      : `${mission.eta_error_rate_percent.toFixed(1)}%`}
                   </td>
                   <td className="mono">
                     {mission.reassignment_count > 0

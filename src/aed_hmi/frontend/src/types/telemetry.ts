@@ -47,6 +47,22 @@ export type EventStatus =
   | 'resolved'
   | 'canceled';
 
+export type LidarState =
+  | 'UNKNOWN'
+  | 'STARTING'
+  | 'ALIVE'
+  | 'FAULT'
+  | 'RECOVERING';
+
+export type FallbackState =
+  | 'UNKNOWN'
+  | 'IDLE'
+  | 'STARTING'
+  | 'ACTIVE'
+  | 'BLOCKED'
+  | 'SUCCEEDED'
+  | 'FAILED';
+
 /** 지도 좌표를 그림 좌표로 바꾸는 계수. /api/map/meta 가 준다. */
 export interface MapMeta {
   width: number;
@@ -81,6 +97,9 @@ export interface RobotSnapshot {
   detail: string;
   speed_mps: number;
   heartbeat_age_s: number;
+  lidar_state: LidarState;
+  lidar_ok: boolean | null;
+  fallback_state: FallbackState;
   /** 백엔드가 계산한다. 화면에서 다시 판단하지 않는다. */
   healthy: boolean;
 }
@@ -117,10 +136,16 @@ export interface MissionSummary {
   eta_seconds: number | null;
   /** 도착 예상 시각(epoch 초). 서버가 확정해 준 값이라 화면은 그대로 쓴다. */
   eta_at: number | null;
-  /** 남은 거리(m). 경로비용이 있으면 실제 주행 거리, 없으면 직선 보정값. */
-  eta_distance_m: number | null;
-  /** 거리·속도가 모두 실측일 때만 true. 추정 표시를 달리하는 근거. */
-  eta_confident: boolean;
+  /** 배정 순간 중앙제어가 계산한 고정 ETA(초). */
+  initial_eta_seconds: number | null;
+  /** 배정 순간 예상했던 고정 도착 시각(epoch 초). */
+  initial_eta_at: number | null;
+  /** 완료 후 중앙제어가 /emergency/eta/result에 남긴 최초 예상 주행시간. */
+  predicted_eta_seconds: number | null;
+  /** 완료 후 측정된 실제 Nav2 주행시간. */
+  actual_travel_seconds: number | null;
+  /** |실제-예상| / 실제 × 100. */
+  eta_error_rate_percent: number | null;
 }
 
 export interface MissionEvent {

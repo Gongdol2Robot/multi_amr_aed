@@ -16,11 +16,42 @@ import {
 } from '../common/status';
 import { Badge, FlagChip, Metric, StatusDot } from '../common/Indicators';
 
+function recoveryNotice(robot: RobotSnapshot): {
+  label: string;
+  tone: 'ok' | 'warn' | 'danger' | 'info';
+} | null {
+  switch (robot.fallback_state) {
+    case 'STARTING':
+      return { label: 'Depth·cmd_vel 전환 중', tone: 'warn' };
+    case 'ACTIVE':
+      return { label: 'Depth·cmd_vel 주행 중', tone: 'info' };
+    case 'BLOCKED':
+      return { label: 'Depth 장애물 감지 · 정지', tone: 'danger' };
+    case 'SUCCEEDED':
+      return { label: 'Depth fallback 도착', tone: 'ok' };
+    case 'FAILED':
+      return { label: 'Fallback 실패 · 대체 필요', tone: 'danger' };
+    default:
+      break;
+  }
+  switch (robot.lidar_state) {
+    case 'STARTING':
+      return { label: 'LiDAR 시작 확인 중', tone: 'warn' };
+    case 'FAULT':
+      return { label: 'LiDAR 장애 · fallback 대기', tone: 'danger' };
+    case 'RECOVERING':
+      return { label: 'LiDAR 복구 확인 중', tone: 'warn' };
+    default:
+      return null;
+  }
+}
+
 export function RobotCard({ robot }: { robot: RobotSnapshot }) {
   const availability = availabilityDisplay(robot.availability);
   // 가용성과 별개로 하부 신호가 하나라도 죽었으면 그것부터 보여준다.
   // availability 는 mission_manager 의 판단이고, 이건 원인이다.
   const tone = robot.healthy ? availability.tone : 'danger';
+  const recovery = recoveryNotice(robot);
 
   return (
     <article className={`robot ${robot.healthy ? '' : 'robot--fault'}`}>
@@ -57,8 +88,22 @@ export function RobotCard({ robot }: { robot: RobotSnapshot }) {
         <FlagChip label="위치추정" ok={robot.localization_ok} />
         <FlagChip label="Nav2" ok={robot.nav2_ok} />
         <FlagChip label="경로" ok={robot.path_valid} />
+        {robot.lidar_ok === null ? (
+          <Badge tone="idle">LiDAR 감시 미연결</Badge>
+        ) : (
+          <FlagChip label="LiDAR" ok={robot.lidar_ok} />
+        )}
         {robot.emergency_stop && <FlagChip label="비상정지" ok={false} />}
       </div>
+
+      {recovery && (
+        <div className="robot__recovery">
+          <Badge tone={recovery.tone}>{recovery.label}</Badge>
+          <span className="mono">
+            {robot.lidar_state} / {robot.fallback_state}
+          </span>
+        </div>
+      )}
 
       <footer className="robot__foot">
         <span className="robot__role">{roleLabel(robot.role)}</span>

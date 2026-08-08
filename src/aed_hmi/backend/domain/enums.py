@@ -88,6 +88,8 @@ TERMINAL_MISSION_STATES = frozenset({
     MissionState.ARRIVED,
     MissionState.COMPLETED,
     MissionState.CANCELED,
+    MissionState.NAVIGATION_ERROR,
+    MissionState.HELPER_ARRIVED,
 })
 
 

@@ -46,6 +46,17 @@ class RobotSnapshot:
     speed_mps: float = 0.0
     # 하트비트가 끊긴 지 몇 초 됐는지. 화면에서 통신 상태 판단에 쓴다.
     heartbeat_age_s: float = 0.0
+    # sensor_recovery가 별도 토픽으로 발행한다. RobotState 메시지 스키마를
+    # 바꾸지 않고도 LiDAR 장애와 Depth/cmd_vel 전환을 관제에 표시한다.
+    lidar_state: str = "UNKNOWN"
+    fallback_state: str = "UNKNOWN"
+
+    @property
+    def lidar_ok(self) -> Optional[bool]:
+        """None은 watchdog 미연결, bool은 watchdog의 명시적 판단이다."""
+        if self.lidar_state == "UNKNOWN":
+            return None
+        return self.lidar_state == "ALIVE"
 
     @property
     def healthy(self) -> bool:
@@ -54,6 +65,9 @@ class RobotSnapshot:
             self.network_ok
             and self.localization_ok
             and self.nav2_ok
+            and self.lidar_state not in (
+                "STARTING", "FAULT", "RECOVERING",
+            )
             and not self.emergency_stop
         )
 
@@ -110,8 +124,13 @@ class MissionSummary:
     # 진행 중인 임무에만 채워진다. 끝난 임무는 실제 도착 시각이 있으므로
     # 추정이 필요 없고, 남겨두면 어느 쪽이 사실인지 헷갈린다.
     eta_seconds: Optional[float] = None
-    eta_distance_m: Optional[float] = None
-    eta_confident: bool = False
+    # 중앙제어가 배정 순간 계산한 값. 주행 중 다시 계산하지 않는다.
+    initial_eta_seconds: Optional[float] = None
+    # 완료된 AED 출동에 대해 중앙제어가 남긴 ETA 실측 결과. 이력 표에서
+    # 예상값과 오차율을 같은 측정 한 건으로 보여주기 위한 값이다.
+    predicted_eta_seconds: Optional[float] = None
+    actual_travel_seconds: Optional[float] = None
+    eta_error_rate_percent: Optional[float] = None
 
     @property
     def response_seconds(self) -> Optional[float]:
@@ -128,6 +147,13 @@ class MissionSummary:
         import time
 
         return time.time() + self.eta_seconds
+
+    @property
+    def initial_eta_at(self) -> Optional[float]:
+        """Initial projected arrival epoch fixed at dispatch time."""
+        if self.initial_eta_seconds is None:
+            return None
+        return self.called_at + self.initial_eta_seconds
 
 
 @dataclass(frozen=True)

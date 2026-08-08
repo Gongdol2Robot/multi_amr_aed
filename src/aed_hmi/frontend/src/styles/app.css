@@ -461,6 +461,20 @@
   margin-bottom: 7px;
 }
 
+.robot__recovery {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 6px 7px;
+  border: 1px solid rgba(255, 184, 77, 0.28);
+  border-radius: 4px;
+  background: rgba(255, 184, 77, 0.06);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
 .flag {
   font-size: 10px;
   padding: 1px 5px;
@@ -573,6 +587,14 @@
   white-space: nowrap;
 }
 
+.table__eta-ok {
+  color: var(--ok);
+}
+
+.table__eta-warn {
+  color: var(--warn);
+}
+
 /* 좁은 화면에서는 세로로 쌓는다. 관제 화면은 보통 넓지만, 노트북에서
    확인할 때 배치가 깨지면 검토가 안 된다. */
 @media (max-width: 1180px) {
@@ -599,8 +621,8 @@
   color: var(--accent);
 }
 
-/* 가정값이 섞인 추정은 색을 낮춰, 실측값과 같은 무게로 읽히지 않게 한다. */
-.etapanel__value--rough {
+/* 최초 예상보다 늦어진 현재 ETA만 경고색으로 표시한다. */
+.etapanel__value--delayed {
   color: var(--warn);
 }
 
@@ -608,6 +630,26 @@
   font-size: 11px;
   color: var(--text-dim);
   margin-top: 2px;
+}
+
+.etapanel__comparison {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: end;
+  gap: 2px 8px;
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid var(--line);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.etapanel__comparison b {
+  color: var(--text-dim);
+}
+
+.etapanel__comparison .etapanel__delay--late {
+  color: var(--danger);
 }
 
 .etapanel--none .etapanel__none-text {
@@ -634,17 +676,8 @@
 .eta--sure .eta__value {
   color: var(--accent);
 }
-.eta--rough .eta__value {
+.eta--delayed .eta__value {
   color: var(--warn);
-}
-
-.eta__rough {
-  font-size: 10px;
-  color: var(--warn);
-  border: 1px solid rgba(245, 181, 68, 0.35);
-  border-radius: 3px;
-  padding: 0 3px;
-  margin-left: 3px;
 }
 
 

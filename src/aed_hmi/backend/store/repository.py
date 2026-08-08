@@ -245,6 +245,27 @@ class Repository:
                     (row["mission_id"],),
                 ).fetchall()
             ]
+            # ETA 결과는 응급 요청(event_id)과 로봇별로 한 건씩 저장된다.
+            # 복귀도 같은 event_id/robot_id 를 쓰므로 AED 임무에만 연결해야
+            # 앞서 끝난 출동 ETA가 복귀 이력에 잘못 표시되지 않는다.
+            eta = None
+            if "-aed-" in row["mission_id"] and last:
+                eta = self._connection().execute(
+                    """
+                    SELECT predicted_sec, actual_sec, error_sec
+                    FROM eta_records
+                    WHERE request_id = ? AND robot_id = ?
+                    ORDER BY stamp DESC LIMIT 1
+                    """,
+                    (row["event_id"], last["robot_id"]),
+                ).fetchone()
+            error_rate = None
+            if eta and eta["actual_sec"] > 0.0:
+                error_rate = (
+                    abs(eta["actual_sec"] - eta["predicted_sec"])
+                    / eta["actual_sec"]
+                    * 100.0
+                )
             summaries.append(MissionSummary(
                 mission_id=row["mission_id"],
                 event_id=row["event_id"] or "",
@@ -263,6 +284,11 @@ class Repository:
                 assignment_version=row["assignment_version"] or 0,
                 reassignment_count=max(row["reassignments"] or 0, 0),
                 failure_reasons=reasons,
+                predicted_eta_seconds=(
+                    eta["predicted_sec"] if eta else None
+                ),
+                actual_travel_seconds=(eta["actual_sec"] if eta else None),
+                eta_error_rate_percent=error_rate,
             ))
         return summaries
 

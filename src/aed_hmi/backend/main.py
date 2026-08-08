@@ -28,6 +28,9 @@ def _start(context: Context, settings: Settings) -> None:
         on_mission=context.on_mission,
         on_frame=context.on_frame,
         on_person_count=context.on_person_count,
+        on_lidar_state=context.on_lidar_state,
+        on_fallback_state=context.on_fallback_state,
+        on_predicted_eta=context.on_predicted_eta,
         on_eta_record=context.on_eta_record,
         on_assignment=context.on_assignment,
     )

@@ -27,6 +27,7 @@ from .converters import (
     to_mission_event,
     to_robot_snapshot,
 )
+from .images import raw_image_to_jpeg
 
 LOGGER = logging.getLogger(__name__)
 
@@ -48,6 +49,9 @@ class RosBridge:
         on_mission: Callable[[MissionEvent], None],
         on_frame: Callable[[str, bytes], None],
         on_person_count: Callable[[str, int], None],
+        on_lidar_state: Callable[[str, str], None],
+        on_fallback_state: Callable[[str, str], None],
+        on_predicted_eta: Callable[[str, float], None],
         on_eta_record: Callable[[EtaRecord], None],
         on_assignment: Callable[..., None],
         streams=topics.DEFAULT_STREAMS,
@@ -57,6 +61,9 @@ class RosBridge:
         self._on_mission = on_mission
         self._on_frame = on_frame
         self._on_person_count = on_person_count
+        self._on_lidar_state = on_lidar_state
+        self._on_fallback_state = on_fallback_state
+        self._on_predicted_eta = on_predicted_eta
         self._on_eta_record = on_eta_record
         self._on_assignment = on_assignment
         self._streams = streams
@@ -115,8 +122,8 @@ class RosBridge:
         from aed_interfaces.msg import (
             EmergencyEvent, MissionAssignment, MissionStatus, RobotState,
         )
-        from sensor_msgs.msg import CompressedImage
-        from std_msgs.msg import String, UInt32
+        from sensor_msgs.msg import CompressedImage, Image
+        from std_msgs.msg import Float32, String, UInt32
 
         node = self._node
         # 운영자가 지도에서 찍은 자리를 발행한다. 검출 노드가 내는 것과
@@ -173,16 +180,46 @@ class RosBridge:
             String, topics.ETA_RESULT_TOPIC,
             self._handle_eta_result, topics.latched_qos(),
         )
+        for robot_id in topics.ROBOT_IDS:
+            node.create_subscription(
+                Float32,
+                topics.predicted_eta_topic(robot_id),
+                lambda message, rid=robot_id:
+                    self._on_predicted_eta(rid, float(message.data)),
+                topics.latched_qos(),
+            )
+            node.create_subscription(
+                String,
+                topics.lidar_state_topic(robot_id),
+                lambda message, rid=robot_id:
+                    self._on_lidar_state(rid, message.data),
+                topics.latched_qos(),
+            )
+            node.create_subscription(
+                String,
+                topics.fallback_state_topic(robot_id),
+                lambda message, rid=robot_id:
+                    self._on_fallback_state(rid, message.data),
+                topics.latched_qos(),
+            )
 
         for source in self._streams:
             # 기본 인자로 stream_id 를 묶는다. 안 하면 모든 콜백이 마지막
             # 반복의 값을 보게 된다.
-            node.create_subscription(
-                CompressedImage, source.topic,
-                lambda message, stream_id=source.stream_id:
-                    self._on_frame(stream_id, bytes(message.data)),
-                topics.image_qos(),
-            )
+            if source.compressed:
+                node.create_subscription(
+                    CompressedImage, source.topic,
+                    lambda message, stream_id=source.stream_id:
+                        self._on_frame(stream_id, bytes(message.data)),
+                    topics.image_qos(),
+                )
+            else:
+                node.create_subscription(
+                    Image, source.topic,
+                    lambda message, stream_id=source.stream_id:
+                        self._handle_raw_frame(stream_id, message),
+                    topics.image_qos(),
+                )
 
     def publish_operator_report(self, x: float, y: float,
                                 zone_id: str = "operator") -> str:
@@ -238,6 +275,7 @@ class RosBridge:
             topics.AGGREGATE_EVENT_TOPIC,
             topics.ETA_RESULT_TOPIC,
         ] + [topics.assignment_topic(r) for r in topics.ROBOT_IDS] \
+          + [topics.predicted_eta_topic(r) for r in topics.ROBOT_IDS] \
           + [source.topic for source in self._streams]
 
         missing = frozenset(
@@ -264,6 +302,15 @@ class RosBridge:
     # ------------------------------------------------------------------
     # 콜백. ROS 스레드에서 불린다.
     # ------------------------------------------------------------------
+
+    def _handle_raw_frame(self, stream_id: str, message) -> None:
+        """OAK-D preview Image를 브라우저용 JPEG 한 장으로 바꾼다."""
+        try:
+            jpeg = raw_image_to_jpeg(message)
+        except (TypeError, ValueError) as error:
+            LOGGER.warning("%s preview 변환 실패: %s", stream_id, error)
+            return
+        self._on_frame(stream_id, jpeg)
 
     def _handle_eta_result(self, message) -> None:
         # 이 토픽만 형이 보장되지 않는다. 검사는 EtaRecord.from_json 이

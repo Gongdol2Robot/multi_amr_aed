@@ -7,6 +7,8 @@
 CPU 를 그대로 태운다. FrameBuffer 가 이벤트로 깨워 준다.
 """
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
@@ -32,7 +34,12 @@ async def video_stream(stream_id: str, request: Request):
         while True:
             if await request.is_disconnected():
                 break
-            jpeg = buffer.wait_for_next(timeout=IDLE_TIMEOUT_S)
+            # threading.Event.wait()를 이벤트 루프에서 직접 부르면 영상 타일
+            # 하나가 최대 1초 동안 다른 영상과 API 응답까지 전부 막는다.
+            # ROS 콜백과 함께 쓰는 blocking buffer는 worker thread에서 기다린다.
+            jpeg = await asyncio.to_thread(
+                buffer.wait_for_next, IDLE_TIMEOUT_S
+            )
             if jpeg is None:
                 continue
             yield (

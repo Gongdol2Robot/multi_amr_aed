@@ -12,7 +12,6 @@ import threading
 import time
 from typing import Optional
 
-from ..domain import eta
 from ..domain.enums import (
     TERMINAL_MISSION_STATES,
     EventStatus,
@@ -44,10 +43,21 @@ class LiveState:
         self._lock = threading.Lock()
         self._robots: dict[str, RobotSnapshot] = {}
         self._event: Optional[EmergencyEventSnapshot] = None
+        # 검출기가 CANCELED를 보내도 이미 출동한 임무가 있으면 이벤트 정보가
+        # 필요하다. 이벤트별 마지막 유효(비종료) 표본을 보관한다.
+        self._events: dict[str, EmergencyEventSnapshot] = {}
         # mission_id -> 그 임무에서 마지막으로 본 상태 전이
         self._missions: dict[str, MissionEvent] = {}
         # mission_id -> (신고 시각, 목표 좌표). 요약을 만들 때 쓴다.
         self._mission_meta: dict[str, tuple[float, Point2D]] = {}
+        # 배정 순간 중앙제어가 계산한 ETA. 이후 실시간 계산과 달리 고정한다.
+        self._mission_initial_eta: dict[str, float] = {}
+        # 중앙제어가 보낸 (남은 초, 수신 시각). HMI는 별도 계산하지 않는다.
+        self._mission_current_eta: dict[str, tuple[float, float]] = {}
+        # sensor_recovery 토픽은 RobotState와 독립적으로 들어온다. 로봇 상태
+        # 표본과 합치는 것은 snapshot을 만드는 순간 한 번만 한다.
+        self._lidar_states: dict[str, str] = {}
+        self._fallback_states: dict[str, str] = {}
         # camera_id -> (연속 검출 수, 마지막으로 들은 시각)
         self._detections: dict[str, tuple[int, float]] = {}
 
@@ -59,6 +69,22 @@ class LiveState:
         with self._lock:
             self._robots[robot.robot_id] = robot
 
+    def put_lidar_state(self, robot_id: str, state: str) -> None:
+        normalized = state.strip().upper()
+        if normalized not in {"STARTING", "ALIVE", "FAULT", "RECOVERING"}:
+            normalized = "UNKNOWN"
+        with self._lock:
+            self._lidar_states[robot_id] = normalized
+
+    def put_fallback_state(self, robot_id: str, state: str) -> None:
+        normalized = state.strip().upper()
+        if normalized not in {
+            "IDLE", "STARTING", "ACTIVE", "BLOCKED", "SUCCEEDED", "FAILED",
+        }:
+            normalized = "UNKNOWN"
+        with self._lock:
+            self._fallback_states[robot_id] = normalized
+
     def put_event(self, event: EmergencyEventSnapshot) -> None:
         with self._lock:
             # 어느 카메라가 무엇을 보고 있는지는 이벤트가 알려준다.
@@ -68,12 +94,18 @@ class LiveState:
                 self._detections[event.camera_id] = (
                     event.consecutive_detections, time.time()
                 )
-            # 끝난 이벤트는 화면에서 내린다. 남겨두면 운영자가 아직
-            # 진행 중인 것으로 오해한다.
+            # 카메라에서 대상이 사라졌다는 CANCELED는 검출 수명의 끝이지,
+            # 이미 시작한 출동의 끝이 아니다. 관련 임무가 움직이는 동안은
+            # 배너를 유지하고 MissionStatus가 끝났을 때 내린다.
             if event.status in (EventStatus.RESOLVED, EventStatus.CANCELED):
-                if self._event and self._event.event_id == event.event_id:
+                if (
+                    self._event
+                    and self._event.event_id == event.event_id
+                    and not self._has_active_mission(event.event_id)
+                ):
                     self._event = None
                 return
+            self._events[event.event_id] = event
             self._event = event
 
     def put_person_count(self, camera_id: str, count: int) -> None:
@@ -105,12 +137,55 @@ class LiveState:
                 self._mission_meta[mission.mission_id] = (
                     mission.stamp, Point2D(0.0, 0.0)
                 )
+            if mission.state not in TERMINAL_MISSION_STATES:
+                event = self._events.get(mission.event_id)
+                if event is not None:
+                    self._event = event
+                return
+
+            # 운영자 좌표 신고는 별도 RESOLVED 이벤트를 발행하지 않는다.
+            # 마지막 관련 임무의 ARRIVED/CANCELED/오류 상태를 종료 신호로 쓴다.
+            if (
+                self._event
+                and self._event.event_id == mission.event_id
+                and not self._has_active_mission(mission.event_id)
+            ):
+                self._event = None
+
+    def _has_active_mission(self, event_id: str) -> bool:
+        """Return whether the event still has a non-terminal robot mission.
+
+        Caller must hold ``self._lock``.
+        """
+        return any(
+            item.event_id == event_id
+            and item.state not in TERMINAL_MISSION_STATES
+            for item in self._missions.values()
+        )
 
     def set_mission_target(
-        self, mission_id: str, called_at: float, target: Point2D
+        self, mission_id: str, called_at: float, target: Point2D,
+        *, initial_eta_seconds: float | None = None,
+        current_eta_seconds: float | None = None,
     ) -> None:
         with self._lock:
             self._mission_meta[mission_id] = (called_at, target)
+            if initial_eta_seconds is not None:
+                self._mission_initial_eta[mission_id] = initial_eta_seconds
+            if current_eta_seconds is not None:
+                self._mission_current_eta[mission_id] = (
+                    current_eta_seconds, called_at
+                )
+
+    def set_mission_eta(
+        self, mission_id: str, seconds: float | None, received_at: float
+    ) -> None:
+        """Store a central mission-manager ETA update without recalculation."""
+        with self._lock:
+            if seconds is None:
+                self._mission_current_eta.pop(mission_id, None)
+            else:
+                self._mission_current_eta[mission_id] = (seconds, received_at)
 
     # ------------------------------------------------------------------
     # 읽기 (asyncio 스레드)
@@ -150,6 +225,13 @@ class LiveState:
         """
         from dataclasses import replace
 
+        robot = replace(
+            robot,
+            lidar_state=self._lidar_states.get(robot.robot_id, "UNKNOWN"),
+            fallback_state=self._fallback_states.get(
+                robot.robot_id, "UNKNOWN"
+            ),
+        )
         age = now - robot.stamp
         if age <= ROBOT_STALE_AFTER_S:
             return replace(robot, heartbeat_age_s=now - robot.last_heartbeat
@@ -162,38 +244,26 @@ class LiveState:
             detail=f"{age:.0f}초째 상태 수신 없음",
         )
 
-    def _estimate_eta(self, mission: MissionEvent, target: Point2D):
-        """그 임무를 수행 중인 로봇의 현재 상태로 도착 예상을 낸다.
-
-        이동 중이 아닌 상태(배정 직후, 복구 대기 등)에서는 예상을 내지
-        않는다. 아직 출발도 안 했는데 숫자를 보여주면 그것부터 믿게 된다.
-        """
-        if mission.state not in (
-            MissionState.DISPATCHING, MissionState.EN_ROUTE,
-        ):
-            return None
-        robot = self._robots.get(mission.robot_id)
-        if robot is None or target == Point2D(0.0, 0.0):
-            return None
-        return eta.estimate(
-            robot_x=robot.position.x, robot_y=robot.position.y,
-            target_x=target.x, target_y=target.y,
-            speed_mps=robot.speed_mps,
-            path_cost=robot.estimated_path_cost,
-            path_valid=robot.path_valid,
-        )
-
     def _summarize(self, mission: MissionEvent, now: float) -> MissionSummary:
         called_at, target = self._mission_meta.get(
             mission.mission_id, (mission.stamp, Point2D(0.0, 0.0))
         )
-        prediction = self._estimate_eta(mission, target)
+        eta_update = self._mission_current_eta.get(mission.mission_id)
+        remaining_eta = None
+        if (
+            eta_update is not None
+            and mission.state in (
+                MissionState.DISPATCHING, MissionState.EN_ROUTE,
+            )
+        ):
+            remaining_eta = max(
+                eta_update[0] - (now - eta_update[1]), 0.0
+            )
         return MissionSummary(
-            eta_seconds=prediction.seconds if prediction else None,
-            eta_distance_m=(
-                round(prediction.distance_m, 2) if prediction else None
+            eta_seconds=remaining_eta,
+            initial_eta_seconds=self._mission_initial_eta.get(
+                mission.mission_id
             ),
-            eta_confident=bool(prediction and prediction.confident),
             mission_id=mission.mission_id,
             event_id=mission.event_id,
             robot_id=mission.robot_id,

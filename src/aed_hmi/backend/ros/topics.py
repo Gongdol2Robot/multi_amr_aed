@@ -113,6 +113,20 @@ ROBOT_IDS = ("robot1", "robot2")
 # 있는 result 하나만 받는다.
 ETA_RESULT_TOPIC = "/emergency/eta/result"
 
+
+def predicted_eta_topic(robot_id: str) -> str:
+    return f"/emergency/eta/predicted/{robot_id}"
+
+
+def lidar_state_topic(robot_id: str) -> str:
+    """sensor_recovery/lidar_watchdog_node.py가 내는 4단계 상태."""
+    return f"/{robot_id}/lidar_state"
+
+
+def fallback_state_topic(robot_id: str) -> str:
+    """fallback_path_follower.py의 Depth/cmd_vel 제어 상태."""
+    return f"/{robot_id}/fallback_state"
+
 # vision_detector 가 카메라마다 따로 내는 토픽. 노트북 두 대가 같은
 # ROS_DOMAIN_ID 를 써도 섞이지 않도록 절대 경로를 쓴다.
 VISION_CAMERA_IDS = ("camera_open", "camera_alley")
@@ -136,6 +150,7 @@ class StreamSource:
     kind: str
     topic: str
     detects: bool
+    compressed: bool = True
 
 
 def _topic(stream_id: str, default: str) -> str:
@@ -149,8 +164,9 @@ def _topic(stream_id: str, default: str) -> str:
     return os.environ.get(f"AED_HMI_STREAM_{stream_id.upper()}", default)
 
 
-# 4분할 화면. 고정 웹캠 2대는 이미 검출까지 하고, 로봇 2대는 아직 원본만
-# 나온다. 로봇 쪽 검출 노드가 붙으면 위 환경변수로 토픽만 바꿔 끼우면 된다.
+# 4분할 화면. 고정 웹캠은 검출 결과인 CompressedImage를 그대로 받고,
+# 로봇 OAK-D는 메인 RGB 대신 작은 preview Image를 받아 백엔드에서 JPEG로
+# 바꾼다. 메인 RGB를 두 대 동시에 구독하면 무선망 부하가 크게 늘어난다.
 DEFAULT_STREAMS = (
     StreamSource(
         "camera_open", "고정 웹캠 · 개방구역", "webcam",
@@ -165,12 +181,14 @@ DEFAULT_STREAMS = (
     ),
     StreamSource(
         "robot1", "TurtleBot 1 · OAK-D", "robot",
-        _topic("robot1", "/robot1/oakd/rgb/image_raw/compressed"),
+        _topic("robot1", "/robot1/oakd/rgb/preview/image_raw"),
         detects=False,
+        compressed=False,
     ),
     StreamSource(
         "robot2", "TurtleBot 2 · OAK-D", "robot",
-        _topic("robot2", "/robot2/oakd/rgb/image_raw/compressed"),
+        _topic("robot2", "/robot2/oakd/rgb/preview/image_raw"),
         detects=False,
+        compressed=False,
     ),
 )

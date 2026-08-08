@@ -28,6 +28,7 @@ def robot(value: RobotSnapshot) -> dict:
     data["availability"] = value.availability.value
     data["role"] = value.role.value
     data["healthy"] = value.healthy
+    data["lidar_ok"] = value.lidar_ok
     return data
 
 
@@ -51,6 +52,7 @@ def mission_summary(value: MissionSummary) -> dict:
     data["response_seconds"] = value.response_seconds
     # 도착 예상 시각. 화면이 매 초 다시 계산하지 않도록 서버가 확정해 준다.
     data["eta_at"] = value.eta_at
+    data["initial_eta_at"] = value.initial_eta_at
     return data
 
 
