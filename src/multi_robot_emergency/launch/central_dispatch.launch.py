@@ -1,7 +1,9 @@
 """Launch the central path manager and the two mission executors."""
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -9,7 +11,7 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description() -> LaunchDescription:
-    """Start no Nav2 or RViz processes; those run on each robot PC."""
+    """Start central control, helper behavior, and robot Vision processes."""
     crowd_config = PathJoinSubstitution(
         [
             FindPackageShare("multi_robot_emergency"),
@@ -99,6 +101,11 @@ def generate_launch_description() -> LaunchDescription:
                 "patient_standoff_distance_m", default_value="0.15"
             ),
             DeclareLaunchArgument(
+                "return_after_helper_enabled",
+                default_value="true",
+                choices=["true", "false"],
+            ),
+            DeclareLaunchArgument(
                 "dual_robot_proximity_threshold_m", default_value="0.40"
             ),
             DeclareLaunchArgument(
@@ -108,6 +115,21 @@ def generate_launch_description() -> LaunchDescription:
                 "dual_robot_proximity_grace_sec", default_value="2.0"
             ),
             DeclareLaunchArgument("planner_id", default_value="GridBased"),
+            DeclareLaunchArgument(
+                "start_helper_mission",
+                default_value="true",
+                choices=["true", "false"],
+            ),
+            DeclareLaunchArgument(
+                "start_robot_vision",
+                default_value="true",
+                choices=["true", "false"],
+            ),
+            DeclareLaunchArgument(
+                "robot_vision_target",
+                default_value="person",
+                choices=["person", "mannequin"],
+            ),
             DeclareLaunchArgument(
                 "automatic_request",
                 default_value="false",
@@ -206,6 +228,12 @@ def generate_launch_description() -> LaunchDescription:
                             ),
                             value_type=float,
                         ),
+                        "return_after_helper_enabled": ParameterValue(
+                            LaunchConfiguration(
+                                "return_after_helper_enabled"
+                            ),
+                            value_type=bool,
+                        ),
                         "dual_robot_proximity_threshold_m": ParameterValue(
                             LaunchConfiguration(
                                 "dual_robot_proximity_threshold_m"
@@ -285,6 +313,53 @@ def generate_launch_description() -> LaunchDescription:
                         value_type=float,
                     ),
                 }],
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    PathJoinSubstitution([
+                        FindPackageShare("helper_mission"),
+                        "launch",
+                        "helper_mission.launch.py",
+                    ])
+                ),
+                condition=IfCondition(
+                    LaunchConfiguration("start_helper_mission")
+                ),
+                launch_arguments={
+                    "robot_ids": "robot1,robot2",
+                }.items(),
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    PathJoinSubstitution([
+                        FindPackageShare("aed_vision"),
+                        "launch",
+                        "robot_vision.launch.py",
+                    ])
+                ),
+                condition=IfCondition(
+                    LaunchConfiguration("start_robot_vision")
+                ),
+                launch_arguments={
+                    "robot_id": "robot1",
+                    "target": LaunchConfiguration("robot_vision_target"),
+                }.items(),
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    PathJoinSubstitution([
+                        FindPackageShare("aed_vision"),
+                        "launch",
+                        "robot_vision.launch.py",
+                    ])
+                ),
+                condition=IfCondition(
+                    LaunchConfiguration("start_robot_vision")
+                ),
+                launch_arguments={
+                    "robot_id": "robot2",
+                    "target": LaunchConfiguration("robot_vision_target"),
+                }.items(),
             ),
         ]
     )

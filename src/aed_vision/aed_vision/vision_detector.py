@@ -12,7 +12,7 @@ import rclpy
 from aed_interfaces.msg import EmergencyEvent, Heartbeat
 from geometry_msgs.msg import PointStamped
 from rclpy.node import Node
-from sensor_msgs.msg import CompressedImage
+from sensor_msgs.msg import CompressedImage, Image
 from std_msgs.msg import Bool, String, UInt32
 
 from .camera_source import DirectCameraSource
@@ -32,6 +32,7 @@ PARAMETER_DEFAULTS = (
     ("zone_id", "open_zone"),
     ("mode", "open"),
     ("image_topic", "/camera/image_raw/compressed"),
+    ("image_is_compressed", True),
     ("direct_camera", True),
     ("camera_device", "/dev/video2"),
     ("width", 640),
@@ -59,6 +60,7 @@ PARAMETER_DEFAULTS = (
     ("confirmation_hits", 6),
     ("helper_confirmation_window", 6),
     ("helper_confirmation_hits", 3),
+    ("helper_max_distance_ratio", 0.30),
     ("crowd_roi", [0.0, 0.0, 1.0, 1.0]),
     ("crowded_person_threshold", 3),
     ("fallen_person_overlap_iou", 0.4),
@@ -73,6 +75,54 @@ PARAMETER_DEFAULTS = (
     ("show_window", True),
     ("debug_jpeg_quality", 80),
 )
+
+
+def raw_image_to_bgr(message: Image) -> np.ndarray:
+    """Convert common 8-bit ROS Image encodings without cv_bridge.
+
+    ROS Humble's cv_bridge extension is built against the system NumPy ABI,
+    while Ultralytics may use a newer user-site NumPy.  Reading the byte
+    buffer directly avoids loading incompatible NumPy ABIs in one process.
+    """
+    encoding = message.encoding.lower()
+    channel_counts = {
+        "bgr8": 3,
+        "rgb8": 3,
+        "bgra8": 4,
+        "rgba8": 4,
+        "mono8": 1,
+        "8uc1": 1,
+        "8uc3": 3,
+        "8uc4": 4,
+    }
+    channels = channel_counts.get(encoding)
+    if channels is None:
+        raise ValueError(f"unsupported raw image encoding: {message.encoding}")
+    row_bytes = int(message.width) * channels
+    step = int(message.step)
+    if step < row_bytes:
+        raise ValueError(
+            f"invalid raw image step={step}; expected at least {row_bytes}"
+        )
+    expected_bytes = int(message.height) * step
+    raw = np.frombuffer(message.data, dtype=np.uint8)
+    if raw.size < expected_bytes:
+        raise ValueError(
+            f"short raw image buffer={raw.size}; expected {expected_bytes}"
+        )
+    pixels = raw[:expected_bytes].reshape(int(message.height), step)
+    pixels = pixels[:, :row_bytes].reshape(
+        int(message.height), int(message.width), channels
+    )
+    if encoding == "rgb8":
+        return pixels[:, :, ::-1].copy()
+    if encoding == "rgba8":
+        return cv2.cvtColor(pixels, cv2.COLOR_RGBA2BGR)
+    if encoding in ("bgra8", "8uc4"):
+        return cv2.cvtColor(pixels, cv2.COLOR_BGRA2BGR)
+    if channels == 1:
+        return cv2.cvtColor(pixels[:, :, 0], cv2.COLOR_GRAY2BGR)
+    return pixels.copy()
 
 
 class VisionDetector(Node):
@@ -194,6 +244,9 @@ class VisionDetector(Node):
             crowd_roi=self.crowd_roi,
             crowded_threshold=self.crowded_threshold,
             overlap_threshold=self.overlap_threshold,
+            helper_max_distance_ratio=float(
+                self.get_parameter("helper_max_distance_ratio").value
+            ),
             pose_keypoint_conf=float(
                 self.get_parameter("pose_keypoint_conf").value
             ),
@@ -237,11 +290,22 @@ class VisionDetector(Node):
             CompressedImage, f"{prefix}/debug/compressed", CAMERA_QOS
         )
         image_topic = str(self.get_parameter("image_topic").value)
+        self.image_is_compressed = bool(
+            self.get_parameter("image_is_compressed").value
+        )
         # 우선 구독을 만들어 두고, direct_camera 모드면 바로 아래에서 폐기한다.
         # (robot 모드처럼 direct_camera=False인 경우에는 이 구독을 그대로 쓴다.)
-        self.subscription = self.create_subscription(
-            CompressedImage, image_topic, self._on_image, CAMERA_QOS
-        )
+        if self.image_is_compressed:
+            self.subscription = self.create_subscription(
+                CompressedImage,
+                image_topic,
+                self._on_compressed_image,
+                CAMERA_QOS,
+            )
+        else:
+            self.subscription = self.create_subscription(
+                Image, image_topic, self._on_raw_image, CAMERA_QOS
+            )
         # 기본 실행은 한 노드가 웹캠을 직접 읽는다. 같은 노트북 안에서 영상을
         # DDS로 왕복시키지 않아 화면 지연과 publisher/subscriber 연결 문제를 없앤다.
         self.direct_camera = bool(
@@ -263,14 +327,15 @@ class VisionDetector(Node):
             f"camera={self.camera_id} mode={self.mode} image={image_topic} "
             f"crowd_detection={self.enable_crowd} "
             f"people_as_helpers={self.detect_people_as_helpers} "
-            f"detection_backend={self.pipeline.detection_backend}"
+            f"detection_backend={self.pipeline.detection_backend} "
+            f"input={'compressed' if self.image_is_compressed else 'raw'}"
         )
 
     def _declare_parameters(self) -> None:
         """YAML로 덮어쓸 수 있는 ROS 파라미터를 일괄 선언한다."""
         self.declare_parameters("", PARAMETER_DEFAULTS)
 
-    def _on_image(self, message: CompressedImage) -> None:
+    def _on_compressed_image(self, message: CompressedImage) -> None:
         """구독한 JPEG 프레임을 디코딩해 추론한다."""
         frame = cv2.imdecode(
             np.frombuffer(message.data, dtype=np.uint8), cv2.IMREAD_COLOR
@@ -280,8 +345,19 @@ class VisionDetector(Node):
             return
         self._process_frame(frame, message)
 
+    def _on_raw_image(self, message: Image) -> None:
+        """OAK-D preview Image를 BGR OpenCV 프레임으로 바꿔 추론한다."""
+        try:
+            frame = raw_image_to_bgr(message)
+        except ValueError as error:
+            self.get_logger().warning(
+                f"Failed to convert raw preview image: {error}"
+            )
+            return
+        self._process_frame(frame, message)
+
     def _process_frame(
-        self, frame: np.ndarray, source: CompressedImage
+        self, frame: np.ndarray, source: CompressedImage | Image
     ) -> None:
         """디코딩된 한 프레임의 구조·혼잡 검출과 결과 발행을 수행한다."""
         # 이전 프레임 추론이 아직 안 끝났으면 이번 프레임은 버린다.
@@ -367,7 +443,7 @@ class VisionDetector(Node):
 
     def _publish_fallen_location(
         self,
-        source: CompressedImage,
+        source: CompressedImage | Image,
         location: tuple[float, float],
     ) -> None:
         """호모그래피로 계산한 검출 위치를 map 좌표 토픽으로 발행한다."""
@@ -381,7 +457,7 @@ class VisionDetector(Node):
 
     def _publish_outputs(
         self,
-        source: CompressedImage,
+        source: CompressedImage | Image,
         fallen: list[Box],
         pose_evidence: list,
         helpers: list[Box],
@@ -482,7 +558,7 @@ class VisionDetector(Node):
 
     def _publish_event(
         self,
-        source: CompressedImage,
+        source: CompressedImage | Image,
         status: int,
         fallen: list[Box],
         event_id: str,
@@ -512,7 +588,7 @@ class VisionDetector(Node):
 
     def _publish_debug(
         self,
-        source: CompressedImage,
+        source: CompressedImage | Image,
         result: InferenceOutput,
     ) -> None:
         """추론 결과를 로컬 창과 압축 디버그 토픽으로 출력한다."""

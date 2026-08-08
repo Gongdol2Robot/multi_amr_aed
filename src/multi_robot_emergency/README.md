@@ -115,6 +115,19 @@ ros2 launch multi_robot_emergency central_dispatch.launch.py \
 검출 노드가 이미 안전 정지 좌표를 발행하는 경우에만
 `patient_standoff_enabled:=false`로 끕니다.
 
+조력자 탐색 노드가 `HELPER_ARRIVED`를 발행하면 도착 로봇은 출동 직전에
+저장한 위치로 자동 복귀합니다. 기본값은
+`return_after_helper_enabled:=true`이며, 현장에 남겨야 하는 시험에서는
+`false`로 끌 수 있습니다. 조력자 확인 TTS와 5초 인계 대기는
+`helper_mission`이 담당합니다.
+
+`central_dispatch.launch.py`는 기본적으로 두 로봇의 `aed_vision`과
+`helper_mission`도 함께 실행합니다. HMI 자체는 기존 정책대로 별도
+프로세스입니다. 로봇 Vision은 OAK-D raw preview를 각각 한 번만 구독하고,
+HMI는 `/robotN/vision/debug/compressed`를 받아 중복 raw 전송을 피합니다.
+개별 디버깅 시에는 `start_robot_vision:=false` 또는
+`start_helper_mission:=false`로 제외할 수 있습니다.
+
 또는 RViz 툴바에서 **Publish Point**를 선택하고 지도 좌표를 클릭합니다.
 `/clicked_point`, `/robot1/clicked_point`, `/robot2/clicked_point`를 모두
 구독하므로 중앙 노드는 계속 켜둔 상태에서 어느 RViz에서든 클릭할 때마다

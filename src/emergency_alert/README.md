@@ -98,9 +98,11 @@ ros2 run emergency_alert mission_status_alert --ros-args \
 
 ## 오디오 출력 계층
 
-`audio_output.AudioOutput`이 Create3의 `AudioNoteVector` 생성을 한 곳에서
-담당합니다. 나중에 블루투스 스피커와 TTS를 도입할 때 이 클래스의 구현만
-교체하면 상태 전이와 주행 코드를 바꿀 필요가 없습니다.
+`audio_output.AudioOutput`은 기본적으로 PC 시스템 오디오를 사용합니다.
+`paplay`, `pw-play`, `aplay` 순으로 사용 가능한 플레이어를 자동 선택하므로
+OS 기본 출력 장치를 블루투스 스피커로 지정하면 됩니다. 필요할 때
+`audio_backend:=create3`로 기존 Create3 `AudioNoteVector` 출력도 선택할 수
+있습니다.
 
 개발 PC에 `irobot_create_msgs`가 없으면 노드가 종료되지 않고
 `cmd_audio_fallback`에 `BEEP`/`STOP` 문자열을 발행합니다. 이 대체 출력은
@@ -113,7 +115,7 @@ ros2 run emergency_alert siren --ros-args \
   -r __ns:=/robot1 -p audio_topic:=cmd_audio
 ```
 
-단발 노드는 설정된 음계가 Create3 큐에서 재생될 시간을 확보한 뒤 종료합니다.
+단발 노드는 설정된 음계가 시스템 스피커에서 재생될 시간을 확보한 뒤 종료합니다.
 
 ## 파일 구조
 

@@ -41,6 +41,9 @@ class AlertMissionExecutor(Node):
         self.declare_parameter("undock_action", "undock")
         self.declare_parameter("navigate_action", "navigate_to_pose")
         self.declare_parameter("audio_topic", "cmd_audio")
+        self.declare_parameter("audio_backend", "system")
+        self.declare_parameter("audio_player", "auto")
+        self.declare_parameter("audio_device", "")
         self.declare_parameter("action_server_timeout", 5.0)
         self.declare_parameter("alarm_period", 0.8)
         self.declare_parameter("note_duration", 0.25)
@@ -107,7 +110,11 @@ class AlertMissionExecutor(Node):
             str(self.get_parameter("navigate_action").value),
         )
         self.audio = AudioOutput(
-            self, str(self.get_parameter("audio_topic").value)
+            self,
+            str(self.get_parameter("audio_topic").value),
+            str(self.get_parameter("audio_backend").value),
+            str(self.get_parameter("audio_player").value),
+            str(self.get_parameter("audio_device").value),
         )
         self.status_publisher = self.create_publisher(
             MissionStatus,

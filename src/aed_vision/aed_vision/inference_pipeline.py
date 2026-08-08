@@ -15,6 +15,7 @@ from .detection_logic import (
     Box,
     classify_crowd,
     crowd_time_multiplier,
+    filter_helpers_near_fallen,
     filter_nonfallen_people,
 )
 from .pose_posture import TORSO_INDEXES, classify_posture
@@ -137,6 +138,7 @@ class InferencePipeline:
         crowd_roi: list[float],
         crowded_threshold: int,
         overlap_threshold: float,
+        helper_max_distance_ratio: float,
         pose_keypoint_conf: float,
         pose_min_keypoints: int,
         pose_min_box_area: float,
@@ -166,12 +168,19 @@ class InferencePipeline:
         if not 0.0 <= self.pose_min_box_area <= 1.0:
             raise ValueError("pose_min_box_area must be between 0 and 1")
         if not 1 <= self.pose_min_torso_keypoints <= len(TORSO_INDEXES):
-            raise ValueError("pose_min_torso_keypoints must be between 1 and 4")
+            raise ValueError(
+                "pose_min_torso_keypoints must be between 1 and 4"
+            )
         self.crowd_roi = crowd_roi
         # 하위 호환을 위해 파라미터는 받지만 혼잡 등급은 이제 사람 수 1/2/3을
         # 직접 사용한다.
         self.crowded_threshold = crowded_threshold
         self.overlap_threshold = overlap_threshold
+        self.helper_max_distance_ratio = helper_max_distance_ratio
+        if not 0.0 < self.helper_max_distance_ratio <= 1.0:
+            raise ValueError(
+                "helper_max_distance_ratio must be in (0, 1]"
+            )
         self.options = {"iou": iou, "imgsz": imgsz, "verbose": False}
 
         # YAML에서 cuda/cuda:N을 명시했더라도 CUDA 런타임이나 해당 번호의 GPU가
@@ -375,6 +384,14 @@ class InferencePipeline:
             )
             person_count = len(people)
             helpers = people
+
+        height, width = frame.shape[:2]
+        helpers = filter_helpers_near_fallen(
+            helpers,
+            fallen,
+            (width, height),
+            self.helper_max_distance_ratio,
+        )
 
         return InferenceOutput(
             rescue_result,

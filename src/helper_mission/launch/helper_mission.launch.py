@@ -27,6 +27,12 @@ def _launch_nodes(context):
         "vision_timeout_seconds": float(
             LaunchConfiguration("vision_timeout_seconds").perform(context)
         ),
+        "audio_backend": LaunchConfiguration("audio_backend").perform(context),
+        "audio_player": LaunchConfiguration("audio_player").perform(context),
+        "audio_device": LaunchConfiguration("audio_device").perform(context),
+        "handoff_wait_seconds": float(
+            LaunchConfiguration("handoff_wait_seconds").perform(context)
+        ),
     }
     nodes = [
         Node(
@@ -57,6 +63,10 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("robot_ids", default_value="robot1,robot2"),
             DeclareLaunchArgument("rotation_speed_rps", default_value="0.35"),
+            DeclareLaunchArgument("audio_backend", default_value="system"),
+            DeclareLaunchArgument("audio_player", default_value="auto"),
+            DeclareLaunchArgument("audio_device", default_value=""),
+            DeclareLaunchArgument("handoff_wait_seconds", default_value="5.0"),
             # 0은 구조 인력이 감지될 때까지 무제한으로 회전·호출한다.
             DeclareLaunchArgument("helper_wait_timeout", default_value="0.0"),
             # Vision 토픽이 5분간 끊기면 회전과 호출음을 안전 정지한다.

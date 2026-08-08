@@ -19,8 +19,13 @@ def _create_robot_vision(context):
     }[target]
     person_conf = float(LaunchConfiguration("person_conf").perform(context))
     rescue_conf = float(LaunchConfiguration("rescue_conf").perform(context))
+    helper_max_distance_ratio = float(
+        LaunchConfiguration("helper_max_distance_ratio").perform(context)
+    )
     if not 0.0 <= person_conf <= 1.0 or not 0.0 <= rescue_conf <= 1.0:
         raise ValueError("person_conf and rescue_conf must be between 0 and 1")
+    if not 0.0 < helper_max_distance_ratio <= 1.0:
+        raise ValueError("helper_max_distance_ratio must be in (0, 1]")
     if not robot_id:
         raise ValueError("robot_id must not be empty")
     share_dir = Path(get_package_share_directory("aed_vision"))
@@ -37,15 +42,22 @@ def _create_robot_vision(context):
                     "camera_id": robot_id,
                     "zone_id": f"{robot_id}_view",
                     "image_topic": (
-                        f"/{robot_id}/oakd/rgb/image_raw/compressed"
+                        f"/{robot_id}/oakd/rgb/preview/image_raw"
                     ),
+                    "image_is_compressed": False,
                     "frame_id": f"{robot_id}/oakd_rgb_camera_optical_frame",
                     "detection_backend": detection_backend,
                     "person_conf": person_conf,
                     "rescue_conf": rescue_conf,
+                    "helper_max_distance_ratio": helper_max_distance_ratio,
                 },
             ],
             output="screen",
+            # The workspace is built with PYTHONNOUSERSITE=1 to isolate
+            # colcon from user-installed setuptools.  Ultralytics has no
+            # Humble rosdep package and is installed in the user site, so
+            # enable that site only for the inference process.
+            additional_env={"PYTHONNOUSERSITE": ""},
         )
     ]
 
@@ -61,6 +73,9 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument("person_conf", default_value="0.5"),
             DeclareLaunchArgument("rescue_conf", default_value="0.25"),
+            DeclareLaunchArgument(
+                "helper_max_distance_ratio", default_value="0.30"
+            ),
             OpaqueFunction(function=_create_robot_vision),
         ]
     )

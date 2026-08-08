@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+import math
 from typing import Iterable, Sequence
 
 
@@ -30,6 +31,11 @@ class Box:
         경계에 걸친 사람을 매 프레임 다르게 세는 현상을 줄이기 위한 기준이다.
         """
         return ((self.x1 + self.x2) / 2.0, (self.y1 + self.y2) / 2.0)
+
+    @property
+    def bottom_center(self) -> tuple[float, float]:
+        """사람이 바닥과 닿는 지점을 근사하는 bbox 하단 중심을 반환한다."""
+        return ((self.x1 + self.x2) / 2.0, self.y2)
 
 
 class TemporalConfirmation:
@@ -165,6 +171,42 @@ def filter_nonfallen_people(
         ):
             continue
         selected.append(person)
+    return selected
+
+
+def filter_helpers_near_fallen(
+    helpers: Iterable[Box],
+    fallen: Iterable[Box],
+    frame_size: tuple[int, int],
+    max_distance_ratio: float,
+) -> list[Box]:
+    """환자와 같은 프레임에서 충분히 가까운 조력자만 반환한다.
+
+    조력자의 bbox 하단 중심과 환자 bbox 중심 사이 픽셀 거리를 화면 대각선으로
+    정규화한다. 깊이 토픽 없이 해상도 변화에도 같은 비율 기준을 유지한다.
+    환자가 현재 프레임에 없으면 누구도 조력자로 확정하지 않는다.
+    """
+    width, height = frame_size
+    if width <= 0 or height <= 0:
+        return []
+    if not 0.0 < max_distance_ratio <= 1.0:
+        raise ValueError("max_distance_ratio must be in (0, 1]")
+    fallen_boxes = tuple(fallen)
+    if not fallen_boxes:
+        return []
+    maximum_pixels = math.hypot(width, height) * max_distance_ratio
+    selected = []
+    for helper in helpers:
+        helper_x, helper_y = helper.bottom_center
+        if any(
+            math.hypot(
+                helper_x - fallen_box.center[0],
+                helper_y - fallen_box.center[1],
+            )
+            <= maximum_pixels
+            for fallen_box in fallen_boxes
+        ):
+            selected.append(helper)
     return selected
 
 
