@@ -55,6 +55,8 @@ class TemporalConfirmation:
 
     def update(self, detected: bool) -> bool:
         """현재 프레임 결과를 창에 추가하고 응급상황 확정 여부를 반환한다."""
+        # deque(maxlen=window_size)라 창이 가득 차면 append 시 가장 오래된
+        # 프레임이 자동으로 밀려난다 — 별도 pop 없이 슬라이딩 윈도우가 된다.
         self._history.append(bool(detected))
         return sum(self._history) >= self.required_hits
 
@@ -83,10 +85,12 @@ def intersection_over_union(first: Box, second: Box) -> float:
     반환 범위는 0.0~1.0이다. COCO person bbox가 fallen_person bbox와 많이
     겹치면 동일 대상을 두 모델이 검출한 것으로 보고 인파 수에서 제외한다.
     """
+    # 두 bbox의 겹치는 사각형 좌표: 안쪽 경계끼리 max/min을 취한다.
     left = max(first.x1, second.x1)
     top = max(first.y1, second.y1)
     right = min(first.x2, second.x2)
     bottom = min(first.y2, second.y2)
+    # right < left 또는 bottom < top이면(안 겹침) 음수가 나오므로 0으로 clamp.
     intersection = max(0.0, right - left) * max(0.0, bottom - top)
     first_area = max(0.0, first.x2 - first.x1) * max(0.0, first.y2 - first.y1)
     second_area = max(0.0, second.x2 - second.x1) * max(

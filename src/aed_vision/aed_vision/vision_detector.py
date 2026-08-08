@@ -110,6 +110,8 @@ class VisionDetector(Node):
             if homography_camera_id
             else None
         )
+        # EmergencyEvent에 넣을 대표 위치. 호모그래피가 없으면 YAML의
+        # 고정 location_x/y를 그대로 쓰고, 있으면 매 확정마다 갱신된다.
         self.event_location = (self.location_x, self.location_y)
         self.homography_margin = float(
             self.get_parameter("homography_margin_m").value
@@ -235,6 +237,8 @@ class VisionDetector(Node):
             CompressedImage, f"{prefix}/debug/compressed", CAMERA_QOS
         )
         image_topic = str(self.get_parameter("image_topic").value)
+        # 우선 구독을 만들어 두고, direct_camera 모드면 바로 아래에서 폐기한다.
+        # (robot 모드처럼 direct_camera=False인 경우에는 이 구독을 그대로 쓴다.)
         self.subscription = self.create_subscription(
             CompressedImage, image_topic, self._on_image, CAMERA_QOS
         )
@@ -245,6 +249,9 @@ class VisionDetector(Node):
         )
         self.camera_source = None
         if self.direct_camera:
+            # 구독 대신 웹캠을 직접 폴링하는 DirectCameraSource로 대체한다.
+            # image_topic은 그대로 두어 이 노드가 발행하는 원본 영상 토픽 이름으로
+            # 재사용한다(구독은 안 하고 publish만).
             self.destroy_subscription(self.subscription)
             self.subscription = None
             self.camera_source = DirectCameraSource(
@@ -277,6 +284,9 @@ class VisionDetector(Node):
         self, frame: np.ndarray, source: CompressedImage
     ) -> None:
         """디코딩된 한 프레임의 구조·혼잡 검출과 결과 발행을 수행한다."""
+        # 이전 프레임 추론이 아직 안 끝났으면 이번 프레임은 버린다.
+        # 카메라 타이머/구독 콜백이 추론 속도보다 빠를 때 콜백이 쌓이는 것을 막는다
+        # (콜백 큐잉 대신 여기서 직접 최신 프레임 우선 정책을 구현).
         if self.busy:
             return
         self.busy = True
@@ -288,8 +298,12 @@ class VisionDetector(Node):
                 )
                 self.first_frame_logged = True
             result = self.pipeline.predict(frame)
+            # 이번 프레임 단독 검출 여부(result.fallen)를 시간 창에 넣어
+            # 순간 오검출을 걸러낸 "확정" 여부를 얻는다.
             confirmed = self.confirmation.update(bool(result.fallen))
             target_location = self._target_location(result.fallen, frame.shape)
+            # 측량 영역 밖(extrapolated)도 발행 대상에 포함— "configured"
+            # (호모그래피 자체가 없는 경우)만 제외한다.
             if target_location[2].startswith("homography"):
                 self._publish_fallen_location(
                     source, target_location[:2]
@@ -440,6 +454,10 @@ class VisionDetector(Node):
             }
         )
         self.status_pub.publish(String(data=json.dumps(payload)))
+        # was_confirmed와 비교해 상태가 "바뀐 프레임"에서만 이벤트를 쏜다.
+        # 매 프레임 CONFIRMED를 반복 발행하면 구독 측(mission_manager 등)이
+        # 매번 새 사고로 오인하므로, 상승 에지(False→True)/하강 에지(True→False)
+        # 만 이벤트로 만든다.
         # 새 사고마다 고유 ID를 만들고 해제 이벤트까지 같은 ID를 유지한다.
         if confirmed and not self.was_confirmed:
             self.event_id = f"{self.camera_id}-{uuid4().hex[:12]}"

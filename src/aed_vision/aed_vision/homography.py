@@ -62,10 +62,15 @@ class Homography:
         )
 
     def pixel_to_map(self, u: float, v: float):
+        # 동차좌표(homogeneous coordinate)로 변환 후 3x3 호모그래피 행렬을 곱한다.
+        # 결과의 z(point[2])로 나눠 다시 2D로 투영(perspective divide)해야
+        # 원근 왜곡이 반영된 실제 map 좌표가 나온다.
         point = self.matrix @ np.array([u, v, 1.0])
         return float(point[0] / point[2]), float(point[1] / point[2])
 
     def map_to_pixel(self, x: float, y: float):
+        # pixel_to_map의 역변환. 역행렬(self.inverse)을 미리 구해뒀으므로
+        # 매 호출마다 다시 invert하지 않는다.
         point = self.inverse @ np.array([x, y, 1.0])
         return float(point[0] / point[2]), float(point[1] / point[2])
 
@@ -75,6 +80,9 @@ class Homography:
     ):
         """검출 박스 중심점을 측량 해상도에 맞춰 map 좌표로 바꾼다."""
         u, v = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+        # 호모그래피 행렬은 측량 당시의 해상도(self.camera width/height) 기준으로
+        # 만들어졌다. 실제 입력 해상도(image_size)가 다르면 비율로 스케일링해
+        # 같은 물리적 지점이 같은 픽셀 좌표를 가리키도록 맞춘다.
         if image_size and self.camera:
             width, height = image_size
             u *= float(self.camera.get("width", width)) / width
@@ -92,20 +100,31 @@ class Homography:
     ) -> bool:
         polygon = self.survey_polygon()
         if len(polygon) < 3:
+            # 다각형을 정의할 점이 부족하면(측량 미비) 항상 안쪽으로 간주해
+            # 잘못된 "영역 밖" 경고로 정상 검출을 버리지 않는다.
             return True
+        # Ray casting(짝수/홀수 규칙): 점 (x, y)에서 수평 반직선을 오른쪽으로
+        # 쏘아 다각형 변과 몇 번 교차하는지 센다. 교차 횟수가 홀수면 내부다.
         inside = False
         for index, (x1, y1) in enumerate(polygon):
             x2, y2 = polygon[(index + 1) % len(polygon)]
+            # 이 변이 점의 y높이를 위아래로 가로지르는 경우에만 교차를 검사한다.
             if (y1 > y) != (y2 > y):
+                # 변과 y=고정 수평선의 교차 x좌표를 선형보간으로 구한다.
                 intersection = (x2 - x1) * (y - y1) / (y2 - y1) + x1
                 if x < intersection:
                     inside = not inside
         if inside or margin <= 0.0:
             return inside
+        # 다각형 안쪽이 아니어도, margin(m) 이내로 경계에 붙어 있으면 측량
+        # 오차 범위로 보고 통과시킨다. 각 변에 대해 점에서 가장 가까운 점을
+        # 구해 거리(hypot)를 계산한다.
         for index, start in enumerate(polygon):
             end = polygon[(index + 1) % len(polygon)]
             dx, dy = end[0] - start[0], end[1] - start[1]
             length_squared = dx * dx + dy * dy
+            # 점을 변 위로 투영한 비율(0=start, 1=end)을 구하고 [0,1]로 clamp해
+            # "변의 연장선"이 아니라 "변 위의" 최근접점만 나오게 한다.
             ratio = 0.0 if length_squared == 0.0 else max(
                 0.0,
                 min(

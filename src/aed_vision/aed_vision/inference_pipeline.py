@@ -39,6 +39,9 @@ POSE_SKELETON = (
 
 
 def _model_path(value: str, description: str) -> Path:
+    # "package://<pkg>/<relative>" 형식이면 ROS 패키지의 설치 경로(share
+    # 디렉터리) 기준으로 절대경로를 만든다. 이렇게 하면 YAML에 노트북마다
+    # 다른 절대경로를 적지 않아도 된다(README의 이유와 동일).
     if value.startswith("package://"):
         from ament_index_python.packages import get_package_share_directory
 
@@ -51,13 +54,18 @@ def _model_path(value: str, description: str) -> Path:
             Path(get_package_share_directory(package)) / relative
         ).resolve()
     else:
+        # 일반 경로는 환경변수와 ~를 확장해 사용한다.
         path = Path(os.path.expandvars(value)).expanduser().resolve()
     if not path.is_file():
+        # 모델 파일이 없으면(예: colcon build 전) 여기서 바로 실패시켜
+        # 나중에 알 수 없는 추론 에러로 이어지지 않게 한다.
         raise RuntimeError(f"{description} not found: {path}")
     return path
 
 
 def _names(model) -> list[str]:
+    # Ultralytics 모델의 클래스 이름은 버전/모델에 따라 dict 또는 list로 온다.
+    # dict일 때는 정수 키 순서(class id 순)로 정렬해 리스트로 통일한다.
     names = model.names
     if isinstance(names, dict):
         return [str(names[key]) for key in sorted(names, key=int)]
@@ -67,6 +75,11 @@ def _names(model) -> list[str]:
 
 
 def _boxes(result, class_id: int) -> list[Box]:
+    """YOLO 추론 결과에서 특정 class_id의 bbox만 뽑아 순수 Box 리스트로 바꾼다.
+
+    Ultralytics 텐서(result.boxes)를 여기서 즉시 CPU/Python 값으로 꺼내므로,
+    이후 detection_logic의 순수 함수들은 GPU/torch를 몰라도 된다.
+    """
     if result.boxes is None:
         return []
     selected = result.boxes[result.boxes.cls == class_id]
@@ -161,6 +174,9 @@ class InferencePipeline:
         if device:
             self.options["device"] = device
 
+        # backend에 따라 두 모델 중 하나만 로드한다(메모리·연산량 절약).
+        # mannequin_detect: 목각인형 파인튜닝 검출 모델.
+        # person_pose(기본): 실사람 관절 검출용 Pose 모델.
         self.rescue_model = None
         self.pose_model = None
         if self.detection_backend == "mannequin_detect":
@@ -168,6 +184,8 @@ class InferencePipeline:
                 str(_model_path(rescue_weights, "rescue weights"))
             )
             rescue_names = _names(self.rescue_model)
+            # 클래스 순서가 어긋나면 class_id 0/1을 fallen/helper로 오인하므로
+            # 로딩 시점에 바로 검증한다.
             if rescue_names != RESCUE_CLASS_NAMES:
                 raise RuntimeError(
                     f"Rescue classes must be {RESCUE_CLASS_NAMES}, "
@@ -183,6 +201,9 @@ class InferencePipeline:
                     f"got {self.pose_model.task}"
                 )
 
+        # COCO person 모델은 mannequin_detect에서 "인파 계산" 또는 "사람을
+        # helper로도 취급"이 필요할 때만 추가로 로드한다. person_pose
+        # backend는 Pose 모델의 bbox를 사람 수로 재사용하므로 여기서 로드하지 않는다.
         self.person_model = None
         self.person_class_id = -1
         if (
@@ -221,8 +242,12 @@ class InferencePipeline:
         ):
             box = Box(*xyxy, confidence=float(box_conf))
             box_area = max(box.x2 - box.x1, 0.0) * max(box.y2 - box.y1, 0.0)
+            # 관절별 confidence가 임계값 이상인 것만 "보인다"고 취급한다.
             visible = confidence >= self.pose_keypoint_conf
             torso_visible = int(visible[list(TORSO_INDEXES)].sum())
+            # 품질 필터: (1) bbox가 화면에서 너무 작거나(멀리 있어 신뢰 낮음),
+            # (2) 전체 보이는 관절 수가 부족하거나, (3) 자세 판정에 필요한
+            # 몸통(어깨·엉덩이) 관절이 부족하면 이 사람은 후보에서 제외한다.
             if (
                 box_area / max(frame_area, 1.0) < self.pose_min_box_area
                 or int(visible.sum()) < self.pose_min_keypoints
@@ -233,6 +258,7 @@ class InferencePipeline:
             posture, metrics = classify_posture(
                 keypoints, xyxy, keypoint_conf=self.pose_keypoint_conf
             )
+            # 필터를 통과한 사람은 person_count(인파)에도 포함시킨다.
             people.append(box)
             if posture == "FALLEN":
                 fallen.append(box)
@@ -251,7 +277,10 @@ class InferencePipeline:
     def predict(self, frame) -> InferenceOutput:
         started = perf_counter()
         pose_evidence: list[PoseEvidence] = []
+        # 1단계: 쓰러짐(fallen) 검출. backend에 따라 소스가 다르다.
         if self.detection_backend == "mannequin_detect":
+            # 파인튜닝 모델 하나로 fallen_person(class 0)과 helper_rc_car(class 1)를
+            # 동시에 얻는다.
             rescue_result = self.rescue_model.predict(
                 frame, conf=self.rescue_conf, **self.options
             )[0]
@@ -259,6 +288,8 @@ class InferencePipeline:
             helpers = _boxes(rescue_result, 1)
             pose_people: list[Box] = []
         else:
+            # Pose 모델은 helper를 구분하지 않으므로 helpers는 빈 채로 시작하고,
+            # 필요하면(detect_people_as_helpers) 아래에서 people로 채운다.
             rescue_result = self.pose_model.predict(
                 frame, conf=self.person_conf, **self.options
             )[0]
@@ -272,7 +303,11 @@ class InferencePipeline:
         time_multiplier = None
         crowd_traversable = True
 
+        # 2단계: 인원수/혼잡도 계산. 두 backend가 "사람 bbox 출처"만 다르고
+        # 이후 필터링(filter_nonfallen_people: ROI 안 + 환자 제외)과 혼잡도
+        # 계산 로직은 동일하다.
         if self.detection_backend == "person_pose":
+            # Pose 모델이 이미 사람 bbox를 갖고 있으므로 별도 모델 호출 없이 재사용한다.
             person_result = rescue_result
             height, width = frame.shape[:2]
             people = filter_nonfallen_people(
@@ -284,12 +319,14 @@ class InferencePipeline:
             )
             person_count = len(people)
             if self.detect_people_as_helpers:
+                # 로봇 모드: 환자를 제외한 나머지 사람을 구조 인력 후보로 삼는다.
                 helpers = people
             if self.enable_crowd:
                 crowd_level = classify_crowd(person_count)
                 time_multiplier = crowd_time_multiplier(person_count)
                 crowd_traversable = time_multiplier is not None
         elif self.person_model is not None:
+            # mannequin_detect + COCO person 모델을 별도로 한 번 더 돌린다.
             person_result = self.person_model.predict(
                 frame,
                 conf=self.person_conf,
@@ -328,9 +365,13 @@ class InferencePipeline:
 
     def render_debug(self, output: InferenceOutput, camera_id: str):
         if output.detection_backend == "mannequin_detect":
+            # Ultralytics 기본 plot()에 class id 대신 사람이 읽을 이름을
+            # 보여주려고 표시 직전에만 names를 덮어쓴다.
             output.rescue_result.names = DISPLAY_NAMES
             image = output.rescue_result.plot()
         else:
+            # Pose 결과는 자체 plot()을 쓰지 않고 자세·골격을 직접 그려
+            # posture 라벨과 색상(POSTURE_COLORS)을 함께 표시한다.
             image = output.rescue_result.orig_img.copy()
             for evidence in output.pose_evidence:
                 color = POSTURE_COLORS[evidence.posture]
