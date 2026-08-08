@@ -1,0 +1,44 @@
+/**:
+  ros__parameters:
+    # 나중에 Nav2 정상 주행 로그에서 만든 route YAML을 실행 시 전달한다.
+    route_file: ""
+    max_linear_speed: 0.07
+    max_angular_speed: 0.25
+    max_linear_accel: 0.10
+    max_angular_accel: 0.40
+    control_period_sec: 0.05
+    nav2_stop_delay_sec: 1.0
+    odom_timeout_sec: 1.0
+    depth_timeout_sec: 0.5
+    depth_clear_hold_sec: 0.5
+    depth_center_roi_size_px: 80
+    # 영상 실측상 약 0.629m 아래에서 stereo depth가 포화되므로
+    # 정상 측정이 남아 있는 0.65m에서 먼저 장애물을 검출한다.
+    min_obstacle_distance_m: 0.65
+    obstacle_pixel_ratio: 0.03
+    min_valid_pixel_ratio: 0.20
+    # 유효 픽셀이 이 비율 아래로 무너지면 근거리 노이즈로 보고 정지한다.
+    noise_valid_pixel_ratio: 0.60
+    lookahead_m: 0.20
+    max_path_deviation_m: 0.30
+    arrival_tolerance_m: 0.06
+    heading_tolerance_deg: 4.0
+    linear_heading_threshold_deg: 30.0
+    corner_angle_threshold_deg: 35.0
+    corner_sample_distance_m: 0.25
+    corner_cluster_distance_m: 0.35
+    corner_slowdown_distance_m: 0.35
+    corner_position_tolerance_m: 0.06
+    start_position_tolerance_m: 0.20
+    start_yaw_tolerance_deg: 20.0
+    require_nav2_cancel: true
+    require_static_map: true
+    # 네트워크 지연(STALE)만 무시한다. 영상 내부의 유효 Depth가 부족하면
+    # 카메라 근접 사각지대일 수 있으므로 정지한다.
+    stop_on_depth_stale: false
+    stop_on_depth_insufficient_data: true
+    robot_radius_m: 0.20
+    hard_margin_m: 0.05
+    occupied_threshold: 50
+    cmd_vel_topic: cmd_vel_nav
+    depth_topic: oakd/stereo/image_raw/compressedDepth

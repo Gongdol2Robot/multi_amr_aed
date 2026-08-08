@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import time
 
@@ -33,6 +34,10 @@ class NavDiagnostics(Node):
         self._last_cmd_nav_at = 0.0
         self._last_plan_at = 0.0
         self._previous_odom_xy: tuple[float, float] | None = None
+        self._snapshot_goal: tuple[float, float] | None = None
+        self._recording_path = False
+        self._executed_points: list[list[float]] = []
+        self._executed_yaws_deg: list[float] = []
 
         self.create_subscription(
             Twist, 'cmd_vel_nav', self._on_cmd_nav, qos_profile_sensor_data
@@ -66,10 +71,82 @@ class NavDiagnostics(Node):
 
     def _on_amcl(self, message: PoseWithCovarianceStamped) -> None:
         self._amcl = message
+        if not self._recording_path:
+            return
+        pose = message.pose.pose
+        point = [round(pose.position.x, 3), round(pose.position.y, 3)]
+        if self._executed_points:
+            previous = self._executed_points[-1]
+            if math.hypot(point[0] - previous[0], point[1] - previous[1]) < 0.03:
+                return
+        self._executed_points.append(point)
+        self._executed_yaws_deg.append(
+            round(math.degrees(_yaw(pose.orientation.z, pose.orientation.w)), 3)
+        )
 
     def _on_plan(self, message: Path) -> None:
         self._plan = message
         self._last_plan_at = time.monotonic()
+        self._log_new_path_snapshot(message)
+
+    def _log_new_path_snapshot(self, message: Path) -> None:
+        """Log the first complete plan for each goal so it can be replayed."""
+        if len(message.poses) < 2:
+            return
+        last = message.poses[-1].pose
+        goal = (round(last.position.x, 2), round(last.position.y, 2))
+        if goal == self._snapshot_goal:
+            return
+        self._finish_executed_path()
+        self._snapshot_goal = goal
+        self._recording_path = True
+        self._executed_points = []
+        self._executed_yaws_deg = []
+        first = message.poses[0].pose
+        # The first pose orientation in a Nav2 Path is not the robot's current
+        # orientation.  In particular, planners commonly leave it as the
+        # identity quaternion (0 deg).  Route replay needs the robot's map yaw
+        # at the instant the plan starts, so prefer the latest AMCL pose.
+        start_pose = self._amcl.pose.pose if self._amcl is not None else first
+        snapshot = {
+            'frame_id': message.header.frame_id or 'map',
+            'start_yaw_deg': round(
+                math.degrees(
+                    _yaw(start_pose.orientation.z, start_pose.orientation.w)
+                ),
+                3,
+            ),
+            'start_yaw_source': 'amcl_pose' if self._amcl is not None else 'plan',
+            'goal_yaw_deg': round(
+                math.degrees(_yaw(last.orientation.z, last.orientation.w)), 3
+            ),
+            'points': [
+                [round(pose.pose.position.x, 3), round(pose.pose.position.y, 3)]
+                for pose in message.poses
+            ],
+        }
+        self.get_logger().info(
+            'NAV_PATH_SNAPSHOT '
+            + json.dumps(snapshot, separators=(',', ':'), sort_keys=True)
+        )
+
+    def _finish_executed_path(self) -> None:
+        """Log the sampled AMCL trajectory when one navigation run becomes idle."""
+        if not self._recording_path:
+            return
+        self._recording_path = False
+        if len(self._executed_points) < 2:
+            return
+        snapshot = {
+            'frame_id': 'map',
+            'start_yaw_deg': self._executed_yaws_deg[0],
+            'goal_yaw_deg': self._executed_yaws_deg[-1],
+            'points': self._executed_points,
+        }
+        self.get_logger().info(
+            'NAV_EXECUTED_PATH '
+            + json.dumps(snapshot, separators=(',', ':'), sort_keys=True)
+        )
 
     @staticmethod
     def _twist_text(message: Twist | None) -> str:
@@ -116,6 +193,7 @@ class NavDiagnostics(Node):
             now - self._last_cmd_nav_at > timeout
             and now - self._last_plan_at > timeout
         ):
+            self._finish_executed_path()
             self._previous_odom_xy = None
             return
 

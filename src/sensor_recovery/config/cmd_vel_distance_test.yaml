@@ -1,0 +1,24 @@
+/**:
+  ros__parameters:
+    # map.yaml에서 전방 0.5m가 충분히 열린 기준 시작 pose.
+    nominal_start_x: 0.80
+    nominal_start_y: 0.20
+    nominal_start_yaw_deg: 90.0
+
+    # 오직 일정 속도 x 시간으로 목표 이동량을 만든다.
+    commanded_distance_m: 0.50
+    linear_speed_mps: 0.05
+    control_period_sec: 0.05
+
+    # 노드를 실행하면 입력을 기다렸다가 서비스 호출 없이 한 번 자동 시작한다.
+    auto_start: true
+    exit_after_completion: true
+
+    # Nav2 정지 후 시작 pose를 새로 저장하고, 종료 뒤 측정 안정화를 기다린다.
+    nav2_stop_delay_sec: 1.0
+    settling_time_sec: 2.0
+    start_position_tolerance_m: 0.20
+    start_yaw_tolerance_deg: 15.0
+    # cmd_vel 시험 중 안전을 위해 odom 수신만 감시한다. 정지 중 AMCL은
+    # 주기적으로 갱신되지 않을 수 있으므로 freshness 조건으로 사용하지 않는다.
+    sample_timeout_sec: 1.0

@@ -80,13 +80,14 @@ locview() {
 # 안 남아서(launch.log에는 프로세스 시작/종료 이벤트만 기록됨), 나중에
 # 다시 확인하려면(Claude에게 보여주는 것 포함) 이렇게 tee로 남겨야 한다.
 mapnav() {
-  local n=${1:-1}
+  local n=${1:-1} fallback=${2:-false}
   aedenv
   mkdir -p "$AED_WS/logs"
   local file="$AED_WS/logs/mapnav_robot${n}_$(date +%Y%m%d_%H%M%S).log"
   echo "로그 저장: $file"
   ros2 launch turtlebot4_map_navigation map_navigation.launch.py \
-    namespace:="robot$n" rviz:=true 2>&1 | tee "$file"
+    namespace:="robot$n" rviz:=true lidar_fallback:="$fallback" \
+    2>&1 | tee "$file"
 }
 
 # 두 로봇이 지도는 공유하지만 Dock 위치가 달라 초기 위치는 각자 다르다.

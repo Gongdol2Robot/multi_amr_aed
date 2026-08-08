@@ -21,6 +21,7 @@ def generate_launch_description() -> LaunchDescription:
     )
     aed_bringup = get_package_share_directory('aed_bringup')
     nav2_bringup = get_package_share_directory('nav2_bringup')
+    sensor_recovery = get_package_share_directory('sensor_recovery')
 
     namespace = LaunchConfiguration('namespace')
     use_sim_time = LaunchConfiguration('use_sim_time')
@@ -34,6 +35,7 @@ def generate_launch_description() -> LaunchDescription:
     initial_y = LaunchConfiguration('initial_y')
     initial_yaw_deg = LaunchConfiguration('initial_yaw_deg')
     nav2_params = LaunchConfiguration('nav2_params')
+    lidar_fallback_enabled = LaunchConfiguration('lidar_fallback')
 
     localization_launch = PathJoinSubstitution(
         [turtlebot4_navigation, 'launch', 'localization.launch.py']
@@ -46,6 +48,9 @@ def generate_launch_description() -> LaunchDescription:
     )
     rviz_config = PathJoinSubstitution(
         [nav2_bringup, 'rviz', 'nav2_namespaced_view.rviz']
+    )
+    lidar_fallback_launch = PathJoinSubstitution(
+        [sensor_recovery, 'launch', 'lidar_fallback.launch.py']
     )
 
     localization = IncludeLaunchDescription(
@@ -112,6 +117,11 @@ def generate_launch_description() -> LaunchDescription:
         name='nav_diagnostics',
         output='screen',
     )
+    lidar_fallback = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(lidar_fallback_launch),
+        condition=IfCondition(lidar_fallback_enabled),
+        launch_arguments={'robot_name': namespace}.items(),
+    )
     start_navigation_when_localized = RegisterEventHandler(
         OnProcessExit(
             target_action=localization_initializer,
@@ -120,6 +130,7 @@ def generate_launch_description() -> LaunchDescription:
                 navigation,
                 navigation_initializer,
                 nav_diagnostics,
+                lidar_fallback,
                 rviz_view,
             ],
         )
@@ -157,6 +168,12 @@ def generate_launch_description() -> LaunchDescription:
                 default_value='true',
                 choices=['true', 'false'],
                 description='Open the namespaced Nav2 RViz view',
+            ),
+            DeclareLaunchArgument(
+                'lidar_fallback',
+                default_value='false',
+                choices=['true', 'false'],
+                description='Start the LiDAR watchdog and fallback controller',
             ),
             DeclareLaunchArgument(
                 'auto_initial_pose',

@@ -26,6 +26,7 @@ data/
 datasets/
 runs/
 logs/
+.env.robots
 *.db
 *.sqlite
 *.sqlite3
@@ -38,4 +39,3 @@ models/*.pth
 
 # Keep directory placeholders
 !models/.gitkeep
-
