@@ -21,6 +21,13 @@ class HelperMissionCoordinator(Node):
         super().__init__("helper_mission_coordinator")
         self.declare_parameter("robot_ids", ["robot1", "robot2"])
         self.declare_parameter("event_topic", "/aed/emergency_event")
+        self.declare_parameter(
+            "additional_event_topics",
+            [
+                "/camera_open/vision/emergency_event",
+                "/camera_alley/vision/emergency_event",
+            ],
+        )
         self.declare_parameter("mission_status_topic", "/aed/mission_status")
         self.declare_parameter("guide_action_suffix", "aed/guide_helper")
         self.declare_parameter("action_server_timeout", 2.0)
@@ -49,12 +56,33 @@ class HelperMissionCoordinator(Node):
             str(self.get_parameter("mission_status_topic").value),
             20,
         )
-        self.create_subscription(
-            EmergencyEvent,
-            str(self.get_parameter("event_topic").value),
-            self._on_event,
-            20,
+        primary_event_topic = str(
+            self.get_parameter("event_topic").value
+        ).strip()
+        additional_event_topics = [
+            str(topic).strip()
+            for topic in self.get_parameter(
+                "additional_event_topics"
+            ).value
+        ]
+        event_topics = list(
+            dict.fromkeys(
+                topic
+                for topic in [primary_event_topic, *additional_event_topics]
+                if topic
+            )
         )
+        if not event_topics:
+            raise ValueError("at least one emergency event topic is required")
+        self.event_subscriptions = [
+            self.create_subscription(
+                EmergencyEvent,
+                topic,
+                self._on_event,
+                20,
+            )
+            for topic in event_topics
+        ]
         self.create_subscription(
             MissionStatus,
             str(self.get_parameter("mission_status_topic").value),
@@ -69,11 +97,12 @@ class HelperMissionCoordinator(Node):
         self.handled_arrivals = set()
         self.dispatch_serial = 0
         self.get_logger().info(
-            "ready: arrived AED robot will rotate and call for a helper"
+            "ready: arrived AED robot will rotate and call for a helper; "
+            f"event_topics={event_topics}"
         )
 
     def _on_event(self, event: EmergencyEvent) -> None:
-        """확정 이벤트는 저장하고 취소·해제 이벤트는 진행 중 탐색을 종료한다."""
+        """확정 이벤트를 도착 뒤 현장 탐색까지 보존한다."""
         if not event.event_id:
             return
         if event.status == EmergencyEvent.CONFIRMED:
@@ -86,17 +115,10 @@ class HelperMissionCoordinator(Node):
             self.events[event.event_id] = event
             self._try_dispatch(event.event_id)
             return
-        if event.status not in (
-            EmergencyEvent.CANCELED,
-            EmergencyEvent.RESOLVED,
-        ):
-            return
-        self.canceled_events.add(event.event_id)
-        self.events.pop(event.event_id, None)
-        self.pending.pop(event.event_id, None)
-        active = self.active_goals.get(event.event_id)
-        if active is not None:
-            active["handle"].cancel_goal_async()
+        # Vision의 CANCELED는 카메라가 쓰러진 사람을 잠깐 놓쳤다는 뜻이다.
+        # 중앙 mission_manager도 CONFIRMED 이후 이 신호로 출동을 취소하지
+        # 않으므로, helper 쪽만 이벤트를 지우면 도착 후 호출·복귀가 영원히
+        # 시작되지 않는다. 확정 당시 좌표는 helper 결과가 끝날 때까지 보존한다.
 
     def _on_status(self, status: MissionStatus) -> None:
         """AED 정상 도착을 기록하고 도착한 동일 로봇에 탐색 임무를 준비한다."""
@@ -228,6 +250,7 @@ class HelperMissionCoordinator(Node):
             reason = str(error)
         self.active_goals.pop(event_id, None)
         self.pending.pop(event_id, None)
+        self.events.pop(event_id, None)
         if code == GuideHelper.Result.SUCCEEDED:
             self.get_logger().info(
                 f"Event {event_id}: helper detected by {robot_id}; "
