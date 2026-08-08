@@ -15,8 +15,7 @@
 #   이 launch에는 respawn이 걸려있지 않아(turtlebot4_bringup/launch/rplidar.launch.py
 #   확인함) kill하면 /scan이 완전히 끊기고 자동으로 안 살아난다. systemd 서비스
 #   전체(turtlebot4.service)는 건드리지 않으므로 base/oakd/joy 등 다른 노드에는
-#   영향 없다. SSH 접속 정보는 로컬 .env.robots에서 읽는다
-#   (.env.robots.example을 복사해 작성하며 실제 값은 커밋하지 않는다).
+#   영향 없다. SSH 접속 정보는 저장소의 .env.robots에서 읽는다.
 #
 # 공통 안전 장치:
 # - stop/scan-off 전에 로봇이 도킹 상태(is_docked=true)인지 확인한다. 주행

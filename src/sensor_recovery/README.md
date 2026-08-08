@@ -101,8 +101,7 @@ tools/lidar_toggle.sh scan-off 1     # robot1 LiDAR 드라이버 kill → /scan 
 tools/lidar_toggle.sh scan-on 1      # robot1 LiDAR 드라이버 재실행
 ```
 
-SSH 접속 정보는 `.env.robots.example`을 복사해 만든 로컬 `.env.robots`에서
-읽는다. 실제 계정과 비밀번호가 든 `.env.robots`는 git에서 제외한다.
+SSH 접속 정보는 저장소에 커밋된 `.env.robots`에서 읽는다.
 
 ### Extension points
 

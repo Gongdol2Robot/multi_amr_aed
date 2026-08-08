@@ -91,14 +91,12 @@
 좀비 프로세스가 시리얼 포트 점유)를 발견해 kill -9로 정리하고, 고친
 스크립트로 재실행해 정상화함(watchdog에서 ALIVE 확인됨).
 
-## .env.robots git 추적 검토 및 보안 조치
+## .env.robots를 git 추적 대상으로 전환
 
 프라이빗 저장소이고 팀원 전체가 로봇 SSH 비밀번호를 이미 알고 있다는
-피드백에 따라 한때 `.env.robots` 추적을 검토했다. 그러나 비밀번호를 git
-이력에 남기면 저장소 공개 범위 변경이나 계정 유출 시 회수가 어렵기 때문에,
-최종적으로 `.env.robots`는 다시 gitignore하고 값 없는
-`.env.robots.example`만 커밋하기로 했다. 기존 로컬 `.env.robots`는 삭제하지
-않고 그대로 사용한다.
+피드백에 따라, `.env.robots`를 더 이상 gitignore하지 않고 저장소에서 함께
+관리한다. `.env.robots.example` 템플릿은 삭제하고,
+`tools/lidar_toggle.sh`/`sensor_recovery/README.md`도 현재 관리 방식에 맞췄다.
 
 ## RobotState LiDAR 연동 제안 문서 작성 (코드 변경 없음)
 
