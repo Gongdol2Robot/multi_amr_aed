@@ -16,7 +16,8 @@
 5. 1초 정지 후 저장 경로를 odom feedback으로 추종한다. hard corner는
    감속→정지→제자리 회전→다음 구간 순서로 처리한다.
 6. OAK-D `oakd/stereo/image_raw/compressedDepth`를 복원해 전방 ROI를
-   검사한다. depth 없음/stale/장애물은 모두 정지 조건이다.
+   검사한다. 장애물/근거리 노이즈는 정지 조건이다. 불안정한 Wi-Fi 때문에
+   depth가 없거나 유효 픽셀이 부족하면 경고를 남기고 저속 주행을 계속한다.
 7. LiDAR가 3초간 연속 수신돼 `ALIVE`가 되면 fallback을 정지하고, 새 AMCL
    pose를 기다린 뒤 저장한 원래 goal을 Nav2에 다시 보낸다.
 
@@ -177,15 +178,19 @@ ROS 비의존 순수 모듈. 사용자 질문 "cmd vel 제어할 때 경로계�
    `linear_heading_threshold_deg`(기본 60도)를 넘으면 직진 성분은 0으로
    고정하고 제자리 회전을 우선한다.
 5. 깊이 안전 판단(`evaluate_depth_safety`): 단일 최소값이 아니라 **ROI
-   내 픽셀 비율** 기준. 유효 픽셀 부족 → `INSUFFICIENT_DATA`, 이미지가
-   오래됨 → `STALE`, 가까운 픽셀 비율이 임계 이상 → `OBSTACLE`. 좌/중앙/
-   우 3개 ROI 중 회전 방향에 해당하는 쪽도 같이 확인. `CLEAR`가 아니면
-   `cmd_vel` 무조건 0, 상태 `BLOCKED`.
+   내 픽셀 비율** 기준. 유효 픽셀 부족 → `INSUFFICIENT_DATA`, 가까운 픽셀
+   비율이 임계 이상 → `OBSTACLE`. 좌/중앙/
+   우 3개 ROI 중 회전 방향에 해당하는 쪽도 같이 확인. `OBSTACLE`과
+   `NOISY_DEPTH`는 `cmd_vel`을 0으로 만들고 `BLOCKED`로 전이한다.
+   `allow_insufficient_depth_motion=true`이면 `INSUFFICIENT_DATA`는 5초
+   주기 경고만 남기고 주행한다. 프레임 나이 기반 판정은 사용하지 않는다.
 6. 가속도 제한(`max_linear_accel`/`max_angular_accel`) 적용해 발행
 
 ### 실패/성공 판정
 
-- `FAILED`(상태별 우선순위): 경로/앵커 없음 → `/odom` 타임아웃 →
+- `/odom`이 `odom_timeout_sec` 동안 로컬에 수신되지 않으면 0속도로 정지하고
+  `BLOCKED`에서 기다린다. fresh odom 수신 시 `ACTIVE`로 자동 복귀한다.
+- `FAILED`(상태별 우선순위): 경로/앵커 없음 →
   정지 판정(`stuck_timeout_sec` 동안 명령은 계속 보냈는데 실제로
   `stuck_distance_m`도 안 움직임) → 경로 이탈
   (`path_deviation_m > max_path_deviation_m`) → 장애물이
@@ -194,19 +199,20 @@ ROS 비의존 순수 모듈. 사용자 질문 "cmd vel 제어할 때 경로계�
   계약 재사용, 별도 coordinator 없음).
 - `SUCCEEDED`: 현재 위치가 경로 마지막 지점의 `arrival_tolerance_m`
   이내.
-- `→ ALIVE`: 즉시 정지 + FAULT 시점 대비 AMCL pose 오차(m/deg) 로그.
-  곧바로 재개하지 않고 **새 `/amcl_pose`가 한 번 더 들어올 때까지**
-  (AMCL 재수렴, `reconvergence_timeout_sec` 안에 안 오면 타임아웃으로
-  진행) 기다린 뒤: 이번 시도에서 `FAILED`가 나서 대체 요청을 이미
-  보냈다면 자동 재개하지 않고 Mission Manager 대기, 아니라면 FAULT
-  시점에 저장해둔 목적지로 새 `NavigateToPose` goal을 보내 Nav2 재개.
+- `SUCCEEDED → ALIVE`: 이미 cmd_vel fallback으로 목적지에 도착했으므로
+  완료된 Nav2 goal을 다시 보내지 않는다. 로봇을 계속 정지시키고 AMCL
+  nomotion update를 요청한다. fresh AMCL pose 3개가 연속 안정 범위에 들면
+  `RECOVERY_POSITION_CHECK`로 목표 오차를 기록한 뒤 Nav2는 idle로 유지한다.
+- 목적지 도착 전 `→ ALIVE`: 마찬가지로 정지한 상태에서 fresh/stable AMCL을
+  기다린 뒤에만 저장 goal로 Nav2를 재개한다. 5초가 지나도 안정 pose가 없으면
+  재개를 강행하지 않고 정지 상태로 계속 기다린다.
 
 ### 파라미터
 
 | 이름 | 기본값 | 설명 |
 |---|---|---|
-| `max_linear_speed` | `0.05` | 최대 직진 속도(m/s) — LiDAR 없이 도는 구간이라 최소로 |
-| `max_angular_speed` | `0.2` | 최대 회전 속도(rad/s) |
+| `max_linear_speed` | `0.20` | 최대 직진 속도(m/s). Nav2 RPP의 `desired_linear_vel`과 동일 |
+| `max_angular_speed` | `0.60` | 최대 회전 속도(rad/s). Nav2의 `rotate_to_heading_angular_vel`과 동일 |
 | `max_linear_accel` | `0.15` | 직진 가속도 제한 |
 | `max_angular_accel` | `0.5` | 회전 가속도 제한 |
 | `pre_replan_delay_sec` | `1.0` | FAULT 직후 자체 경로계산 전 정지 유지 시간 |
@@ -228,13 +234,16 @@ ROS 비의존 순수 모듈. 사용자 질문 "cmd vel 제어할 때 경로계�
 | `min_valid_pixel_ratio` | `0.20` | ROI 유효 픽셀이 이보다 적으면 `INSUFFICIENT_DATA` |
 | `noise_valid_pixel_ratio` | `0.60` | ROI 유효 픽셀이 이보다 적으면 `NOISY_DEPTH`로 정지 |
 | `fallback_control_period_sec` | `0.1` | 제어 틱 주기 |
-| `odom_timeout_sec` | `0.5` | `/odom` 최대 허용 지연 |
-| `depth_timeout_sec` | `0.5` | depth 이미지 최대 허용 지연 |
+| `odom_timeout_sec` | `2.0` | 로컬에서 `/odom`을 받지 못한 최대 허용 시간. 초과 시 `FAILED`가 아니라 정지(`BLOCKED`) 후 fresh odom 수신 시 자동 재개 |
+| `allow_insufficient_depth_motion` | `true` | depth 없음/유효 픽셀 부족 시 경고 후 저속 fallback 계속(장애물/노이즈는 계속 정지) |
 | `blocked_timeout_sec` | `5.0` | `BLOCKED` 지속 허용 시간 |
 | `stuck_timeout_sec` | `3.0` | 정지 판정까지의 시간 |
 | `stuck_distance_m` | `0.03` | 이보다 안 움직이면 정지 후보 |
 | `max_path_deviation_m` | `0.7` | 경로 이탈 허용 거리 |
-| `reconvergence_timeout_sec` | `5.0` | ALIVE 후 AMCL 재수렴 최대 대기 |
+| `reconvergence_timeout_sec` | `5.0` | ALIVE 후 stable AMCL 미확인 경고 시점(이후에도 정지 유지) |
+| `recovery_amcl_required_samples` | `3` | 복구 위치 확정에 필요한 연속 stable AMCL 개수 |
+| `recovery_amcl_stability_distance_m` | `0.15` | 연속 AMCL 위치 안정 범위 |
+| `recovery_amcl_stability_angle_deg` | `15.0` | 연속 AMCL 방향 안정 범위 |
 | `navigate_action` | `navigate_to_pose` | Nav2 주행 액션 이름 |
 | `debug_enabled` | `false` | throttled 로그와 RViz용 debug 토픽 활성화 |
 | `debug_log_period_sec` | `1.0` | debug 로그/pose/target 발행 주기 |
@@ -283,17 +292,19 @@ ros2 launch sensor_recovery lidar_fallback.launch.py robot_name:=robot1
     true/false) 다 확인
 - flake8(`--max-line-length=99`), colcon build 전부 clean.
 
-## 아직 실기로 확인 안 된 것
+## 실기 확인 결과 (2026-08-08, robot1)
 
-1. **`lidar_fallback_controller` 자동 전환 전체 흐름** — 진짜
-   `scan-off`로 LiDAR를 끄고, Nav2 주행 중 FAULT → 저장 경로 fallback
-   → cmd_vel 저속 주행 → LiDAR 복구까지 가는 풀 체인은 아직 실기로 한
-   번도 안 돌려봄.
-2. 실제 맵 크기에서 A*/클리어런스 계산 소요 시간 실측 (맵이 크면 순수
+1. 실제 `scan-off`로 Nav2 주행 중 LiDAR를 끄고 5초 뒤 FAULT → Nav2 취소 →
+   저장 경로 3.51m를 cmd_vel로 주행 → `SUCCEEDED`까지 확인했다. Depth
+   정지/0.5초 clear hold도 3회 정상 동작했다.
+2. 당시 LiDAR 복구 후에는 fallback이 이미 도착했는데도 기존 goal을 다시
+   보내는 문제가 확인되어, 현재는 stable AMCL 위치 확인만 하고 Nav2를
+   idle로 유지하도록 수정했다. 이 변경의 재시험은 남아 있다.
+3. 실제 맵 크기에서 A*/클리어런스 계산 소요 시간 실측 (맵이 크면 순수
    Python 루프라 느려질 수 있음).
-3. `soft_clearance_m`/`wall_clearance_weight`/`robot_radius_m` 기본값이
+4. `soft_clearance_m`/`wall_clearance_weight`/`robot_radius_m` 기본값이
    실제 복도 폭에 맞는지.
-4. `lidar_replacement_request`의 실기 테스트(문법/에러 경로만 확인,
+5. `lidar_replacement_request`의 실기 테스트(문법/에러 경로만 확인,
    실제 로봇에서 아직 안 돌려봄).
 
 ## 인프라 도구
@@ -309,8 +320,11 @@ ros2 launch sensor_recovery lidar_fallback.launch.py robot_name:=robot1
   tools/lidar_toggle.sh scan-off 2 --yes --allow-undocked
   tools/lidar_toggle.sh scan-on 2
   ```
+- **`tools/test_lidar_fault_cycle.sh`**: 두 번째 터미널에서 Enter 두 번으로
+  주행 중 `scan-off`와 fallback 도착 후 `scan-on`만 순서대로 실행한다.
 - **`tools/aliases.sh`**: `mapnav`(지도+AMCL+Nav2+RViz 한 번에, 로그
-  파일로도 저장), `initpose`, `pf`(preflight 점검), `dock`/`undock` 등.
+  파일로도 저장하며 watchdog/fallback 기본 포함), `initpose`,
+  `pf`(preflight 점검), `dock`/`undock` 등.
 
 ## 아직 미착수 (박재현 담당 계획 항목 중)
 

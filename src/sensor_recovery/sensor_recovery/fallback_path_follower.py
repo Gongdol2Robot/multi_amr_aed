@@ -32,6 +32,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import CompressedImage, Image
 from std_msgs.msg import Bool, String
+from std_srvs.srv import Empty, Trigger
 
 from sensor_recovery.fallback_state_machine import (
     FallbackState,
@@ -50,6 +51,7 @@ from sensor_recovery.path_follow_control import (
     DepthSafetyResult,
     Pose2D,
     compute_cmd_vel,
+    depth_result_blocks_motion,
     evaluate_depth_safety,
     goal_reached,
     heading_error_to_target,
@@ -98,7 +100,8 @@ class FallbackPathFollower(Node):
         self._odom_at_latest_amcl: Optional[Pose2D] = None
         self._latest_depth: Optional[np.ndarray] = None
         self._last_odom_time: Optional[float] = None
-        self._last_depth_time: Optional[float] = None
+        self._odom_stale_active = False
+        self._last_amcl_time: Optional[float] = None
         self._depth_stream_announced = False
         self._nav2_goal_active = False
 
@@ -118,15 +121,22 @@ class FallbackPathFollower(Node):
         self._closest_index = 0
         self._target_index = 0
         self._blocked_since: Optional[float] = None
+        self._depth_clear_since: Optional[float] = None
+        self._last_depth_unavailable_warning_time: Optional[float] = None
         self._stuck_anchor: Optional[Tuple[float, float, float]] = None
         self._prev_linear_cmd = 0.0
         self._prev_angular_cmd = 0.0
         self._replacement_dispatched = False
         self._awaiting_reconvergence = False
         self._alive_triggered_time: Optional[float] = None
+        self._recovery_mode: Optional[str] = None
+        self._recovery_amcl_samples = []
+        self._recovery_wait_warning_logged = False
+        self._last_amcl_update_request: Optional[float] = None
         self._replan_started = False
         self._fault_triggered_time: Optional[float] = None
         self._cancel_future = None
+        self._cancel_response_accepted = False
         self._cancel_requested_time: Optional[float] = None
         self._cancel_confirmed = False
         self._map_grid: Optional[OccupancyGridData] = None
@@ -177,9 +187,20 @@ class FallbackPathFollower(Node):
             )
         self.create_subscription(OccupancyGrid, self._map_topic, self._on_map, _MAP_QOS)
 
+        if self.enable_manual_trigger:
+            self.create_service(
+                Trigger, "fallback/manual_start", self._on_manual_start
+            )
+            self.create_service(
+                Trigger, "fallback/manual_stop", self._on_manual_stop
+            )
+
         self._nav_client = ActionClient(self, NavigateToPose, self._navigate_action)
         self._cancel_client = self.create_client(
             CancelGoal, f"{self._navigate_action}/_action/cancel_goal"
+        )
+        self._amcl_update_client = self.create_client(
+            Empty, "request_nomotion_update"
         )
 
         self.replacement_needed_pub.publish(Bool(data=False))
@@ -188,15 +209,20 @@ class FallbackPathFollower(Node):
         self._control_timer = self.create_timer(
             self._fallback_control_period_sec, self._on_control_tick
         )
+        if self.allow_insufficient_depth_motion:
+            self.get_logger().warning(
+                "Depth fail-open enabled: INSUFFICIENT_DATA will be logged "
+                "but will not stop fallback; OBSTACLE/NOISY_DEPTH still stop"
+            )
 
     # -- setup -----------------------------------------------------------
 
     def _declare_parameters(self) -> None:
         defaults = {
-            # Real hardware default: keep this as slow as practical — this
-            # drives blind (no LiDAR), so speed is safety margin.
-            "max_linear_speed": 0.05,
-            "max_angular_speed": 0.2,
+            # Match the normal Nav2 RPP command limits. Depth stop, corner
+            # slowdown and this controller's acceleration limits still apply.
+            "max_linear_speed": 0.20,
+            "max_angular_speed": 0.60,
             "max_linear_accel": 0.15,
             "max_angular_accel": 0.5,
             "lookahead_m": 0.3,
@@ -210,13 +236,17 @@ class FallbackPathFollower(Node):
             "min_valid_pixel_ratio": 0.20,
             "noise_valid_pixel_ratio": 0.60,
             "fallback_control_period_sec": 0.1,
-            "odom_timeout_sec": 0.5,
-            "depth_timeout_sec": 0.5,
+            "odom_timeout_sec": 2.0,
+            "depth_clear_hold_sec": 0.5,
             "blocked_timeout_sec": 5.0,
             "stuck_timeout_sec": 3.0,
             "stuck_distance_m": 0.03,
             "max_path_deviation_m": 0.7,
             "reconvergence_timeout_sec": 5.0,
+            "recovery_amcl_required_samples": 3,
+            "recovery_amcl_stability_distance_m": 0.15,
+            "recovery_amcl_stability_angle_deg": 15.0,
+            "recovery_amcl_update_period_sec": 1.0,
             "pre_replan_delay_sec": 1.0,
             "nav2_cancel_timeout_sec": 3.0,
             "corner_angle_threshold_deg": 35.0,
@@ -237,6 +267,11 @@ class FallbackPathFollower(Node):
             "wall_clearance_weight": 2.0,
             "occupied_threshold": 50,
             "debug_log_period_sec": 1.0,
+            # Neutral defaults. Robot-specific values are supplied by the
+            # launch/test wrapper after a measured odom-vs-AMCL comparison.
+            "odom_translation_scale": 1.0,
+            "odom_translation_heading_correction_deg": 0.0,
+            "odom_yaw_delta_scale": 1.0,
         }
         for name, default in defaults.items():
             self.declare_parameter(name, default)
@@ -247,15 +282,17 @@ class FallbackPathFollower(Node):
             "depth_topic", "oakd/stereo/image_raw/compressedDepth"
         )
         self.declare_parameter("depth_compressed", True)
+        self.declare_parameter("allow_insufficient_depth_motion", False)
         self.declare_parameter("require_active_nav_goal", True)
         self.declare_parameter("prefer_saved_nav2_path", True)
         self.declare_parameter("resume_nav2_after_failure", True)
         self.declare_parameter("allow_unknown_cells", False)
         self.declare_parameter("debug_enabled", False)
+        self.declare_parameter("enable_manual_trigger", False)
 
     def _read_parameters(self) -> None:
-        self.max_linear = self._positive_param("max_linear_speed", 0.05)
-        self.max_angular = self._positive_param("max_angular_speed", 0.2)
+        self.max_linear = self._positive_param("max_linear_speed", 0.20)
+        self.max_angular = self._positive_param("max_angular_speed", 0.60)
         self.max_linear_accel = self._positive_param("max_linear_accel", 0.15)
         self.max_angular_accel = self._positive_param("max_angular_accel", 0.5)
         self.lookahead_m = self._positive_param("lookahead_m", 0.3)
@@ -288,13 +325,35 @@ class FallbackPathFollower(Node):
         self._fallback_control_period_sec = self._positive_param(
             "fallback_control_period_sec", 0.1
         )
-        self.odom_timeout_sec = self._positive_param("odom_timeout_sec", 0.5)
-        self.depth_timeout_sec = self._positive_param("depth_timeout_sec", 0.5)
+        self.odom_timeout_sec = self._positive_param("odom_timeout_sec", 2.0)
+        self.depth_clear_hold_sec = self._nonnegative_param(
+            "depth_clear_hold_sec", 0.5
+        )
         self.blocked_timeout_sec = self._positive_param("blocked_timeout_sec", 5.0)
         self.stuck_timeout_sec = self._positive_param("stuck_timeout_sec", 3.0)
         self.stuck_distance_m = self._positive_param("stuck_distance_m", 0.03)
         self.max_path_deviation_m = self._positive_param("max_path_deviation_m", 0.7)
         self.reconvergence_timeout_sec = self._positive_param("reconvergence_timeout_sec", 5.0)
+        self.recovery_amcl_required_samples = int(
+            self.get_parameter("recovery_amcl_required_samples").value
+        )
+        if self.recovery_amcl_required_samples < 1:
+            self.get_logger().error(
+                "Parameter 'recovery_amcl_required_samples' must be >= 1; using 3"
+            )
+            self.recovery_amcl_required_samples = 3
+        self.recovery_amcl_stability_distance_m = self._positive_param(
+            "recovery_amcl_stability_distance_m", 0.15
+        )
+        recovery_stability_angle_deg = self._positive_param(
+            "recovery_amcl_stability_angle_deg", 15.0
+        )
+        self.recovery_amcl_stability_angle_rad = math.radians(
+            recovery_stability_angle_deg
+        )
+        self.recovery_amcl_update_period_sec = self._positive_param(
+            "recovery_amcl_update_period_sec", 1.0
+        )
         self.pre_replan_delay_sec = self._positive_param("pre_replan_delay_sec", 1.0)
         self.nav2_cancel_timeout_sec = self._positive_param(
             "nav2_cancel_timeout_sec", 3.0
@@ -325,12 +384,33 @@ class FallbackPathFollower(Node):
         self.debug_log_period_sec = self._positive_param(
             "debug_log_period_sec", 1.0
         )
+        self.odom_translation_scale = self._positive_param(
+            "odom_translation_scale", 1.0
+        )
+        translation_heading_correction_deg = float(
+            self.get_parameter("odom_translation_heading_correction_deg").value
+        )
+        if abs(translation_heading_correction_deg) > 45.0:
+            self.get_logger().error(
+                "Parameter 'odom_translation_heading_correction_deg' must be "
+                "between -45 and 45; using 0.0"
+            )
+            translation_heading_correction_deg = 0.0
+        self.odom_translation_heading_correction_rad = math.radians(
+            translation_heading_correction_deg
+        )
+        self.odom_yaw_delta_scale = self._positive_param(
+            "odom_yaw_delta_scale", 1.0
+        )
         self._navigate_action = str(self.get_parameter("navigate_action").value)
         self._map_topic = str(self.get_parameter("map_topic").value)
         self._cmd_vel_topic = str(self.get_parameter("cmd_vel_topic").value)
         self._depth_topic = str(self.get_parameter("depth_topic").value)
         self._depth_compressed = bool(
             self.get_parameter("depth_compressed").value
+        )
+        self.allow_insufficient_depth_motion = bool(
+            self.get_parameter("allow_insufficient_depth_motion").value
         )
         self.require_active_nav_goal = bool(
             self.get_parameter("require_active_nav_goal").value
@@ -343,6 +423,9 @@ class FallbackPathFollower(Node):
         )
         self.allow_unknown_cells = bool(self.get_parameter("allow_unknown_cells").value)
         self.debug_enabled = bool(self.get_parameter("debug_enabled").value)
+        self.enable_manual_trigger = bool(
+            self.get_parameter("enable_manual_trigger").value
+        )
 
     def _positive_param(self, name: str, default: float) -> float:
         value = float(self.get_parameter(name).value)
@@ -380,6 +463,30 @@ class FallbackPathFollower(Node):
         self._nav2_goal_active = any(
             status.status in active_codes for status in msg.status_list
         )
+        if self._nav2_goal_active and self._awaiting_reconvergence:
+            self.get_logger().error(
+                "Nav2 goal detected before the recovery position check "
+                "completed; keeping the robot stopped and canceling the goal"
+            )
+            self.cmd_vel_pub.publish(Twist())
+            self._cancel_nav2_goal()
+            return
+        active_fallback_states = {
+            FallbackState.STARTING,
+            FallbackState.ACTIVE,
+            FallbackState.BLOCKED,
+        }
+        if (
+            self._nav2_goal_active
+            and self._cancel_confirmed
+            and self._fallback_state in active_fallback_states
+        ):
+            self.get_logger().error(
+                "New Nav2 goal detected during fallback; stopping and "
+                "canceling it before cmd_vel control continues"
+            )
+            self.cmd_vel_pub.publish(Twist())
+            self._cancel_nav2_goal()
 
     def _on_map(self, msg: OccupancyGrid) -> None:
         info = msg.info
@@ -401,21 +508,55 @@ class FallbackPathFollower(Node):
 
     def _on_odom(self, msg: Odometry) -> None:
         self._latest_odom = msg
-        self._last_odom_time = _stamp_to_sec(msg.header.stamp)
+        # Compare freshness using the callback receipt time on this computer.
+        # The robot header stamp can differ from the laptop clock and includes
+        # network transport delay, which previously caused false 0.5 s stale
+        # failures even while odom packets were still arriving.
+        self._last_odom_time = self._now_sec()
 
     def _on_amcl_pose(self, msg: PoseWithCovarianceStamped) -> None:
         self._latest_amcl_pose = msg
+        self._last_amcl_time = _stamp_to_sec(msg.header.stamp)
         if self._latest_odom is not None:
             self._odom_at_latest_amcl = self._pose2d_from_odom(self._latest_odom)
         if self._awaiting_reconvergence:
             msg_time = _stamp_to_sec(msg.header.stamp)
-            if self._alive_triggered_time is not None and msg_time > self._alive_triggered_time:
+            if self._alive_triggered_time is None or msg_time <= self._alive_triggered_time:
+                return
+            pose = self._pose2d_from_amcl(msg)
+            if self._recovery_amcl_samples:
+                previous = self._recovery_amcl_samples[-1]
+                distance_m, angle_deg = pose_error(previous, pose)
+                if (
+                    distance_m > self.recovery_amcl_stability_distance_m
+                    or math.radians(angle_deg)
+                    > self.recovery_amcl_stability_angle_rad
+                ):
+                    self.get_logger().warning(
+                        "AMCL recovery sample jumped "
+                        f"{distance_m:.2f}m/{angle_deg:.1f}deg; restarting "
+                        "the stability count"
+                    )
+                    self._recovery_amcl_samples = [pose]
+                    return
+            self._recovery_amcl_samples.append(pose)
+            self.get_logger().info(
+                "Fresh stable AMCL recovery sample "
+                f"{len(self._recovery_amcl_samples)}/"
+                f"{self.recovery_amcl_required_samples}: "
+                f"pose=({pose[0]:.3f},{pose[1]:.3f},"
+                f"{math.degrees(pose[2]):.1f}deg)"
+            )
+            if (
+                len(self._recovery_amcl_samples)
+                >= self.recovery_amcl_required_samples
+            ):
                 self._on_reconverged()
 
     def _on_depth(self, msg: Image) -> None:
         try:
             depth = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
-            self._store_depth(depth, _stamp_to_sec(msg.header.stamp))
+            self._store_depth(depth)
         except Exception as error:
             self.get_logger().error(f"depth conversion failed: {error}")
 
@@ -425,13 +566,12 @@ class FallbackPathFollower(Node):
             # a small transport header.  Searching for the PNG signature is
             # robust across its 16UC1 header variants.
             depth = decode_compressed_depth(msg.data)
-            self._store_depth(depth, _stamp_to_sec(msg.header.stamp))
+            self._store_depth(depth)
         except Exception as error:
             self.get_logger().error(f"compressed depth conversion failed: {error}")
 
-    def _store_depth(self, depth: np.ndarray, stamp: float) -> None:
+    def _store_depth(self, depth: np.ndarray) -> None:
         self._latest_depth = depth
-        self._last_depth_time = stamp
         if not self._depth_stream_announced:
             self._depth_stream_announced = True
             self.get_logger().info(
@@ -456,12 +596,71 @@ class FallbackPathFollower(Node):
 
     # -- fallback lifecycle --------------------------------------------------
 
-    def _start_fallback(self) -> None:
+    def _manual_start_failure(self) -> str:
+        if self._fallback_state in (
+            FallbackState.STARTING,
+            FallbackState.ACTIVE,
+            FallbackState.BLOCKED,
+        ):
+            return f"fallback already {self._fallback_state.value}"
+        if self.require_active_nav_goal and not self._nav2_goal_active:
+            return "active Nav2 goal missing"
+        if self._latest_path is None or len(self._latest_path.poses) < 2:
+            return "Nav2 /plan missing"
+        if self._latest_path.header.frame_id != "map":
+            return f"Nav2 /plan frame is {self._latest_path.header.frame_id!r}, not 'map'"
+        if self._latest_amcl_pose is None:
+            return "AMCL pose missing"
+        if self._latest_odom is None:
+            return "odom missing"
+        if is_stale(self._last_odom_time, self._now_sec(), self.odom_timeout_sec):
+            return "odom stale"
+        if self._latest_depth is None:
+            return "compressed depth missing"
+        if self._map_grid is None:
+            return "static map missing"
+        if not self._cancel_client.service_is_ready():
+            return "Nav2 cancel service unavailable"
+        return ""
+
+    def _on_manual_start(self, request, response):
+        del request
+        reason = self._manual_start_failure()
+        if reason:
+            response.success = False
+            response.message = reason
+            return response
+        self._lidar_state = LidarState.FAULT
+        started = self._start_fallback("MANUAL TAKEOVER")
+        response.success = started
+        response.message = (
+            "manual Nav2-to-cmd_vel takeover accepted"
+            if started
+            else "manual takeover rejected"
+        )
+        return response
+
+    def _on_manual_stop(self, request, response):
+        del request
+        self.cmd_vel_pub.publish(Twist())
+        self._prev_linear_cmd = 0.0
+        self._prev_angular_cmd = 0.0
+        self._fault_session_active = False
+        self._awaiting_reconvergence = False
+        self._recovery_mode = None
+        self._recovery_amcl_samples = []
+        self._fallback_state = FallbackState.IDLE
+        self._publish_fallback_state()
+        response.success = True
+        response.message = "manual fallback stopped; Nav2 remains canceled"
+        return response
+
+    def _start_fallback(self, trigger_label: str = "LiDAR FAULT") -> bool:
         if self.require_active_nav_goal and not self._nav2_goal_active:
             self.get_logger().info(
                 "LiDAR FAULT while Nav2 is idle; fallback drive will not start"
             )
-            return
+            return False
 
         self._fault_session_active = True
         self.cmd_vel_pub.publish(Twist())
@@ -471,7 +670,16 @@ class FallbackPathFollower(Node):
         self._target_index = 0
         self._last_debug_log_time = None
         self._blocked_since = None
+        self._depth_clear_since = None
+        self._last_depth_unavailable_warning_time = None
+        self._odom_stale_active = False
         self._stuck_anchor = None
+        self._awaiting_reconvergence = False
+        self._alive_triggered_time = None
+        self._recovery_mode = None
+        self._recovery_amcl_samples = []
+        self._recovery_wait_warning_logged = False
+        self._last_amcl_update_request = None
         self._replacement_dispatched = False
         self._fault_path_points = []
         self._saved_nav_path_points = []
@@ -526,9 +734,10 @@ class FallbackPathFollower(Node):
                 f"saved_path_points={len(self._saved_nav_path_points)}"
             )
         self.get_logger().warning(
-            "LiDAR FAULT: pausing Nav2 and stopping for "
+            f"{trigger_label}: pausing Nav2 and stopping for "
             f"{self.pre_replan_delay_sec:.1f}s before following the saved route"
         )
+        return True
 
     def _extract_goal_pose(self) -> Optional[PoseStamped]:
         """Best-known destination, taken from the last pre-fault /plan's endpoint."""
@@ -627,6 +836,12 @@ class FallbackPathFollower(Node):
             f"Fallback route length={total:.2f}m, hard_corners="
             f"{list(self._corner_indices)}"
         )
+        self.get_logger().info(
+            "Odom calibration: translation_scale="
+            f"{self.odom_translation_scale:.3f}, translation_heading_correction="
+            f"{math.degrees(self.odom_translation_heading_correction_rad):+.1f}deg, "
+            f"yaw_delta_scale={self.odom_yaw_delta_scale:.3f}"
+        )
 
     def _current_corner_index(self) -> Optional[int]:
         if self._corner_cursor >= len(self._corner_indices):
@@ -638,13 +853,8 @@ class FallbackPathFollower(Node):
         self._prev_linear_cmd = 0.0
         self._prev_angular_cmd = 0.0
 
-        if self._fault_amcl_pose is not None and self._latest_amcl_pose is not None:
-            resume_pose = self._pose2d_from_amcl(self._latest_amcl_pose)
-            distance_m, angle_deg = pose_error(self._fault_amcl_pose, resume_pose)
-            self.get_logger().warning(
-                f"LiDAR ALIVE: fallback stopped. AMCL pose error since FAULT: "
-                f"{distance_m:.3f} m, {angle_deg:.1f} deg"
-            )
+        fallback_completed = self._fallback_state == FallbackState.SUCCEEDED
+        self._recovery_mode = "validate_only" if fallback_completed else "resume"
 
         if self._fallback_state not in (FallbackState.SUCCEEDED, FallbackState.FAILED):
             self._fallback_state = FallbackState.IDLE
@@ -652,16 +862,40 @@ class FallbackPathFollower(Node):
 
         self._awaiting_reconvergence = True
         self._alive_triggered_time = self._now_sec()
-        self.get_logger().info("Waiting for AMCL to reconverge before deciding next action")
+        self._recovery_amcl_samples = []
+        self._recovery_wait_warning_logged = False
+        self._last_amcl_update_request = None
+        if fallback_completed:
+            self.get_logger().warning(
+                "LiDAR ALIVE after fallback arrival: staying stopped and waiting "
+                "only for a fresh stable AMCL position check; the completed Nav2 "
+                "goal will not be sent again"
+            )
+        else:
+            self.get_logger().warning(
+                "LiDAR ALIVE before fallback arrival: staying stopped until fresh "
+                "stable AMCL is available before resuming Nav2"
+            )
+        self._request_amcl_update(self._alive_triggered_time)
 
     def _on_reconverged(self) -> None:
         self._awaiting_reconvergence = False
+        self.get_logger().info("Fresh stable AMCL position confirmed")
         self._decide_post_recovery_action()
 
     def _decide_post_recovery_action(self) -> None:
         self._fault_session_active = False
         self.replacement_needed_pub.publish(Bool(data=False))
+        if self._recovery_mode == "validate_only":
+            self._log_recovery_position_check()
+            self._recovery_mode = None
+            self.get_logger().warning(
+                "Fallback had already reached the destination; staying stopped "
+                "with Nav2 idle"
+            )
+            return
         if self._replacement_dispatched and not self.resume_nav2_after_failure:
+            self._recovery_mode = None
             self.get_logger().info(
                 "A replacement was already requested for this mission; staying stopped "
                 "and waiting for Mission Manager, even though LiDAR recovered"
@@ -677,6 +911,36 @@ class FallbackPathFollower(Node):
             self._send_resume_goal(self._fault_goal_pose)
         else:
             self.get_logger().info("LiDAR recovered but there was no pending goal to resume")
+        self._recovery_mode = None
+
+    def _log_recovery_position_check(self) -> None:
+        if self._latest_amcl_pose is None or self._fault_goal_pose is None:
+            self.get_logger().warning(
+                "RECOVERY_POSITION_CHECK unavailable: missing AMCL pose or goal"
+            )
+            return
+        amcl_pose = self._pose2d_from_amcl(self._latest_amcl_pose)
+        goal = self._fault_goal_pose.pose.position
+        goal_error = math.hypot(goal.x - amcl_pose[0], goal.y - amcl_pose[1])
+        self.get_logger().warning(
+            "RECOVERY_POSITION_CHECK "
+            f"goal=({goal.x:.3f},{goal.y:.3f}) "
+            f"amcl=({amcl_pose[0]:.3f},{amcl_pose[1]:.3f},"
+            f"{math.degrees(amcl_pose[2]):.1f}deg) "
+            f"goal_error={goal_error:.3f}m result="
+            f"{'PASS' if goal_error <= self.arrival_tolerance_m else 'OUTSIDE_TOLERANCE'}"
+        )
+
+    def _request_amcl_update(self, now: float) -> None:
+        if (
+            self._last_amcl_update_request is not None
+            and now - self._last_amcl_update_request
+            < self.recovery_amcl_update_period_sec
+        ):
+            return
+        self._last_amcl_update_request = now
+        if self._amcl_update_client.service_is_ready():
+            self._amcl_update_client.call_async(Empty.Request())
 
     # -- control loop --------------------------------------------------------
 
@@ -684,15 +948,20 @@ class FallbackPathFollower(Node):
         now = self._now_sec()
 
         if self._awaiting_reconvergence:
+            self.cmd_vel_pub.publish(Twist())
+            self._request_amcl_update(now)
             if (
                 self._alive_triggered_time is not None
                 and (now - self._alive_triggered_time) > self.reconvergence_timeout_sec
+                and not self._recovery_wait_warning_logged
             ):
                 self.get_logger().warning(
-                    "AMCL reconvergence wait timed out; proceeding anyway"
+                    "Fresh stable AMCL position is still unavailable after "
+                    f"{self.reconvergence_timeout_sec:.1f}s; staying stopped "
+                    "instead of resuming Nav2"
                 )
-                self._awaiting_reconvergence = False
-                self._decide_post_recovery_action()
+                self._recovery_wait_warning_logged = True
+            return
 
         active_states = (FallbackState.STARTING, FallbackState.ACTIVE, FallbackState.BLOCKED)
         if self._fallback_state not in active_states:
@@ -725,6 +994,23 @@ class FallbackPathFollower(Node):
 
         current_pose = self._estimate_current_pose(now)
         odom_stale = is_stale(self._last_odom_time, now, self.odom_timeout_sec)
+        odom_age = (
+            math.inf
+            if self._last_odom_time is None
+            else max(0.0, now - self._last_odom_time)
+        )
+        was_odom_stale = self._odom_stale_active
+        self._odom_stale_active = odom_stale
+        if odom_stale and not was_odom_stale:
+            self.get_logger().warning(
+                "ODOM_STALE: no local odom receipt for "
+                f"{odom_age:.2f}s (limit={self.odom_timeout_sec:.2f}s); "
+                "stopping fallback and waiting for fresh odom"
+            )
+        elif was_odom_stale and not odom_stale:
+            self.get_logger().warning(
+                "ODOM_RECOVERED: fresh odom received; fallback may resume"
+            )
 
         target = None
         linear_x = angular_z = 0.0
@@ -837,21 +1123,59 @@ class FallbackPathFollower(Node):
                                 ),
                             )
 
-        # Once inside goal tolerance the command is already zero, so stale
+        # Once inside goal tolerance the command is already zero, so missing
         # depth must not turn a completed fallback into BLOCKED/FAILED.
         depth_result = (
             DepthSafetyResult.CLEAR
             if arrived
-            else self._check_depth_safety(now, angular_z)
+            else self._check_depth_safety(angular_z)
         )
-        depth_blocked = depth_result != DepthSafetyResult.CLEAR
+        raw_depth_blocked = depth_result_blocks_motion(
+            depth_result,
+            allow_insufficient=self.allow_insufficient_depth_motion,
+        )
+        depth_unavailable = depth_result == DepthSafetyResult.INSUFFICIENT_DATA
+        if depth_unavailable and not raw_depth_blocked:
+            if (
+                self._last_depth_unavailable_warning_time is None
+                or (now - self._last_depth_unavailable_warning_time) >= 5.0
+            ):
+                self._last_depth_unavailable_warning_time = now
+                self.get_logger().warning(
+                    f"Depth {depth_result.value}; continuing fallback because "
+                    "allow_insufficient_depth_motion=true"
+                )
+        elif not depth_unavailable:
+            self._last_depth_unavailable_warning_time = None
+        depth_blocked = raw_depth_blocked
+        if arrived:
+            self._depth_clear_since = None
+        elif raw_depth_blocked:
+            self._depth_clear_since = None
+        elif (
+            self._fallback_state == FallbackState.BLOCKED
+            and self.depth_clear_hold_sec > 0.0
+        ):
+            if self._depth_clear_since is None:
+                self._depth_clear_since = now
+                self.get_logger().info(
+                    "Depth clear; holding stop for "
+                    f"{self.depth_clear_hold_sec:.2f}s before resume"
+                )
+            clear_elapsed = now - self._depth_clear_since
+            depth_blocked = clear_elapsed < self.depth_clear_hold_sec
+            if not depth_blocked:
+                self.get_logger().info(
+                    f"Depth clear stable for {clear_elapsed:.2f}s; resuming"
+                )
+                self._depth_clear_since = None
 
         commanded_nonzero = abs(linear_x) > 1e-3 or abs(angular_z) > 1e-3
         stuck = self._update_stuck_tracking(
             now, current_pose, commanded_nonzero and not depth_blocked
         )
 
-        if depth_blocked:
+        if raw_depth_blocked:
             if self._blocked_since is None:
                 self._blocked_since = now
         else:
@@ -873,11 +1197,16 @@ class FallbackPathFollower(Node):
         previous_state = self._fallback_state
         self._fallback_state = next_fallback_state(self._fallback_state, inputs)
         if self._fallback_state != previous_state:
+            transition_reason = self._fallback_transition_reason(
+                inputs, depth_result, odom_age, was_odom_stale
+            )
             self.get_logger().warning(
-                f"fallback_state: {previous_state.value} -> {self._fallback_state.value}"
-                + (f" (depth={depth_result.value})" if depth_blocked else "")
+                f"fallback_state: {previous_state.value} -> "
+                f"{self._fallback_state.value} reason={transition_reason}"
             )
             self._publish_fallback_state()
+            if self._fallback_state == FallbackState.SUCCEEDED:
+                self._log_arrival_validation(now, current_pose)
 
         if self._fallback_state == FallbackState.ACTIVE and not depth_blocked:
             linear_x = rate_limit(
@@ -914,6 +1243,49 @@ class FallbackPathFollower(Node):
         if self._fallback_state == FallbackState.FAILED and not self._replacement_dispatched:
             self._request_replacement()
 
+    def _fallback_transition_reason(
+        self,
+        inputs: FallbackTickInputs,
+        depth_result: DepthSafetyResult,
+        odom_age: float,
+        was_odom_stale: bool,
+    ) -> str:
+        """Return the exact condition responsible for a state transition."""
+        if self._fallback_state == FallbackState.FAILED:
+            if not inputs.has_plan:
+                return "MISSING_PLAN"
+            if not inputs.has_anchor:
+                return "MISSING_ODOM_ANCHOR"
+            if inputs.stuck:
+                return "STUCK"
+            if inputs.path_deviation_m > inputs.max_path_deviation_m:
+                return (
+                    f"PATH_DEVIATION({inputs.path_deviation_m:.3f}m>"
+                    f"{inputs.max_path_deviation_m:.3f}m)"
+                )
+            if (
+                inputs.depth_blocked
+                and inputs.blocked_duration_sec > inputs.blocked_timeout_sec
+            ):
+                return (
+                    f"DEPTH_TIMEOUT({depth_result.value},"
+                    f"{inputs.blocked_duration_sec:.2f}s>"
+                    f"{inputs.blocked_timeout_sec:.2f}s)"
+                )
+            return "UNKNOWN_FAILURE"
+        if inputs.odom_stale:
+            return (
+                f"ODOM_STALE(age={odom_age:.2f}s,"
+                f"limit={self.odom_timeout_sec:.2f}s)"
+            )
+        if inputs.depth_blocked:
+            return f"DEPTH_{depth_result.value}"
+        if self._fallback_state == FallbackState.SUCCEEDED:
+            return "GOAL_REACHED"
+        if was_odom_stale:
+            return "ODOM_RECOVERED"
+        return "SAFETY_CLEAR"
+
     def _estimate_current_pose(self, now: float) -> Optional[Pose2D]:
         if (
             self._odom_anchor is None
@@ -923,10 +1295,57 @@ class FallbackPathFollower(Node):
         ):
             return None
         return integrate_odom_delta(
-            self._odom_anchor, self._odom_start, self._pose2d_from_odom(self._latest_odom)
+            self._odom_anchor,
+            self._odom_start,
+            self._pose2d_from_odom(self._latest_odom),
+            translation_scale=self.odom_translation_scale,
+            translation_heading_correction_rad=(
+                self.odom_translation_heading_correction_rad
+            ),
+            yaw_delta_scale=self.odom_yaw_delta_scale,
         )
 
-    def _check_depth_safety(self, now: float, angular_z: float) -> DepthSafetyResult:
+    def _log_arrival_validation(
+        self, now: float, calibrated_pose: Optional[Pose2D]
+    ) -> None:
+        if calibrated_pose is None or not self._fault_path_points:
+            return
+        goal_x, goal_y = self._fault_path_points[-1]
+        calibrated_error = math.hypot(
+            goal_x - calibrated_pose[0], goal_y - calibrated_pose[1]
+        )
+        raw_pose = integrate_odom_delta(
+            self._odom_anchor,
+            self._odom_start,
+            self._pose2d_from_odom(self._latest_odom),
+        )
+        raw_error = math.hypot(goal_x - raw_pose[0], goal_y - raw_pose[1])
+        result = (
+            "FALLBACK_RESULT "
+            f"goal=({goal_x:.3f},{goal_y:.3f}) "
+            f"calibrated_pose=({calibrated_pose[0]:.3f},"
+            f"{calibrated_pose[1]:.3f}) calibrated_error={calibrated_error:.3f}m "
+            f"raw_odom_pose=({raw_pose[0]:.3f},{raw_pose[1]:.3f}) "
+            f"raw_odom_error={raw_error:.3f}m"
+        )
+        if self._latest_amcl_pose is not None and self._last_amcl_time is not None:
+            amcl_pose = self._pose2d_from_amcl(self._latest_amcl_pose)
+            amcl_age = max(0.0, now - self._last_amcl_time)
+            amcl_goal_error = math.hypot(
+                goal_x - amcl_pose[0], goal_y - amcl_pose[1]
+            )
+            estimate_amcl_error = math.hypot(
+                calibrated_pose[0] - amcl_pose[0],
+                calibrated_pose[1] - amcl_pose[1],
+            )
+            result += (
+                f" latest_amcl=({amcl_pose[0]:.3f},{amcl_pose[1]:.3f}) "
+                f"amcl_age={amcl_age:.2f}s amcl_goal_error={amcl_goal_error:.3f}m "
+                f"estimate_amcl_error={estimate_amcl_error:.3f}m"
+            )
+        self.get_logger().warning(result)
+
+    def _check_depth_safety(self, angular_z: float) -> DepthSafetyResult:
         rois = self._forward_rois()
         if not rois:
             return DepthSafetyResult.INSUFFICIENT_DATA
@@ -938,8 +1357,7 @@ class FallbackPathFollower(Node):
             names.append("right")
         results = [
             evaluate_depth_safety(
-                self._latest_depth, self._last_depth_time, now,
-                self.depth_timeout_sec, self.min_obstacle_distance_m,
+                self._latest_depth, self.min_obstacle_distance_m,
                 self.obstacle_pixel_ratio, self.min_valid_pixel_ratio, rois[name],
                 self.noise_valid_pixel_ratio,
             )
@@ -1066,6 +1484,7 @@ class FallbackPathFollower(Node):
 
     def _cancel_nav2_goal(self) -> None:
         self._cancel_future = None
+        self._cancel_response_accepted = False
         self._cancel_confirmed = False
         self._cancel_requested_time = self._now_sec()
         if not self._cancel_client.service_is_ready():
@@ -1079,20 +1498,30 @@ class FallbackPathFollower(Node):
         del now
         if self._cancel_confirmed:
             return True
-        if self._cancel_future is None or not self._cancel_future.done():
-            return False
-        try:
-            response = self._cancel_future.result()
-        except Exception as error:
-            self.get_logger().error(f"Nav2 cancel request failed: {error}")
-            return False
-        if response.return_code != CancelGoal.Response.ERROR_NONE:
-            self.get_logger().error(
-                f"Nav2 rejected cancel request: return_code={response.return_code}"
+        if not self._cancel_response_accepted:
+            if self._cancel_future is None or not self._cancel_future.done():
+                return False
+            try:
+                response = self._cancel_future.result()
+            except Exception as error:
+                self.get_logger().error(f"Nav2 cancel request failed: {error}")
+                return False
+            if response.return_code != CancelGoal.Response.ERROR_NONE:
+                self.get_logger().error(
+                    f"Nav2 rejected cancel request: return_code={response.return_code}"
+                )
+                return False
+            self._cancel_response_accepted = True
+            self.get_logger().warning(
+                "Nav2 accepted the cancel request; waiting for the action "
+                "status to leave active/canceling"
             )
+        if self._nav2_goal_active:
             return False
         self._cancel_confirmed = True
-        self.get_logger().warning("Nav2 goal cancellation confirmed")
+        self.get_logger().warning(
+            "Nav2 goal cancellation confirmed; cmd_vel ownership transferred"
+        )
         return True
 
     def _fail_fallback(self, reason: str) -> None:

@@ -1,7 +1,8 @@
 """Fallback path-follower state machine.
 
     IDLE -> STARTING -> ACTIVE <-> BLOCKED -> SUCCEEDED
-    (STARTING/ACTIVE/BLOCKED) -> FAILED
+    (STARTING/ACTIVE) -> BLOCKED when odom or depth is temporarily unavailable
+    (STARTING/ACTIVE/BLOCKED) -> FAILED on a terminal safety condition
 
 Kept ROS-free like lidar_state_machine.py — the node computes the input
 booleans/durations each tick (odom stale, depth blocked, stuck, path
@@ -44,8 +45,11 @@ def next_fallback_state(current: FallbackState, inputs: FallbackTickInputs) -> F
 
     if not inputs.has_plan or not inputs.has_anchor:
         return FallbackState.FAILED
+    # A delayed odom packet is a recoverable communication interruption, not
+    # evidence that the route itself has failed.  BLOCKED makes the caller
+    # publish zero velocity until fresh odom arrives, then ACTIVE resumes.
     if inputs.odom_stale:
-        return FallbackState.FAILED
+        return FallbackState.BLOCKED
     if inputs.stuck:
         return FallbackState.FAILED
     if inputs.path_deviation_m > inputs.max_path_deviation_m:

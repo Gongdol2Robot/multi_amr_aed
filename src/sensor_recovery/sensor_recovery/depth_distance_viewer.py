@@ -92,9 +92,6 @@ class DepthDistanceViewer(Node):
         )
         result = evaluate_depth_safety(
             depth,
-            received_at,
-            received_at,
-            0.5,
             self.obstacle_distance_m,
             self.obstacle_pixel_ratio,
             self.min_valid_pixel_ratio,

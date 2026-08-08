@@ -96,7 +96,6 @@ class CmdVelRouteFollower(Node):
         self.latest_amcl: Optional[PoseWithCovarianceStamped] = None
         self.latest_depth: Optional[np.ndarray] = None
         self.last_odom_received: Optional[float] = None
-        self.last_depth_time: Optional[float] = None
         self.depth_stats_started_at = time.monotonic()
         self.depth_frames_in_window = 0
         self.last_depth_policy_warning_at: Optional[float] = None
@@ -184,7 +183,6 @@ class CmdVelRouteFollower(Node):
             "control_period_sec": 0.05,
             "nav2_stop_delay_sec": 1.0,
             "odom_timeout_sec": 1.0,
-            "depth_timeout_sec": 0.5,
             "depth_clear_hold_sec": 0.5,
             "depth_center_roi_size_px": 80,
             "min_obstacle_distance_m": 0.65,
@@ -205,7 +203,6 @@ class CmdVelRouteFollower(Node):
             "start_yaw_tolerance_deg": 20.0,
             "require_nav2_cancel": True,
             "require_static_map": True,
-            "stop_on_depth_stale": True,
             "stop_on_depth_insufficient_data": True,
             "robot_radius_m": 0.20,
             "hard_margin_m": 0.05,
@@ -230,7 +227,6 @@ class CmdVelRouteFollower(Node):
             "control_period_sec",
             "nav2_stop_delay_sec",
             "odom_timeout_sec",
-            "depth_timeout_sec",
             "depth_clear_hold_sec",
             "min_obstacle_distance_m",
             "obstacle_pixel_ratio",
@@ -261,9 +257,6 @@ class CmdVelRouteFollower(Node):
         )
         self.require_static_map = bool(
             self.get_parameter("require_static_map").value
-        )
-        self.stop_on_depth_stale = bool(
-            self.get_parameter("stop_on_depth_stale").value
         )
         self.stop_on_depth_insufficient_data = bool(
             self.get_parameter("stop_on_depth_insufficient_data").value
@@ -312,10 +305,6 @@ class CmdVelRouteFollower(Node):
             self.latest_depth = decode_compressed_depth(message.data)
             received_at = self._now()
             header_age = received_at - _stamp_to_sec(message.header.stamp)
-            # Freshness must use the local callback arrival time. Robot and
-            # operator clocks can differ by seconds even while frames arrive
-            # continuously, which would otherwise produce a false STALE.
-            self.last_depth_time = received_at
             self.depth_frames_in_window += 1
             if not self.depth_announced:
                 self.depth_announced = True
@@ -395,7 +384,7 @@ class CmdVelRouteFollower(Node):
             response.success = False
             response.message = start_error
             return response
-        depth_result = self._check_depth_safety(self._now(), None)
+        depth_result = self._check_depth_safety()
         if self._depth_requires_stop(depth_result):
             response.success = False
             response.message = (
@@ -488,7 +477,7 @@ class CmdVelRouteFollower(Node):
         ):
             return
         if self.state == "BLOCKED":
-            depth_result = self._check_depth_safety(self._now(), None)
+            depth_result = self._check_depth_safety()
             if self._depth_requires_stop(depth_result):
                 self.depth_clear_since = None
                 self._publish_stop()
@@ -648,7 +637,7 @@ class CmdVelRouteFollower(Node):
         return self.corner_indices[self.corner_cursor]
 
     def _publish_command(self, linear: float, angular: float) -> None:
-        depth_result = self._check_depth_safety(self._now(), angular)
+        depth_result = self._check_depth_safety()
         if self._depth_requires_stop(depth_result):
             if self.state != "BLOCKED":
                 self.resume_state = self.state
@@ -716,9 +705,7 @@ class CmdVelRouteFollower(Node):
         )
         return ""
 
-    def _check_depth_safety(
-        self, now: float, angular: Optional[float]
-    ) -> DepthSafetyResult:
+    def _check_depth_safety(self) -> DepthSafetyResult:
         rois = self._forward_rois()
         if not rois:
             self.last_depth_result = DepthSafetyResult.INSUFFICIENT_DATA
@@ -732,9 +719,6 @@ class CmdVelRouteFollower(Node):
         for name in names:
             result = evaluate_depth_safety(
                 self.latest_depth,
-                self.last_depth_time,
-                now,
-                self.depth_timeout_sec,
                 self.min_obstacle_distance_m,
                 self.obstacle_pixel_ratio,
                 self.min_valid_pixel_ratio,
@@ -773,8 +757,6 @@ class CmdVelRouteFollower(Node):
             return True
         if result == DepthSafetyResult.NOISY_DEPTH:
             return True
-        if result == DepthSafetyResult.STALE:
-            return self.stop_on_depth_stale
         if result == DepthSafetyResult.INSUFFICIENT_DATA:
             return self.stop_on_depth_insufficient_data
         return False

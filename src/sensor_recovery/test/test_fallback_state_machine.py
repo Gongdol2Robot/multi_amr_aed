@@ -37,9 +37,14 @@ def test_missing_anchor_fails():
     assert result == FallbackState.FAILED
 
 
-def test_odom_stale_fails():
+def test_odom_stale_stops_without_terminal_failure():
     result = next_fallback_state(FallbackState.ACTIVE, _inputs(odom_stale=True))
-    assert result == FallbackState.FAILED
+    assert result == FallbackState.BLOCKED
+
+
+def test_fresh_odom_resumes_after_odom_block():
+    result = next_fallback_state(FallbackState.BLOCKED, _inputs(odom_stale=False))
+    assert result == FallbackState.ACTIVE
 
 
 def test_stuck_fails():

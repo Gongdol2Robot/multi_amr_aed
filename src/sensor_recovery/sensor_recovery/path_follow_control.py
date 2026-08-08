@@ -39,20 +39,34 @@ class DepthSafetyResult(str, Enum):
     CLEAR = "CLEAR"
     OBSTACLE = "OBSTACLE"
     NOISY_DEPTH = "NOISY_DEPTH"
-    STALE = "STALE"
     INSUFFICIENT_DATA = "INSUFFICIENT_DATA"
 
 
-# Worst-first: how _combine_depth_results / callers should prioritize when
-# several ROIs disagree. Anything but CLEAR should stop the robot; this
-# ordering only matters for picking one label to report/log.
+# Worst-first: how several ROIs should be prioritized when they disagree.
+# Whether unavailable data blocks motion is a separate, explicit policy in
+# depth_result_blocks_motion().
 _DEPTH_SEVERITY = {
     DepthSafetyResult.OBSTACLE: 4,
     DepthSafetyResult.NOISY_DEPTH: 3,
-    DepthSafetyResult.STALE: 2,
     DepthSafetyResult.INSUFFICIENT_DATA: 1,
     DepthSafetyResult.CLEAR: 0,
 }
+
+
+def depth_result_blocks_motion(
+    result: DepthSafetyResult,
+    allow_insufficient: bool = False,
+) -> bool:
+    """Return whether a depth verdict must stop fallback motion.
+
+    Real obstacle/noise detections always fail closed. INSUFFICIENT_DATA can
+    be configured fail-open for the known unreliable robot network.
+    """
+    if result in (DepthSafetyResult.OBSTACLE, DepthSafetyResult.NOISY_DEPTH):
+        return True
+    if result == DepthSafetyResult.INSUFFICIENT_DATA:
+        return not allow_insufficient
+    return False
 
 
 def normalize_angle(angle: float) -> float:
@@ -319,12 +333,21 @@ def rate_limit(previous: float, target: float, max_delta: float) -> float:
     return previous + delta
 
 
-def integrate_odom_delta(anchor: Pose2D, odom_start: Pose2D, odom_now: Pose2D) -> Pose2D:
+def integrate_odom_delta(
+    anchor: Pose2D,
+    odom_start: Pose2D,
+    odom_now: Pose2D,
+    translation_scale: float = 1.0,
+    translation_heading_correction_rad: float = 0.0,
+    yaw_delta_scale: float = 1.0,
+) -> Pose2D:
     """Compose the odom-frame motion since odom_start onto the anchor pose.
 
     odom_start/odom_now share an arbitrary odom-frame origin; only their
     relative motion is meaningful, so it's expressed in the robot's frame at
     odom_start and then re-applied on top of anchor (the last AMCL pose).
+    Optional calibration is applied to that relative motion, leaving the
+    anchor unchanged and growing gradually with traveled distance/rotation.
     """
     anchor_x, anchor_y, anchor_yaw = anchor
     start_x, start_y, start_yaw = odom_start
@@ -334,10 +357,26 @@ def integrate_odom_delta(anchor: Pose2D, odom_start: Pose2D, odom_now: Pose2D) -
     raw_dy = now_y - start_y
     local_dx = raw_dx * math.cos(start_yaw) + raw_dy * math.sin(start_yaw)
     local_dy = -raw_dx * math.sin(start_yaw) + raw_dy * math.cos(start_yaw)
-    dyaw = normalize_angle(now_yaw - start_yaw)
+    correction_cos = math.cos(translation_heading_correction_rad)
+    correction_sin = math.sin(translation_heading_correction_rad)
+    corrected_local_dx = translation_scale * (
+        local_dx * correction_cos - local_dy * correction_sin
+    )
+    corrected_local_dy = translation_scale * (
+        local_dx * correction_sin + local_dy * correction_cos
+    )
+    dyaw = normalize_angle(now_yaw - start_yaw) * yaw_delta_scale
 
-    new_x = anchor_x + local_dx * math.cos(anchor_yaw) - local_dy * math.sin(anchor_yaw)
-    new_y = anchor_y + local_dx * math.sin(anchor_yaw) + local_dy * math.cos(anchor_yaw)
+    new_x = (
+        anchor_x
+        + corrected_local_dx * math.cos(anchor_yaw)
+        - corrected_local_dy * math.sin(anchor_yaw)
+    )
+    new_y = (
+        anchor_y
+        + corrected_local_dx * math.sin(anchor_yaw)
+        + corrected_local_dy * math.cos(anchor_yaw)
+    )
     new_yaw = normalize_angle(anchor_yaw + dyaw)
     return (new_x, new_y, new_yaw)
 
@@ -358,9 +397,6 @@ def time_regressed(previous_time: Optional[float], new_time: float) -> bool:
 
 def evaluate_depth_safety(
     depth_image_mm: Optional[np.ndarray],
-    image_timestamp: Optional[float],
-    now: float,
-    depth_timeout_sec: float,
     min_obstacle_distance_m: float,
     obstacle_pixel_ratio: float,
     min_valid_pixel_ratio: float,
@@ -377,10 +413,8 @@ def evaluate_depth_safety(
     stereo pattern seen inside the camera's useful minimum range.  A real
     close obstacle takes precedence over that diagnostic label.
     """
-    if depth_image_mm is None or image_timestamp is None:
+    if depth_image_mm is None:
         return DepthSafetyResult.INSUFFICIENT_DATA
-    if is_stale(image_timestamp, now, depth_timeout_sec):
-        return DepthSafetyResult.STALE
 
     region = depth_image_mm if roi is None else depth_image_mm[roi[1]:roi[3], roi[0]:roi[2]]
     if region.size == 0:

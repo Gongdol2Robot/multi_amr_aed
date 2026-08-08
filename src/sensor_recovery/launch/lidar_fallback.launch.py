@@ -16,6 +16,16 @@ def _nodes(context):
     package_share = get_package_share_directory("sensor_recovery")
     watchdog_params = os.path.join(package_share, "config", "lidar_watchdog.yaml")
     fallback_params = os.path.join(package_share, "config", "lidar_fallback.yaml")
+    # Robot1 calibration measured on the 2026-08-08 manual takeover run:
+    # odom estimated displacement=(3.812,-0.561)m while AMCL measured
+    # approximately (3.788,-0.291)m. Robot2 stays neutral until measured.
+    odom_calibration = {
+        "robot1": {
+            "odom_translation_scale": 0.986,
+            "odom_translation_heading_correction_deg": 4.0,
+            "odom_yaw_delta_scale": 0.92,
+        }
+    }.get(robot_name, {})
     return [
         Node(
             package="sensor_recovery",
@@ -36,7 +46,10 @@ def _nodes(context):
             namespace=robot_name,
             name="lidar_fallback_controller",
             output="screen",
-            parameters=[fallback_params, {"debug_enabled": True}],
+            parameters=[
+                fallback_params,
+                {"debug_enabled": True, **odom_calibration},
+            ],
         ),
     ]
 

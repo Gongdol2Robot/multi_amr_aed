@@ -83,15 +83,15 @@ START_SERVICE="$ROBOT_NS/start_motor"
 
 check_docked() {
   local msg
+  if (( ALLOW_UNDOCKED == 1 )); then
+    warn "$ROBOT_NS dock 상태 조회를 생략합니다. --allow-undocked 로 주행 중 LiDAR fault 시험을 명시적으로 허용했습니다."
+    return 0
+  fi
   msg="$(timeout 5 ros2 topic echo "$ROBOT_NS/dock_status" --once 2>&1)" || {
     fail "$ROBOT_NS/dock_status 를 읽을 수 없습니다. 로봇이 켜져 있는지 확인하세요."
     return 1
   }
   if [[ "$msg" != *"is_docked: true"* ]]; then
-    if (( ALLOW_UNDOCKED == 1 )); then
-      warn "$ROBOT_NS 가 도킹되어 있지 않습니다. --allow-undocked 로 의도적으로 진행합니다 (주행 중 LiDAR fault 테스트)."
-      return 0
-    fi
     fail "$ROBOT_NS 가 도킹되어 있지 않습니다. 주행 중일 수 있어 LiDAR를 끄지 않습니다. (의도적으로 주행 중 테스트하려면 --allow-undocked)"
     return 1
   fi
@@ -128,18 +128,21 @@ load_robot_env() {
 
 ssh_cmd() {
   local ip="$1" remote_cmd="$2"
-  sshpass -p "$ROBOT_SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 \
+  # 원격 background 프로세스가 SSH의 stdin을 잡고 있거나 네트워크 응답이
+  # 끊겨도 호출자가 무한히 기다리지 않도록 전체 실행 시간도 제한한다.
+  timeout 15 sshpass -p "$ROBOT_SSH_PASSWORD" ssh \
+    -o StrictHostKeyChecking=no -o ConnectTimeout=8 \
     "$ROBOT_SSH_USER@$ip" "$remote_cmd"
 }
 
 RPLIDAR_BIN="/opt/ros/humble/lib/rplidar_ros/rplidar_composition"
 
-find_lidar_pid() {
+find_lidar_pids() {
   local ip="$1"
-  # 실제 바이너리 경로로 매칭한다. "ros2 run rplidar_ros rplidar_composition"
-  # 래퍼는 별도 자식 프로세스를 fork하고 부모를 kill해도 안 죽는 걸 확인해서
-  # (2026-08-06) 절대 이 래퍼로는 띄우지 않는다 — 아래 scan-on 참고.
-  ssh_cmd "$ip" "pgrep -f '${RPLIDAR_BIN} --ros-args.*__ns:=${ROBOT_NS} '" 2>/dev/null | head -1
+  # pgrep -f는 검색 문자열을 포함한 원격 `bash -c` 자체까지 잡을 수 있다.
+  # ps의 executable 필드($2)가 실제 바이너리와 정확히 같은 행만 고른다.
+  # PID 하나만 고르지 않고 모두 반환해서 중복 드라이버도 빠짐없이 종료한다.
+  ssh_cmd "$ip" "ps -eo pid=,args= | awk -v bin='${RPLIDAR_BIN}' -v ns='__ns:=${ROBOT_NS}' '\$2 == bin && index(\$0, ns) { print \$1 }'" 2>/dev/null
 }
 
 case "$ACTION" in
@@ -182,27 +185,74 @@ case "$ACTION" in
       read -r -p "$ROBOT_NS 의 LiDAR 드라이버 프로세스를 SSH로 kill합니다 (모터 정지보다 강함, /scan 완전히 끊김). 다른 팀원이 사용 중이 아닌지 확인했습니까? [y/N] " reply
       [[ "$reply" =~ ^[Yy]$ ]] || { echo "취소했습니다."; exit 1; }
     fi
-    pid="$(find_lidar_pid "$ip")"
-    if [[ -z "$pid" ]]; then
+    pids="$(find_lidar_pids "$ip")"
+    if [[ -z "$pids" ]]; then
       fail "$ROBOT_NS 에서 rplidar_composition 프로세스를 찾을 수 없습니다."
       exit 1
     fi
-    if ssh_cmd "$ip" "kill $pid"; then
-      ok "$ROBOT_NS rplidar_composition (pid $pid) kill 요청 전송"
-      warn "watchdog 이 scan_timeout_sec 이후 FAULT 로 판정하는지 확인하세요."
-      warn "되살리려면: tools/lidar_toggle.sh scan-on $ROBOT_NUMBER"
-    else
+    while IFS= read -r pid; do
+      if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
+        fail "잘못된 LiDAR PID가 감지됐습니다: $pid"
+        exit 1
+      fi
+    done <<< "$pids"
+    if ! ssh_cmd "$ip" "kill -- $(tr '\n' ' ' <<< "$pids")"; then
       fail "kill 실패"
       exit 1
     fi
+    ok "$ROBOT_NS rplidar_composition 종료 요청 전송 (pid: $(tr '\n' ' ' <<< "$pids"))"
+
+    # kill(TERM)이 실제로 반영됐는지 확인한다. 이전에는 이 확인이 없어
+    # 프로세스가 살아 있어도 OFF 성공으로 표시될 수 있었다.
+    stopped=0
+    for _ in {1..10}; do
+      sleep 0.3
+      remaining="$(find_lidar_pids "$ip")"
+      if [[ -z "$remaining" ]]; then
+        stopped=1
+        break
+      fi
+    done
+    if (( stopped == 0 )); then
+      fail "$ROBOT_NS LiDAR 프로세스가 종료되지 않았습니다 (남은 pid: $(tr '\n' ' ' <<< "$remaining"))."
+      exit 1
+    fi
+    ok "$ROBOT_NS 원격 LiDAR 프로세스 0개 확인"
+
+    # ROS 그래프의 publisher endpoint는 한동안 남을 수 있으므로 count가 아니라
+    # 새 LaserScan 메시지가 실제로 오는지를 검사한다.
+    if timeout 2 ros2 topic echo "$ROBOT_NS/scan" --once --qos-reliability best_effort >/dev/null 2>&1; then
+      fail "$ROBOT_NS/scan 새 데이터가 아직 수신됩니다. 다른 LiDAR 발행자가 남아 있습니다."
+      exit 1
+    fi
+    ok "$ROBOT_NS/scan 새 데이터 단절 확인"
+    warn "watchdog 이 scan_timeout_sec 이후 FAULT 로 판정하는지 확인하세요."
+    warn "되살리려면: tools/lidar_toggle.sh scan-on $ROBOT_NUMBER"
     ;;
   scan-on)
     ip="$(robot_ip "$ROBOT_NUMBER")" || { fail "robot$ROBOT_NUMBER 의 IP를 모릅니다 (1, 2만 지원)"; exit 1; }
     load_robot_env || exit 1
-    existing="$(find_lidar_pid "$ip")"
+    existing="$(find_lidar_pids "$ip")"
     if [[ -n "$existing" ]]; then
       ok "$ROBOT_NS rplidar_composition 이미 실행 중 (pid $existing)"
-      exit 0
+      # auto_standby 상태에서는 프로세스가 살아 있어도 모터와 /scan이 멈출
+      # 수 있다. 프로세스 존재만으로 성공 처리하지 말고 모터를 깨운 뒤 실제
+      # LaserScan 수신까지 확인한다.
+      if timeout 5 ros2 service call "$START_SERVICE" std_srvs/srv/Empty "{}" >/dev/null 2>&1; then
+        ok "$ROBOT_NS LiDAR 모터 재시작 요청 전송"
+      else
+        warn "$START_SERVICE 호출을 확인하지 못했습니다. /scan 수신으로 최종 판정합니다."
+      fi
+      echo "  -> $ROBOT_NS/scan 실제 데이터 확인 중 (최대 12초)..."
+      if timeout 12 ros2 topic echo "$ROBOT_NS/scan" sensor_msgs/msg/LaserScan \
+          --once --qos-reliability best_effort >/dev/null 2>&1; then
+        ok "$ROBOT_NS/scan 실제 데이터 수신 확인됨"
+        warn "watchdog 이 FAULT -> RECOVERING -> ALIVE 로 복귀하는지 확인하세요."
+        exit 0
+      fi
+      fail "LiDAR 프로세스는 실행 중이지만 $ROBOT_NS/scan 데이터가 안 옵니다."
+      ssh_cmd "$ip" "tail -n 30 /tmp/rplidar_restart.log 2>/dev/null || true" || true
+      exit 1
     fi
     # 로봇의 discovery/도메인 환경(/etc/turtlebot4/setup.bash)을 반드시 먼저
     # source해야 한다 — 안 하면 새 프로세스가 격리된 기본 도메인으로 붙어서
@@ -211,26 +261,35 @@ case "$ACTION" in
     # 그리고 원래 launch가 쓰는 바이너리를 직접 실행한다 — "ros2 run"으로
     # 띄우면 부모(ros2 run)와 실제 바이너리가 별도 PID로 떠서, 부모만 kill
     # 하면 자식이 시리얼 포트를 문 채로 안 죽고 남는다.
+    # setsid -f와 stdin/stdout/stderr 분리로 드라이버를 SSH 세션에서 완전히
+    # 떼어낸다. 이전 nohup 방식은 stdin이 SSH 채널에 남아 두 번째 Enter 뒤
+    # 로봇에서는 LiDAR가 켜져도 로컬 터미널이 끝나지 않았다.
     launch_cmd="source /etc/turtlebot4/setup.bash && \
-nohup ${RPLIDAR_BIN} --ros-args \
+setsid -f ${RPLIDAR_BIN} --ros-args \
 -r __node:=rplidar_composition -r __ns:=${ROBOT_NS} \
 -p serial_port:=/dev/RPLIDAR -p serial_baudrate:=115200 \
 -p frame_id:=rplidar_link -p inverted:=false \
 -p angle_compensate:=true -p auto_standby:=true \
->/tmp/rplidar_restart.log 2>&1 & disown; sleep 2; \
-pgrep -f '${RPLIDAR_BIN} --ros-args.*__ns:=${ROBOT_NS} '"
-    result="$(ssh_cmd "$ip" "$launch_cmd")"
+ </dev/null >/tmp/rplidar_restart.log 2>&1; sleep 2"
+    if ! ssh_cmd "$ip" "$launch_cmd"; then
+      fail "LiDAR 원격 재실행 명령이 실패하거나 15초를 초과했습니다."
+      exit 1
+    fi
+    result="$(find_lidar_pids "$ip")"
     if [[ -z "$result" ]]; then
       fail "재실행 확인 실패. 로봇의 /tmp/rplidar_restart.log 를 확인하세요."
+      ssh_cmd "$ip" "tail -n 30 /tmp/rplidar_restart.log 2>/dev/null || true" || true
       exit 1
     fi
     ok "$ROBOT_NS rplidar_composition 재실행됨 (pid $result)"
-    echo "  -> ROS 그래프에 실제로 잡히는지 확인 중 (최대 8초)..."
-    if timeout 8 ros2 topic echo "$ROBOT_NS/scan" --once >/dev/null 2>&1; then
+    echo "  -> ROS 그래프에 실제로 잡히는지 확인 중 (최대 12초)..."
+    if timeout 12 ros2 topic echo "$ROBOT_NS/scan" sensor_msgs/msg/LaserScan \
+        --once --qos-reliability best_effort >/dev/null 2>&1; then
       ok "$ROBOT_NS/scan 실제 데이터 수신 확인됨"
       warn "watchdog 이 FAULT -> RECOVERING -> ALIVE 로 복귀하는지 확인하세요."
     else
       fail "프로세스는 떠 있지만 $ROBOT_NS/scan 데이터가 안 옵니다. 로봇의 /tmp/rplidar_restart.log 와 ROS_DOMAIN_ID/ROS_DISCOVERY_SERVER 환경을 확인하세요."
+      ssh_cmd "$ip" "tail -n 30 /tmp/rplidar_restart.log 2>/dev/null || true" || true
       exit 1
     fi
     ;;

@@ -1,7 +1,9 @@
 lidar_watchdog_node:
   ros__parameters:
     scan_timeout_sec: 5.0
-    startup_grace_sec: 3.0
+    # mapnav 시작 직후 DDS/scan 연결에 걸린 실측 시간보다 길게 둔다.
+    # ALIVE 진입 후 실제 고장 판정 시간(scan_timeout_sec=5초)은 그대로다.
+    startup_grace_sec: 8.0
     recovery_duration_sec: 3.0
     watchdog_period_sec: 0.1
     status_publish_period_sec: 1.0

@@ -142,13 +142,18 @@ IDLE → STARTING → ACTIVE ⇄ BLOCKED → SUCCEEDED
   smoother 하나만 담당한다.
 - 깊이 안전 판단(`evaluate_depth_safety`)은 단일 최소값이 아니라 **ROI 내
   픽셀 비율** 기준입니다: 유효 픽셀이 `min_valid_pixel_ratio` 미만이면
-  `INSUFFICIENT_DATA`, 이미지가 `depth_timeout_sec`보다 오래됐으면 `STALE`,
-  `min_obstacle_distance_m`보다 가까운 픽셀이 `obstacle_pixel_ratio` 이상이면
-  `OBSTACLE`. 전방을 좌/중앙/우 3개 ROI로 나누고, 계산된 회전 방향에 따라
-  회전하는 쪽 ROI도 같이 확인합니다. `CLEAR`가 아니면 `cmd_vel`은 무조건
-  0이고 상태는 `BLOCKED`.
+  `INSUFFICIENT_DATA`, `min_obstacle_distance_m`보다 가까운 픽셀이
+  `obstacle_pixel_ratio` 이상이면 `OBSTACLE`. 전방을 좌/중앙/우 3개 ROI로
+  나누고, 계산된 회전 방향에 따라 회전하는 쪽 ROI도 같이 확인합니다.
+  프레임 나이 기반 판정은 사용하지 않습니다. `OBSTACLE`과 `NOISY_DEPTH`는
+  `cmd_vel`을 0으로 만들고 상태를 `BLOCKED`로 전이합니다. 현재 실제 로봇
+  설정은 불안정한 Wi-Fi를 고려해 `allow_insufficient_depth_motion=true`이며,
+  `INSUFFICIENT_DATA`는 경고만 남기고 저속 fallback을 계속합니다.
+- `/odom`이 `odom_timeout_sec` 동안 로컬에 수신되지 않으면 즉시 0속도를
+  발행하고 `BLOCKED`에서 기다린다. fresh odom이 들어오면 자동으로 `ACTIVE`로
+  복귀하며, 일시적인 네트워크 지연만으로 `FAILED` 처리하지 않는다.
 - 실패 판정(→ `FAILED`, 상태별 우선순위대로): 저장된 경로/앵커 없음,
-  `/odom` 타임아웃(`odom_timeout_sec`), 정지 판정(`stuck_timeout_sec` 동안
+  정지 판정(`stuck_timeout_sec` 동안
   cmd_vel은 계속 보냈는데 실제로는 `stuck_distance_m`도 안 움직임),
   경로 이탈(`path_deviation_m` > `max_path_deviation_m`), 장애물이
   `blocked_timeout_sec`보다 오래 지속. `FAILED`가 되면 **직접**
@@ -156,12 +161,12 @@ IDLE → STARTING → ACTIVE ⇄ BLOCKED → SUCCEEDED
   없이 `lidar_replacement_request`와 같은 토픽 계약 재사용).
 - 도착 판정(현재 위치가 경로 마지막 지점의 `arrival_tolerance_m` 이내) →
   `SUCCEEDED`.
-- `→ ALIVE`: 즉시 정지 + FAULT 시점 대비 AMCL pose 오차(m/deg) 로그. 곧바로
-  재개하지 않고 **새 `/amcl_pose`가 한 번 더 들어올 때까지**(AMCL 재수렴,
-  `reconvergence_timeout_sec` 안에 안 오면 타임아웃으로 진행) 기다린 뒤:
-  FAULT 시점에 저장해둔 목적지(`_fault_goal_pose`)로 새 `NavigateToPose`
-  goal을 보내 Nav2를 재개한다. 현재 기본값은 fallback 실패 후 LiDAR가
-  복구된 경우에도 기존 goal을 재개한다.
+- `SUCCEEDED → ALIVE`: 이미 fallback으로 목적지에 도착했으므로 완료된 Nav2
+  goal을 다시 보내지 않는다. 정지 상태에서 AMCL nomotion update를 요청하고
+  fresh/stable AMCL pose 3개를 확인한 뒤 `RECOVERY_POSITION_CHECK`로 목표
+  오차만 기록한다.
+- 목적지 도착 전 `→ ALIVE`: stable AMCL을 확인한 뒤에만 저장 goal로 Nav2를
+  재개한다. 5초가 지나도 확인되지 않으면 재개를 강행하지 않고 계속 정지한다.
 
 제어/판정 로직은 전부 `sensor_recovery/path_follow_control.py`
 (`update_path_progress`, `find_closest_index`, `select_lookahead_target`,
@@ -193,8 +198,8 @@ ROS-free 미러) + `compute_clearance_field`(모든 셀에서 가장 가까운 �
 
 | 이름 | 기본값 | 설명 |
 |---|---|---|
-| `max_linear_speed` | `0.05` | 최대 직진 속도 (m/s) — LiDAR 없이 도는 구간이라 최소로 |
-| `max_angular_speed` | `0.2` | 최대 회전 속도 (rad/s) |
+| `max_linear_speed` | `0.20` | 최대 직진 속도(m/s). Nav2 RPP의 `desired_linear_vel`과 동일 |
+| `max_angular_speed` | `0.60` | 최대 회전 속도(rad/s). Nav2의 `rotate_to_heading_angular_vel`과 동일 |
 | `max_linear_accel` | `0.15` | 직진 가속도 제한 (m/s²) |
 | `max_angular_accel` | `0.5` | 회전 가속도 제한 (rad/s²) |
 | `pre_replan_delay_sec` | `1.0` | FAULT 직후 자체 경로계산 전 정지 유지 시간 |
@@ -216,13 +221,16 @@ ROS-free 미러) + `compute_clearance_field`(모든 셀에서 가장 가까운 �
 | `min_valid_pixel_ratio` | `0.20` | ROI 유효 픽셀이 이보다 적으면 `INSUFFICIENT_DATA` |
 | `noise_valid_pixel_ratio` | `0.60` | ROI 유효 픽셀이 이보다 적으면 `NOISY_DEPTH`로 정지 |
 | `fallback_control_period_sec` | `0.1` | 제어 틱 주기 |
-| `odom_timeout_sec` | `0.5` | `/odom` 최대 허용 지연 |
-| `depth_timeout_sec` | `0.5` | depth 이미지 최대 허용 지연 |
+| `odom_timeout_sec` | `2.0` | 로컬에서 `/odom`을 받지 못한 최대 허용 시간. 초과 시 `FAILED`가 아니라 정지(`BLOCKED`) 후 fresh odom 수신 시 자동 재개 |
+| `allow_insufficient_depth_motion` | `true` | depth 없음/유효 픽셀 부족 시 경고 후 주행 계속(장애물/노이즈는 계속 정지) |
 | `blocked_timeout_sec` | `5.0` | `BLOCKED` 지속 허용 시간 |
 | `stuck_timeout_sec` | `3.0` | 정지 판정까지의 시간 |
 | `stuck_distance_m` | `0.03` | 이보다 안 움직이면 정지 후보 |
 | `max_path_deviation_m` | `0.7` | 경로 이탈 허용 거리 |
-| `reconvergence_timeout_sec` | `5.0` | ALIVE 후 AMCL 재수렴 최대 대기 시간 |
+| `reconvergence_timeout_sec` | `5.0` | ALIVE 후 stable AMCL 미확인 경고 시점(계속 정지) |
+| `recovery_amcl_required_samples` | `3` | 복구 위치 확정에 필요한 연속 stable AMCL 개수 |
+| `recovery_amcl_stability_distance_m` | `0.15` | 연속 AMCL 위치 안정 범위 |
+| `recovery_amcl_stability_angle_deg` | `15.0` | 연속 AMCL 방향 안정 범위 |
 | `navigate_action` | `navigate_to_pose` | Nav2 주행 액션 이름 |
 | `debug_enabled` | `false` | throttled 로그와 RViz debug 토픽 활성화 |
 | `debug_log_period_sec` | `1.0` | debug 정보 발행 주기 |
@@ -370,6 +378,60 @@ ros2 run sensor_recovery cmd_vel_route_follower --ros-args \
   --params-file src/sensor_recovery/config/cmd_vel_route.yaml \
   -p route_file:=/absolute/path/to/robot1_undock_to_goal.yaml
 ```
+
+## 수동 Nav2 → cmd_vel takeover 시험
+
+LiDAR를 실제로 끄기 전에 Nav2 주행 중간 제어권 전환만 따로 검증한다.
+`tools/test_nav2_cmd_vel_takeover.sh`가 fallback controller를 먼저 실행해 현재
+Nav2 `/plan`, AMCL, odom, compressed Depth와 static map을 캐시한다. RViz2에서
+Nav2 Goal을 지정해 주행시킨 뒤 터미널에서 Enter를 누르면 다음 순서로 동작한다.
+
+1. 현재 pose, Nav2 goal, 현재 위치 이후의 남은 `/plan`을 저장한다.
+2. Nav2 goal 취소를 요청하고 action 상태에서 실제 취소 완료까지 0속도를 유지한다.
+3. 취소가 확인되면 1초간 정지한 뒤 저장된 남은 경로를 odom+Depth 기반
+   `cmd_vel`로 추종한다.
+4. takeover 도중 새 Nav2 goal이 들어오면 다시 정지·취소해 두 제어기가 동시에
+   `cmd_vel_nav`를 발행하지 않게 한다.
+
+2026-08-08 robot1 실측에서는 약 4.35m 주행 후 odom 기반 추정과 AMCL 사이에
+약 0.27m 횡방향 차이가 발생했다. 목표 좌표 자체에 고정 offset을 더하지 않고,
+robot1의 fault 이후 상대 odom 변위에 아래 보정을 점진적으로 적용한다.
+
+- 이동 거리 scale: `0.986`
+- 상대 이동 방향 보정: `+4.0deg`
+- 상대 yaw 변화 scale: `0.92`
+
+이 값은 robot1에만 적용하며 robot2는 별도 실측 전까지 무보정이다. Depth가
+장애물/노이즈를 감지해 정지한 경우에는 clear 판정이 연속 0.5초 유지된 뒤
+다시 출발한다.
+
+이 시험은 dock/undock과 LiDAR on/off를 수행하지 않는다. 터미널 1에서
+`mapnav 1`, 터미널 2에서 아래 명령만 실행한다.
+
+```bash
+tools/test_nav2_cmd_vel_takeover.sh 1
+```
+
+## 실제 LiDAR OFF → fallback 도착 → LiDAR ON 시험
+
+실제 운용에서는 `mapnav 1`만 실행해도 map/AMCL/Nav2와 함께 LiDAR watchdog,
+fallback controller가 기본으로 실행된다. LiDAR 기능을 의도적으로 빼야 할 때만
+`mapnav 1 false`를 사용한다.
+
+LiDAR 고장 시험은 두 번째 터미널에서 아래 스크립트 하나만 실행한다. 이
+스크립트는 Nav2나 fallback 노드를 중복 실행하지 않고, Enter 입력에 맞춰 실제
+LiDAR 드라이버를 OFF/ON만 한다.
+
+```bash
+tools/test_lidar_fault_cycle.sh 1
+```
+
+시험 순서는 Nav2 주행 → LiDAR OFF → 5초 후 자동 fallback 전환 → cmd_vel 목적지
+도착(`SUCCEEDED`) → LiDAR ON이다. 목적지에 이미 도착한 뒤 LiDAR가 복구되면
+완료된 Nav2 goal은 다시 보내지 않는다. 로봇은 계속 정지하고 AMCL nomotion
+update를 요청하며, fresh AMCL pose 3개가 연속으로 안정 범위 안에 들어오면
+`RECOVERY_POSITION_CHECK`에 목표와 실제 위치 오차를 기록한다. 5초 안에 안정
+위치를 얻지 못해도 Nav2를 억지로 재개하지 않고 정지한 채 계속 기다린다.
 
 ## fallback_route_test (이전 코드 보존, 지금 단계에서는 실행하지 않음)
 

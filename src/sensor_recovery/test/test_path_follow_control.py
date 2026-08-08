@@ -5,6 +5,7 @@ import numpy as np
 from sensor_recovery.path_follow_control import (
     DepthSafetyResult,
     compute_cmd_vel,
+    depth_result_blocks_motion,
     evaluate_depth_safety,
     find_closest_index,
     goal_reached,
@@ -354,6 +355,29 @@ def test_integrate_odom_delta_yaw_wraps_across_pi():
     assert math.isclose(normalize_angle(yaw - (2 * math.pi - 0.1)), 0.0, abs_tol=1e-6)
 
 
+def test_integrate_odom_delta_applies_translation_calibration():
+    x, y, yaw = integrate_odom_delta(
+        (0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0),
+        (2.0, 0.0, 0.0),
+        translation_scale=0.5,
+        translation_heading_correction_rad=math.pi / 2,
+    )
+    assert math.isclose(x, 0.0, abs_tol=1e-9)
+    assert math.isclose(y, 1.0, abs_tol=1e-9)
+    assert math.isclose(yaw, 0.0, abs_tol=1e-9)
+
+
+def test_integrate_odom_delta_applies_yaw_delta_scale():
+    _, _, yaw = integrate_odom_delta(
+        (0.0, 0.0, 0.2),
+        (0.0, 0.0, 0.1),
+        (0.0, 0.0, 1.1),
+        yaw_delta_scale=0.5,
+    )
+    assert math.isclose(yaw, 0.7, abs_tol=1e-9)
+
+
 # --- is_stale / time_regressed ---------------------------------------------
 
 
@@ -386,7 +410,6 @@ def test_time_regressed_false_when_moving_forward():
 
 def _kwargs(**overrides):
     base = dict(
-        depth_timeout_sec=0.5,
         min_obstacle_distance_m=0.5,
         obstacle_pixel_ratio=0.03,
         min_valid_pixel_ratio=0.20,
@@ -398,40 +421,34 @@ def _kwargs(**overrides):
 
 
 def test_evaluate_depth_safety_missing_image_is_insufficient():
-    result = evaluate_depth_safety(None, None, now=1.0, **_kwargs())
+    result = evaluate_depth_safety(None, **_kwargs())
     assert result == DepthSafetyResult.INSUFFICIENT_DATA
-
-
-def test_evaluate_depth_safety_stale_timestamp():
-    depth = np.full((10, 10), 2000.0, dtype=np.float32)
-    result = evaluate_depth_safety(depth, image_timestamp=0.0, now=1.0, **_kwargs())
-    assert result == DepthSafetyResult.STALE
 
 
 def test_evaluate_depth_safety_mostly_invalid_pixels_is_insufficient():
     depth = np.zeros((10, 10), dtype=np.float32)  # all invalid (zero)
-    result = evaluate_depth_safety(depth, image_timestamp=1.0, now=1.1, **_kwargs())
+    result = evaluate_depth_safety(depth, **_kwargs())
     assert result == DepthSafetyResult.INSUFFICIENT_DATA
 
 
 def test_evaluate_depth_safety_partially_collapsed_pixels_are_noisy():
     depth = np.zeros((10, 10), dtype=np.float32)
     depth[:5, :] = 2000.0  # 50% valid: measurable, but matches noisy close-range video
-    result = evaluate_depth_safety(depth, image_timestamp=1.0, now=1.1, **_kwargs())
+    result = evaluate_depth_safety(depth, **_kwargs())
     assert result == DepthSafetyResult.NOISY_DEPTH
 
 
 def test_evaluate_depth_safety_single_noisy_pixel_does_not_trigger_obstacle():
     depth = np.full((10, 10), 2000.0, dtype=np.float32)
     depth[0, 0] = 50.0  # one stray close pixel out of 100 (1%) < 3% threshold
-    result = evaluate_depth_safety(depth, image_timestamp=1.0, now=1.1, **_kwargs())
+    result = evaluate_depth_safety(depth, **_kwargs())
     assert result == DepthSafetyResult.CLEAR
 
 
 def test_evaluate_depth_safety_obstacle_when_enough_pixels_close():
     depth = np.full((10, 10), 2000.0, dtype=np.float32)
     depth[0:1, 0:5] = 200.0  # 5 of 100 pixels close = 5% >= 3% threshold
-    result = evaluate_depth_safety(depth, image_timestamp=1.0, now=1.1, **_kwargs())
+    result = evaluate_depth_safety(depth, **_kwargs())
     assert result == DepthSafetyResult.OBSTACLE
 
 
@@ -440,8 +457,6 @@ def test_evaluate_depth_safety_camera_floor_is_obstacle_before_noise():
     depth[:5, :] = 629.0
     result = evaluate_depth_safety(
         depth,
-        image_timestamp=1.0,
-        now=1.1,
         **_kwargs(min_obstacle_distance_m=0.65),
     )
     assert result == DepthSafetyResult.OBSTACLE
@@ -451,13 +466,17 @@ def test_evaluate_depth_safety_respects_roi_box():
     depth = np.full((10, 10), 2000.0, dtype=np.float32)
     depth[0, 0] = 100.0  # outside the roi below
     result = evaluate_depth_safety(
-        depth, image_timestamp=1.0, now=1.1, **_kwargs(roi=(5, 5, 10, 10))
+        depth, **_kwargs(roi=(5, 5, 10, 10))
     )
     assert result == DepthSafetyResult.CLEAR
 
 
 def test_worst_depth_result_obstacle_wins():
-    results = [DepthSafetyResult.CLEAR, DepthSafetyResult.OBSTACLE, DepthSafetyResult.STALE]
+    results = [
+        DepthSafetyResult.CLEAR,
+        DepthSafetyResult.OBSTACLE,
+        DepthSafetyResult.INSUFFICIENT_DATA,
+    ]
     assert worst_depth_result(results) == DepthSafetyResult.OBSTACLE
 
 
@@ -469,6 +488,22 @@ def test_worst_depth_result_all_clear():
     assert worst_depth_result([DepthSafetyResult.CLEAR, DepthSafetyResult.CLEAR]) == (
         DepthSafetyResult.CLEAR
     )
+
+
+def test_depth_motion_policy_always_blocks_obstacle_and_noise():
+    for result in (DepthSafetyResult.OBSTACLE, DepthSafetyResult.NOISY_DEPTH):
+        assert depth_result_blocks_motion(result, allow_insufficient=False) is True
+        assert depth_result_blocks_motion(result, allow_insufficient=True) is True
+
+
+def test_depth_motion_policy_can_allow_insufficient_data():
+    result = DepthSafetyResult.INSUFFICIENT_DATA
+    assert depth_result_blocks_motion(result, allow_insufficient=False) is True
+    assert depth_result_blocks_motion(result, allow_insufficient=True) is False
+
+
+def test_depth_motion_policy_never_blocks_clear():
+    assert depth_result_blocks_motion(DepthSafetyResult.CLEAR) is False
 
 
 # --- pose_error --------------------------------------------------------

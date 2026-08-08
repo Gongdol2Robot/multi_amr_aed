@@ -9,7 +9,6 @@
     control_period_sec: 0.05
     nav2_stop_delay_sec: 1.0
     odom_timeout_sec: 1.0
-    depth_timeout_sec: 0.5
     depth_clear_hold_sec: 0.5
     depth_center_roi_size_px: 80
     # 영상 실측상 약 0.629m 아래에서 stereo depth가 포화되므로
@@ -33,9 +32,8 @@
     start_yaw_tolerance_deg: 20.0
     require_nav2_cancel: true
     require_static_map: true
-    # 네트워크 지연(STALE)만 무시한다. 영상 내부의 유효 Depth가 부족하면
-    # 카메라 근접 사각지대일 수 있으므로 정지한다.
-    stop_on_depth_stale: false
+    # 영상 내부의 유효 Depth가 부족하면 카메라 근접 사각지대일 수 있으므로
+    # 저장 경로 단독 시험에서는 정지한다.
     stop_on_depth_insufficient_data: true
     robot_radius_m: 0.20
     hard_margin_m: 0.05

@@ -171,9 +171,12 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 'lidar_fallback',
-                default_value='false',
+                default_value='true',
                 choices=['true', 'false'],
-                description='Start the LiDAR watchdog and fallback controller',
+                description=(
+                    'Start the LiDAR watchdog and fallback controller '
+                    '(enabled by default for real navigation)'
+                ),
             ),
             DeclareLaunchArgument(
                 'auto_initial_pose',

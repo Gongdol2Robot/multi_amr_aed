@@ -80,7 +80,9 @@ locview() {
 # 안 남아서(launch.log에는 프로세스 시작/종료 이벤트만 기록됨), 나중에
 # 다시 확인하려면(Claude에게 보여주는 것 포함) 이렇게 tee로 남겨야 한다.
 mapnav() {
-  local n=${1:-1} fallback=${2:-false}
+  # 실제 운용 기본값: 맵/AMCL/Nav2와 LiDAR watchdog+fallback을 함께 실행한다.
+  # 필요할 때만 `mapnav 1 false`처럼 두 번째 인자로 명시해 끌 수 있다.
+  local n=${1:-1} fallback=${2:-true}
   aedenv
   mkdir -p "$AED_WS/logs"
   local file="$AED_WS/logs/mapnav_robot${n}_$(date +%Y%m%d_%H%M%S).log"
