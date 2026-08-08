@@ -21,6 +21,8 @@ def proximity_retreat_candidate(
     threshold: float,
 ) -> str | None:
     """Choose the robot farther from the patient when two robots are close."""
+    # dual dispatch 중 두 로봇이 너무 가까워졌을 때만 사용한다.
+    # 반환값은 "계속 갈 로봇"이 아니라 "복귀시킬 로봇"이다.
     if len(robot_positions) != 2:
         raise ValueError("exactly two robot positions are required")
     values = (
@@ -65,15 +67,21 @@ def patient_standoff(
     if distance <= 0.0:
         raise ValueError("patient standoff distance must be positive")
 
+    # patient -> robot 방향 벡터를 구한다. 이 방향을 유지한 채 환자 중심에서
+    # distance만큼 떨어진 원 위의 점을 실제 정지점으로 사용한다.
     dx = robot[0] - patient[0]
     dy = robot[1] - patient[1]
     radial_angle = (
+        # 로봇과 환자 좌표가 사실상 같으면 방향 계산이 불가능하므로
+        # 현재 로봇 yaw의 반대 방향을 임시 radial 방향으로 사용한다.
         fallback_robot_yaw + math.pi
         if math.hypot(dx, dy) <= 1e-6
         else math.atan2(dy, dx)
     )
+    # 환자와 정확히 distance만큼 떨어진 최종 NavigateToPose goal 좌표.
     stop_x = patient[0] + distance * math.cos(radial_angle)
     stop_y = patient[1] + distance * math.sin(radial_angle)
+    # radial 방향의 반대를 바라보게 하면 최종 자세가 환자 방향을 향한다.
     facing_yaw = normalize_angle(radial_angle + math.pi)
     return stop_x, stop_y, facing_yaw
 
@@ -102,6 +110,8 @@ def dispatch_candidates(
     ):
         raise ValueError("trigger_ratio must be in the (0, 1] interval")
 
+    # mission_manager가 ETA 오름차순으로 정렬해서 넘긴다.
+    # 따라서 candidates[0]은 항상 현재 가장 빠른 후보이다.
     candidates = list(ranked_candidates)
     if not all(
         robot_id and math.isfinite(eta) and eta >= 0.0
@@ -110,6 +120,8 @@ def dispatch_candidates(
         raise ValueError("candidate IDs and ETAs must be valid")
     if not candidates:
         return []
+    # 예: 목표 30초 * 0.85 = 25.5초. 가장 빠른 로봇도 이 값 이상이면
+    # deadline miss 위험으로 보고 상위 두 로봇을 동시에 출동시킨다.
     trigger_eta = target_arrival_time * trigger_ratio
     if (
         dual_dispatch_enabled
@@ -140,6 +152,10 @@ def should_switch_for_live_eta(
         raise ValueError("minimum_gain must be finite and non-negative")
     if not math.isfinite(switch_ratio) or not 0.0 < switch_ratio <= 1.0:
         raise ValueError("switch_ratio must be in (0, 1]")
+    # 두 조건을 동시에 만족해야 standby 로봇으로 교체한다.
+    # 1) replacement가 minimum_gain 이상 절대적으로 빠를 것
+    # 2) replacement가 current_eta * switch_ratio 이하로 충분히 빠를 것
+    # 이렇게 해야 ETA가 0.x초 흔들릴 때마다 로봇 선택이 계속 바뀌지 않는다.
     return (
         replacement_eta + minimum_gain <= current_eta
         and replacement_eta <= current_eta * switch_ratio
@@ -340,6 +356,8 @@ def path_motion_cost(
     if final_yaw is not None and not math.isfinite(final_yaw):
         raise ValueError("final_yaw must be finite")
 
+    # 이동거리는 원본 Nav2 path로 계산한다. 경로 단순화는 회전각 계산에만 사용해서
+    # 실제 이동거리 자체가 인위적으로 짧아지는 문제를 만들지 않는다.
     point_list = list(points)
     distance = path_length(point_list)
     simplified_points = simplify_path(point_list, simplification_tolerance)
@@ -351,8 +369,10 @@ def path_motion_cost(
         dy = current[1] - previous[1]
         if math.hypot(dx, dy) <= 1e-9:
             continue
+        # 각 유효 선분이 향하는 방향(yaw)을 저장한다.
         headings.append(math.atan2(dy, dx))
 
+    # 연속 선분 heading 차이가 실제 코너에서 회전해야 하는 각도다.
     internal_turn_angles = [
         abs(normalize_angle(current - previous))
         for previous, current in zip(headings, headings[1:])

@@ -98,11 +98,14 @@ class MissionExecutor(Node):
                 "progress_rotation_epsilon_deg must be non-negative"
             )
 
+        # 실제 로봇 이동은 Nav2 NavigateToPose Action Client로 수행한다.
+        # 중앙 Mission Manager는 이 Action을 직접 호출하지 않고 MissionAssignment만 보낸다.
         self.action_client = ActionClient(
             self,
             NavigateToPose,
             str(self.get_parameter("navigate_action").value),
         )
+        # robot1/robot2 executor 모두 공통 /aed/mission_status로 중앙에 상태를 회신한다.
         self.status_publisher = self.create_publisher(
             MissionStatus, "/aed/mission_status", 10
         )
@@ -113,21 +116,22 @@ class MissionExecutor(Node):
             10,
         )
 
-        self.assignment = None
-        self.goal_handle = None
-        self.goal_serial = 0
-        self.pending_pose = None
+        self.assignment = None   # 현재 적용 중인 최신 MissionAssignment
+        self.goal_handle = None  # Nav2가 수락한 현재 NavigateToPose goal handle
+        self.goal_serial = 0     # 늦게 도착한 과거 callback을 구분하는 로컬 세대 번호
+        self.pending_pose = None # 아직 Nav2가 수락하지 않은 재시도 대상 pose
         self.retry_deadline = 0.0
         self.retry_timer = None
-        self.last_distance = None
+        self.last_distance = None  # 마지막 feedback의 distance_remaining
         self.last_feedback_pose: tuple[float, float, float] | None = None
-        self.last_progress_at = 0.0
-        self.blocked_reported = False
+        self.last_progress_at = 0.0  # 이동/회전/거리감소가 마지막으로 관측된 시각
+        self.blocked_reported = False  # 같은 goal에서 BLOCKED를 한 번만 발행하는 latch
         self.watchdog_timer = self.create_timer(1.0, self._check_progress)
 
     def _on_assignment(self, assignment: MissionAssignment) -> None:
         # [CODE REVIEW] 같은 event에서 더 오래된 assignment_version은 무시한다.
         # 새 배정이 오면 기존 goal을 정리한 뒤 최신 target만 Nav2에 전달한다.
+        # 다른 로봇용 assignment가 들어오면 실행하지 않는다.
         if assignment.robot_id != self.robot_id:
             return
         if not assignment.mission_id:
@@ -153,19 +157,24 @@ class MissionExecutor(Node):
             )
             return
 
+        # 여기부터는 새 배정으로 확정한다. 이후 비동기 callback은 이 serial을 기준으로 유효성을 확인한다.
         self.goal_serial += 1
         self.assignment = assignment
         self._cancel_retry_timer()
+        # Nav2 server가 아직 준비되지 않았을 수 있으므로 target을 pending_pose에 보관한다.
         self.pending_pose = deepcopy(assignment.target)
+        # 이 시각을 넘길 때까지 goal을 못 보내면 NAVIGATION_ERROR로 중앙에 실패를 보고한다.
         self.retry_deadline = time.monotonic() + self.dispatch_retry_timeout
         self.last_distance = None
         self.last_feedback_pose = None
         self.last_progress_at = time.monotonic()
         self.blocked_reported = False
+        # 중앙 입장에서는 이 DISPATCHING 상태가 MissionAssignment를 정상 수신했다는 ACK 역할이다.
         self._publish_status(
             MissionStatus.DISPATCHING, "assignment received"
         )
         if assignment.cancel_previous and self.goal_handle is not None:
+            # live ETA switch/복귀처럼 새 배정이 기존 주행을 대체하면 현재 Nav2 goal부터 취소한다.
             old_goal_handle = self.goal_handle
             self.goal_handle = None
             cancel_future = old_goal_handle.cancel_goal_async()
@@ -207,13 +216,16 @@ class MissionExecutor(Node):
                 MissionStatus.NAVIGATION_ERROR, "target frame_id is empty"
             )
             return
+        # Nav2 bringup 직후 Action server가 아직 준비되지 않았으면 바로 포기하지 않고 재시도한다.
         if not self.action_client.wait_for_server(timeout_sec=0.2):
             self._retry_or_fail(serial, "Nav2 action unavailable")
             return
 
+        # MissionAssignment.target(PoseStamped)을 실제 이동용 NavigateToPose Goal로 변환한다.
         goal = NavigateToPose.Goal()
         goal.pose = pose
         goal.pose.header.stamp = self.get_clock().now().to_msg()
+        # 이 future는 "Goal 수락 여부"에 대한 응답이다. 실제 주행 완료 Result는 이후 별도로 받는다.
         future = self.action_client.send_goal_async(
             goal,
             feedback_callback=lambda feedback: self._on_feedback(
@@ -232,21 +244,25 @@ class MissionExecutor(Node):
             self._retry_or_fail(serial, f"goal send error: {error}")
             return
         if serial != self.goal_serial:
+            # 이 요청 뒤 더 최신 assignment가 왔다면 늦게 수락된 옛 goal은 즉시 취소한다.
             if handle.accepted:
                 handle.cancel_goal_async()
             return
         if not handle.accepted:
+            # Nav2 activation 타이밍 등으로 reject되면 retry_deadline 전까지 다시 시도한다.
             self._retry_or_fail(
                 serial, "goal rejected while Nav2 is activating"
             )
             return
 
+        # Goal이 수락된 순간 pending/retry 단계가 끝나고 실제 주행(EN_ROUTE)이 시작된다.
         self.pending_pose = None
         self._cancel_retry_timer()
         self.goal_handle = handle
         self.last_feedback_pose = None
         self.last_progress_at = time.monotonic()
         self._publish_status(MissionStatus.EN_ROUTE)
+        # NavigateToPose의 최종 Result는 Goal 응답과 별개이므로 get_result_async()로 기다린다.
         handle.get_result_async().add_done_callback(
             lambda result: self._navigation_done(result, serial)
         )
@@ -266,19 +282,23 @@ class MissionExecutor(Node):
             and self.assignment is not None
             and self.assignment.role == RobotState.ROLE_RETURN
         ):
+            # 복귀 임무는 일시적인 Nav2 실패 한 번으로 끝내지 않고 동일 target을 재시도한다.
             self.pending_pose = deepcopy(self.assignment.target)
             self._retry_or_fail(
                 serial, f"return Nav2 status={status}"
             )
             return
         if status == GoalStatus.STATUS_CANCELED:
+            # 중앙의 새 assignment 등으로 기존 goal이 취소된 경우 중앙에도 CANCELED를 알린다.
             self._publish_status(MissionStatus.CANCELED)
             return
         if status != GoalStatus.STATUS_SUCCEEDED:
+            # ABORTED 등 성공/취소 이외의 Nav2 결과는 NAVIGATION_ERROR로 통일해 중앙에 보낸다.
             self._publish_status(
                 MissionStatus.NAVIGATION_ERROR, f"Nav2 status={status}"
             )
             return
+        # STATUS_SUCCEEDED이면 환자 목표 또는 복귀 목표까지 실제 주행이 완료된 상태다.
         self._publish_status(MissionStatus.ARRIVED)
 
     def _retry_or_fail(self, serial: int, reason: str) -> None:
@@ -317,6 +337,7 @@ class MissionExecutor(Node):
         # 좁은 구간에서 회전 중인 로봇을 BLOCKED로 오판하는 것을 막기 위한 처리다.
         if serial != self.goal_serial or self.blocked_reported:
             return
+        # NavigateToPose Feedback에서 남은 경로거리와 현재 자세를 동시에 사용한다.
         distance = float(feedback.feedback.distance_remaining)
         now = time.monotonic()
         pose = feedback.feedback.current_pose.pose
@@ -360,9 +381,12 @@ class MissionExecutor(Node):
         # BLOCKED를 중앙에 회신해 중앙의 차순위 재배정 로직을 작동시킨다.
         if self.goal_handle is None or self.blocked_reported:
             return
+        # 마지막 이동/회전/거리감소 이후 blocked_timeout이 지나기 전이면 정상 주행으로 본다.
         if time.monotonic() - self.last_progress_at < self.blocked_timeout:
             return
         self.blocked_reported = True
+        # 실제로 막혔다고 판단되면 현재 Nav2 goal을 취소하고 중앙에 BLOCKED를 보낸다.
+        # 중앙 Mission Manager는 이 상태를 받아 실패 로봇을 제외하고 차순위 로봇에 재배정한다.
         self.goal_handle.cancel_goal_async()
         self._publish_status(
             MissionStatus.BLOCKED,

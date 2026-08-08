@@ -15,11 +15,11 @@ import math
 class CrowdSnapshot:
     """Stable crowd state used for one candidate-ranking cycle."""
 
-    level: int
-    name: str
-    person_count: int
-    fresh: bool
-    age_sec: float
+    level: int          # -1=UNKNOWN, 0~N=설정된 crowd severity index
+    name: str           # CLEAR/BUSY/CROWDED/BLOCKED 같은 사람이 읽는 단계 이름
+    person_count: int   # 상태 판정에는 쓰지 않고 HMI/로그 진단에만 사용
+    fresh: bool         # 마지막 crowd level이 timeout 안쪽이면 True
+    age_sec: float      # 마지막 crowd level 메시지 수신 후 경과 시간
 
 
 class CrowdStateFilter:
@@ -54,6 +54,7 @@ class CrowdStateFilter:
         if state_timeout_sec <= 0.0:
             raise ValueError("crowd state timeout must be positive")
 
+        # level_names의 순서 자체가 severity 순서다. index가 클수록 더 혼잡/위험하다.
         self.level_names = tuple(normalized)
         self.level_by_name = {
             name: level for level, name in enumerate(self.level_names)
@@ -61,32 +62,35 @@ class CrowdStateFilter:
         self.state_timeout_sec = state_timeout_sec
         self.increase_confirm_sec = increase_confirm_sec
         self.decrease_hold_sec = decrease_hold_sec
-        self.received_at: float | None = None
-        self.stable_level = -1
-        self.candidate_level: int | None = None
-        self.candidate_since: float | None = None
-        self.person_count = 0
+        self.received_at: float | None = None  # 마지막 raw crowd level 수신 시각
+        self.stable_level = -1  # 현재 확정되어 AMR 판단에 실제 사용되는 단계
+        self.candidate_level: int | None = None  # confirm/hold 중인 후보 단계
+        self.candidate_since: float | None = None  # 후보가 처음 관측된 시각
+        self.person_count = 0  # 표시/진단용. stable_level 계산에는 사용하지 않는다.
 
     def update_level(self, raw_level: str, now: float) -> CrowdSnapshot:
         """Consume the final stage selected and published by vision."""
         if not math.isfinite(now):
             raise ValueError("now must be finite")
+        # 공백/대소문자 차이를 제거한 뒤 설정된 단계 이름과 비교한다.
         normalized = self._normalize(raw_level)
         desired = self.level_by_name.get(normalized)
-        # The vision package publishes severity as the strings "0".."3".
-        # Keep the AMR-owned stage names and speed table while accepting that
-        # wire format. Vision's JSON time multiplier is intentionally unused.
+        # Vision은 severity를 "0".."3" 문자열로 publish할 수도 있으므로 숫자 wire format도 허용한다.
+        # 단, AMR은 person_count나 별도 multiplier로 crowd 단계를 다시 계산하지 않는다.
         if desired is None and normalized.isdecimal():
             numeric_level = int(normalized)
             if 0 <= numeric_level < len(self.level_names):
                 desired = numeric_level
+        # 유효/무효 값 여부와 상관없이 메시지 자체는 지금 들어왔으므로 수신 시각은 갱신한다.
         self.received_at = now
         if desired is None:
+            # 정의되지 않은 값이면 예전 상태를 계속 믿지 않고 UNKNOWN(-1)으로 리셋한다.
             self.stable_level = -1
             self.candidate_level = None
             self.candidate_since = None
             return self.snapshot(now)
         if desired == self.stable_level:
+            # 현재 확정 단계와 동일한 값이면 진행 중이던 단계 변경 후보를 취소한다.
             self.candidate_level = None
             self.candidate_since = None
             return self.snapshot(now)

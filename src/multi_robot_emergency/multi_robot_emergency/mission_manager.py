@@ -799,15 +799,20 @@ class EmergencyMissionManager(Node):
             )
             return
 
+        # 새 emergency request가 들어왔으므로 이전 mission cycle의 상태를 전부 초기화한다.
         self.request_serial += 1
         self.assignment_version = 0
         self.assignment_versions.clear()
+        # ranked_candidates: 최초 ETA 순위, excluded_robots: 이후 실패/복귀 등으로 다시 선택하면 안 되는 로봇.
         self.ranked_candidates.clear()
         self.excluded_robots.clear()
+        # 실제 주행 시작 시각과 최초 predicted ETA는 도착 후 predicted/actual 비교에 사용한다.
         self.navigation_started_at.clear()
         self.navigation_predicted_eta.clear()
+        # 출동 시작 pose는 복귀 assignment를 만들 때 사용하고, planning_targets는 환자 standoff goal이다.
         self.dispatch_start_poses.clear()
         self.planning_targets.clear()
+        # 아래 set들은 한 mission 안에서 각 로봇이 현재 어떤 상태인지 추적한다.
         self.dispatched_robots.clear()
         self.terminal_robots.clear()
         self.arrived_robots.clear()
@@ -952,17 +957,23 @@ class EmergencyMissionManager(Node):
             f"raw={self.raw_crowd_level}"
         )
         self.planning_active = True
+        # planning_target은 환자 원본 좌표, planning_targets[robot]은 각 로봇의 0.15m standoff 목표다.
         self.planning_target = deepcopy(target)
+        # pending_plans는 아직 ComputePathToPose Result가 안 온 로봇들이다.
         self.pending_plans.clear()
+        # plan_results에는 성공 후보의 Path/거리/ETA/회전/crowd 비용을 저장한다.
         self.plan_results.clear()
+        # plan_failures에는 planner unavailable, empty path, BLOCKED zone 교차 같은 제외 이유를 저장한다.
         self.plan_failures.clear()
         self.planning_targets.clear()
         for robot_id in self.robot_ids:
             try:
+                # 같은 환자 좌표라도 로봇의 현재 위치가 다르므로 standoff goal도 로봇별로 따로 만든다.
                 self.planning_targets[robot_id] = (
                     self._make_standoff_target(robot_id, target)
                 )
             except ValueError as error:
+                # AMCL pose가 없어서 standoff를 못 만들면 그 로봇만 후보에서 제외한다.
                 self.plan_failures[robot_id] = str(error)
         for robot_id in self.robot_ids:
             self._publish_distance(robot_id, math.nan)
@@ -980,12 +991,15 @@ class EmergencyMissionManager(Node):
                 )
                 continue
 
+            # 여기서 쓰는 ComputePathToPose는 "실제 이동"이 아니라 비교용 Path 계산 API다.
             goal = ComputePathToPose.Goal()
             goal.goal = deepcopy(self.planning_targets[robot_id])
             stamp = self.get_clock().now().to_msg()
             goal.goal.header.stamp = stamp
             goal.planner_id = self.planner_id
             docked = self.dock_states.get(robot_id, False)
+            # 일반 주행 중에는 planner가 최신 TF pose를 start로 쓰게 할 수 있다.
+            # docked 상태처럼 planner가 현재 pose를 그대로 쓰면 부정확한 경우에는 AMCL 기반 start를 명시한다.
             goal.use_start = docked or not self.use_planner_start
             if goal.use_start:
                 observation = self.observations.get(robot_id)
@@ -1012,8 +1026,10 @@ class EmergencyMissionManager(Node):
                         f"{goal.start.pose.position.y:.2f})"
                     )
                 goal.start.header.stamp = stamp
+            # Result가 올 때까지 이 로봇을 pending으로 표시한다.
             self.pending_plans.add(robot_id)
             # ACTION GOAL: /robotX/compute_path_to_pose
+            # send_goal_async의 future는 Path가 아니라 "Goal 수락 여부"를 돌려준다.
             future = client.send_goal_async(goal)
             future.add_done_callback(
                 lambda response, rid=robot_id, serial=self.request_serial:
@@ -1049,6 +1065,8 @@ class EmergencyMissionManager(Node):
                 robot_id, serial, "planner rejected goal"
             )
             return
+        # Goal이 수락되면 이제 실제 ComputePathToPose Action Result를 기다린다.
+        # 이 Result 안의 result.path가 ETA 계산에 사용할 nav_msgs/Path다.
         handle.get_result_async().add_done_callback(
             lambda result, rid=robot_id: self._on_plan_result(
                 rid, serial, result
@@ -1081,22 +1099,28 @@ class EmergencyMissionManager(Node):
             return
 
         try:
+            # nav_msgs/Path의 PoseStamped 배열에서 ETA 계산에 필요한 2D 좌표만 뽑는다.
             points = [
                 (pose.pose.position.x, pose.pose.position.y)
                 for pose in path.poses
             ]
+            # 실제 Nav2 경로의 누적 길이. 시작-목표 직선거리가 아니다.
             distance = path_length(points)
             observation = self.observations.get(robot_id)
+            # AMCL 현재 yaw를 사용해 첫 경로 방향으로 몸을 돌리는 시간까지 ETA에 포함한다.
             initial_yaw = (
                 self._quaternion_yaw(observation.pose)
                 if observation is not None
                 else None
             )
+            # standoff target의 yaw는 환자를 바라보는 방향이므로 도착 후 마지막 회전시간도 포함한다.
             final_yaw = (
                 self._quaternion_yaw(self.planning_targets[robot_id])
                 if robot_id in self.planning_targets
                 else None
             )
+            # base_eta는 crowd 영향 전의 기본 주행시간이다.
+            # = 경로거리/선속도 + 총회전각/각속도 + 큰 코너 개수*slowdown penalty.
             base_eta, turn_angle, slowdown_count = path_motion_cost(
                 points,
                 linear_speed=self.nominal_linear_speed,
@@ -1109,6 +1133,7 @@ class EmergencyMissionManager(Node):
                 initial_yaw=initial_yaw,
                 final_yaw=final_yaw,
             )
+            # 전체 Path 중 camera2 crowd polygon 안을 실제로 지나가는 거리만 따로 계산한다.
             crowded_distance = path_length_in_polygon(
                 points, self.crowd_zone_polygon
             )
@@ -1127,7 +1152,9 @@ class EmergencyMissionManager(Node):
                     f"{crowded_distance:.2f}m of path",
                 )
                 return
+            # 현재 crowd 단계에 대응하는 zone 내부 가정 속도(CLEAR/BUSY/CROWDED 등)를 가져온다.
             crowd_speed = self._crowd_speed(crowd)
+            # base_eta에는 정상속도 이동시간이 이미 들어 있으므로 crowd 구간 때문에 "추가되는 시간"만 더한다.
             crowd_delay = (
                 crowd_delay_seconds(
                     crowded_distance,
@@ -1137,11 +1164,15 @@ class EmergencyMissionManager(Node):
                 if crowd.fresh and crowd.level > 0
                 else 0.0
             )
+            # 후보 비교에 실제로 사용하는 final ETA.
             eta = base_eta + crowd_delay
         except ValueError as error:
             self._record_plan_failure(robot_id, serial, str(error))
             return
 
+        # plan_results tuple 인덱스 의미:
+        # 0 Path, 1 거리, 2 final ETA, 3 총 회전각, 4 slowdown 횟수,
+        # 5 base ETA, 6 crowd zone 거리, 7 crowd 추가지연, 8 crowd 단계 이름.
         self.plan_results[robot_id] = (
             path,
             distance,
@@ -1223,6 +1254,8 @@ class EmergencyMissionManager(Node):
             self._publish_status("FAILED", detail or "no valid Nav2 path")
             return
 
+        # plan_results[robot][2]가 final ETA다. ETA가 작은 순서로 정렬하고,
+        # ETA가 완전히 같으면 robot_id를 tie-breaker로 써 결과를 결정적으로 만든다.
         ranked = sorted(
             (
                 (robot_id, result[2])
@@ -1230,9 +1263,12 @@ class EmergencyMissionManager(Node):
             ),
             key=lambda item: (item[1], item[0]),
         )
+        # 이 순서는 이후 주행 실패 시 차순위 재배정에도 그대로 사용한다.
         self.ranked_candidates = [robot_id for robot_id, _ in ranked]
+        # selected_robot은 ETA 1위. dual dispatch여도 대표(primary)는 1위 로봇이다.
         self.selected_robot = self.ranked_candidates[0]
         self._publish_selected_robot(self.selected_robot)
+        # deadline risk가 없으면 1대, 빠른 후보도 너무 늦으면 상위 2대를 반환한다.
         dispatch_robot_ids = dispatch_candidates(
             ranked,
             dual_dispatch_enabled=self.dual_dispatch_enabled,
@@ -1288,15 +1324,18 @@ class EmergencyMissionManager(Node):
         )
 
         if not self.dispatch_enabled:
+            # 계산/시각화만 확인하는 dry-run 모드. 여기서 return하면 실제 로봇은 움직이지 않는다.
             self.get_logger().warning(
                 "Dispatch is disabled. Set dispatch_enabled:=true to move "
                 "the selected robot."
             )
             return
         for robot_id in dispatch_robot_ids:
+            # 출동 직전 pose를 저장해 두어 도착 후/교체 후 원래 위치로 돌아갈 수 있게 한다.
             self.dispatch_start_poses[robot_id] = (
                 self._capture_dispatch_start_pose(robot_id)
             )
+            # 여기서부터 실제 이동 단계. 각 robot MissionExecutor에 MissionAssignment를 publish한다.
             self._publish_assignment(
                 robot_id,
                 deepcopy(self.planning_targets[robot_id]),
@@ -1329,33 +1368,44 @@ class EmergencyMissionManager(Node):
             self.navigation_active = False
             self._publish_status("FAILED", "assignment target was lost")
             return
+        # assignment를 새로 발행할 때마다 전역 version을 1 증가시킨다.
+        # 같은 event 안에서도 robot1/robot2, 복귀/재배정이 서로 다른 version을 갖게 된다.
         self.assignment_version += 1
         self.assignment_versions[robot_id] = self.assignment_version
+        # 이 로봇은 이제 중앙이 추적해야 하는 dispatched 상태다.
         self.dispatched_robots.add(robot_id)
         self.terminal_robots.discard(robot_id)
         self.navigation_active = True
+        # 실제 EN_ROUTE 상태를 받기 전이므로 이전 주행 시작시각은 제거한다.
         self.navigation_started_at.pop(robot_id, None)
         if role == RobotState.ROLE_AED_DELIVERY:
+            # 배송 임무일 때만 예상 ETA를 저장해 실제 도착시간과 비교한다.
             self.navigation_predicted_eta[robot_id] = self.plan_results[
                 robot_id
             ][2]
             self.returning_robots.discard(robot_id)
         else:
+            # ROLE_RETURN은 환자 도착 ETA 평가 대상이 아니며 returning 상태로 추적한다.
             self.navigation_predicted_eta.pop(robot_id, None)
             self.returning_robots.add(robot_id)
         self._publish_dispatched_robots()
         assignment = MissionAssignment()
+        # mission_id는 사람이 로그에서 임무 종류/로봇을 식별하기 위한 문자열이다.
         assignment.mission_id = (
             f"{self.active_request_id}-{mission_suffix}-{robot_id}"
         )
+        # event_id는 같은 응급 이벤트인지 확인하고, assignment_version은 그 안에서 최신 배정인지 확인한다.
         assignment.event_id = self.active_request_id
         assignment.robot_id = robot_id
         assignment.role = role
         assignment.target = deepcopy(target)
         assignment.assigned_at = self.get_clock().now().to_msg()
         assignment.assignment_version = self.assignment_version
+        # 새 배정은 이전 NavigateToPose goal을 대체하므로 executor가 기존 goal을 cancel하게 한다.
         assignment.cancel_previous = True
+        # /robotX/mission_assignment 실제 publish 지점.
         self.assignment_publishers[robot_id].publish(assignment)
+        # executor에서 DISPATCHING 등 상태 회신이 안 오면 통신/실행 실패로 보고 재배정하기 위한 timer.
         self._start_assignment_ack_timer(
             self.active_request_id,
             robot_id,
@@ -1370,18 +1420,23 @@ class EmergencyMissionManager(Node):
     def _on_mission_status(self, status: MissionStatus) -> None:
         # [CODE REVIEW] robotX -> 중앙 상태 회신 처리.
         # event_id / robot_id / assignment_version이 현재 mission과 맞는 상태만 반영한다.
+        # 이전 응급 이벤트에서 늦게 도착한 MissionStatus는 현재 mission에 반영하지 않는다.
         if status.event_id != self.active_request_id:
             return
+        # 중앙이 실제로 dispatch하지 않은 로봇의 상태도 무시한다.
         if status.robot_id not in self.dispatched_robots:
             return
         if status.status == MissionStatus.HELPER_ARRIVED:
+            # helper handoff 완료는 delivery assignment보다 새 version을 사용할 수 있어 별도 경로로 먼저 처리한다.
             self._return_after_helper_handoff(status)
             return
+        # 같은 event/robot이라도 최신 assignment_version과 다르면 취소된 과거 goal의 상태일 수 있다.
         if status.assignment_version != self.assignment_versions.get(
             status.robot_id
         ):
             return
 
+        # 유효한 상태 회신이 하나라도 왔으므로 "assignment 미수신" ACK timeout은 취소한다.
         self._cancel_assignment_ack_timer(status.robot_id)
 
         if status.status == MissionStatus.DISPATCHING:
@@ -1390,9 +1445,12 @@ class EmergencyMissionManager(Node):
             )
             return
         if status.status == MissionStatus.EN_ROUTE:
+            # 실제 Nav2 Goal이 수락되어 주행이 시작된 순간을 ETA actual 측정 시작점으로 저장한다.
+            # setdefault라서 EN_ROUTE가 중복 수신되어도 최초 시각을 덮어쓰지 않는다.
             self.navigation_started_at.setdefault(
                 status.robot_id, time.monotonic()
             )
+            # 같은 EN_ROUTE라도 현재 assignment role에 따라 배송 중인지 복귀 중인지 상태명을 구분한다.
             state = (
                 "RETURNING"
                 if status.robot_id in self.returning_robots
@@ -1533,15 +1591,21 @@ class EmergencyMissionManager(Node):
                 f"ETA measurement {failed_robot}: aborted after "
                 f"{elapsed:.2f}s ({reason or 'unspecified failure'})"
             )
+        # 실패한 주행은 predicted/actual ETA 비교 대상에서 제거한다.
         self.navigation_predicted_eta.pop(failed_robot, None)
         was_returning = failed_robot in self.returning_robots
         self.returning_robots.discard(failed_robot)
+        # failed_robots는 최종 mission summary용, excluded_robots는 이후 후보 선택에서 다시 뽑지 않기 위한 집합이다.
         self.failed_robots.add(failed_robot)
         if was_returning:
+            # 환자 배송 실패와 "복귀 실패"를 최종 상태에서 구분하기 위해 별도 기록한다.
             self.return_failed_robots.add(failed_robot)
+        # terminal은 이 로봇의 현재 assignment가 더 이상 진행되지 않는다는 뜻이다.
         self.terminal_robots.add(failed_robot)
         self.excluded_robots.add(failed_robot)
         if self.dual_dispatch_active or was_returning:
+            # dual dispatch에서는 이미 다른 로봇도 환자에게 가고 있으므로 새 로봇을 또 배정하지 않는다.
+            # 복귀 중 실패한 경우도 배송 임무를 다른 로봇에 넘길 상황이 아니므로 여기서 끝낸다.
             self._publish_status(
                 "NAVIGATION_ERROR",
                 f"{failed_robot}: {reason}; other robot continues",
@@ -1549,6 +1613,8 @@ class EmergencyMissionManager(Node):
             self._finish_if_all_terminal()
             return
 
+        # 단일 출동 실패라면 최초 ETA 순위에서 제외되지 않은 첫 로봇을 차순위로 선택한다.
+        # 예: ranked=[robot1, robot2], robot1 실패 -> excluded={robot1} -> next_robot=robot2.
         next_robot = next(
             (
                 robot_id
@@ -1564,9 +1630,11 @@ class EmergencyMissionManager(Node):
             "REASSIGNING",
             f"exclude {failed_robot}; assigning {next_robot}",
         )
+        # 차순위 로봇도 나중에 복귀할 수 있도록 실제 출동 직전 pose를 새로 저장한다.
         self.dispatch_start_poses[next_robot] = (
             self._capture_dispatch_start_pose(next_robot)
         )
+        # 최초 계획 때 계산해 둔 next_robot의 환자 standoff target을 새 MissionAssignment로 발행한다.
         self._publish_assignment(
             next_robot,
             deepcopy(self.planning_targets[next_robot]),
@@ -1610,6 +1678,7 @@ class EmergencyMissionManager(Node):
         ):
             return
 
+        # active = 지금 환자에게 실제 주행 중인 1대, standby = 아직 출동하지 않은 대기 후보.
         active = [
             robot_id
             for robot_id in self.dispatched_robots
@@ -1644,12 +1713,13 @@ class EmergencyMissionManager(Node):
                     f"/{robot_id}/compute_path_to_pose unavailable"
                 )
                 continue
+            # 주행 중에도 같은 ComputePathToPose API로 active/standby의 "남은 경로"를 다시 계산한다.
             goal = ComputePathToPose.Goal()
             goal.goal = deepcopy(self.planning_targets[robot_id])
             goal.goal.header.stamp = self.get_clock().now().to_msg()
             goal.planner_id = self.planner_id
-            # Let each planner use its own latest TF pose. This avoids using
-            # a stale AMCL sample while the robot is moving.
+            # 주행 중에는 과거 AMCL sample을 start로 박지 않고 planner가 최신 TF pose를 직접 사용하게 한다.
+            # active 로봇은 현재 움직인 위치, standby는 현재 대기 위치에서 각각 남은 경로가 계산된다.
             goal.use_start = False
             self.live_replan_pending.add(robot_id)
             client.send_goal_async(goal).add_done_callback(
@@ -1831,15 +1901,18 @@ class EmergencyMissionManager(Node):
         ]
         if not alternatives:
             return
+        # standby 후보 중 새로 계산한 남은 ETA가 가장 작은 로봇을 교체 후보로 고른다.
         replacement = min(
             alternatives,
             key=lambda rid: self.live_replan_results[rid][2],
         )
         replacement_eta = self.live_replan_results[replacement][2]
         current_result = self.live_replan_results.get(current)
+        # active 로봇의 새 경로 계산이 실패했다면 current_eta=inf로 두어 정상 standby로 교체 가능하게 한다.
         current_eta = (
             current_result[2] if current_result is not None else math.inf
         )
+        # 절대 이득(min gain) + 상대 비율(switch ratio)을 둘 다 만족해야 실제 교체한다.
         should_switch = should_switch_for_live_eta(
             current_eta,
             replacement_eta,
@@ -1865,10 +1938,13 @@ class EmergencyMissionManager(Node):
                 f"Cannot live-reassign {current}: dispatch start pose missing"
             )
             return
+        # standby 로봇이 새로 출동하므로 그 로봇의 현재 pose도 복귀용 시작점으로 저장한다.
         self.dispatch_start_poses[replacement] = (
             self._capture_dispatch_start_pose(replacement)
         )
+        # 한 mission에서 live ETA 교체를 반복하지 않도록 latch를 올린다.
         self.live_reassignment_done = True
+        # 중앙 대표 로봇도 replacement로 갱신하고 이후 실패 fallback 순서도 replacement 우선으로 바꾼다.
         self.selected_robot = replacement
         self.ranked_candidates = [replacement, current]
         self._publish_selected_robot(replacement)
