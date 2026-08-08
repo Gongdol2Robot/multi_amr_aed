@@ -201,14 +201,18 @@ class InferencePipeline:
                     f"got {self.pose_model.task}"
                 )
 
-        # COCO person 모델은 mannequin_detect에서 "인파 계산" 또는 "사람을
-        # helper로도 취급"이 필요할 때만 추가로 로드한다. person_pose
-        # backend는 Pose 모델의 bbox를 사람 수로 재사용하므로 여기서 로드하지 않는다.
+        # 자세 판정과 혼잡도 판정은 목적과 품질 기준이 다르다. person_pose의
+        # bbox는 관절 품질 필터를 통과한 사람만 남으므로 인파를 누락할 수 있다.
+        # 따라서 골목(enable_crowd)에서는 backend와 무관하게 COCO person 모델을
+        # 별도로 로드한다. mannequin_detect의 helper 판정도 같은 모델을 쓴다.
         self.person_model = None
         self.person_class_id = -1
         if (
-            self.detection_backend == "mannequin_detect"
-            and (enable_crowd or detect_people_as_helpers)
+            enable_crowd
+            or (
+                self.detection_backend == "mannequin_detect"
+                and detect_people_as_helpers
+            )
         ):
             self.person_model = YOLO(
                 str(_model_path(person_weights, "COCO person weights"))
@@ -303,30 +307,10 @@ class InferencePipeline:
         time_multiplier = None
         crowd_traversable = True
 
-        # 2단계: 인원수/혼잡도 계산. 두 backend가 "사람 bbox 출처"만 다르고
-        # 이후 필터링(filter_nonfallen_people: ROI 안 + 환자 제외)과 혼잡도
-        # 계산 로직은 동일하다.
-        if self.detection_backend == "person_pose":
-            # Pose 모델이 이미 사람 bbox를 갖고 있으므로 별도 모델 호출 없이 재사용한다.
-            person_result = rescue_result
-            height, width = frame.shape[:2]
-            people = filter_nonfallen_people(
-                pose_people,
-                fallen,
-                (width, height),
-                self.crowd_roi,
-                self.overlap_threshold,
-            )
-            person_count = len(people)
-            if self.detect_people_as_helpers:
-                # 로봇 모드: 환자를 제외한 나머지 사람을 구조 인력 후보로 삼는다.
-                helpers = people
-            if self.enable_crowd:
-                crowd_level = classify_crowd(person_count)
-                time_multiplier = crowd_time_multiplier(person_count)
-                crowd_traversable = time_multiplier is not None
-        elif self.person_model is not None:
-            # mannequin_detect + COCO person 모델을 별도로 한 번 더 돌린다.
+        # 2단계: 인원수/혼잡도 계산. 혼잡도를 사용하는 골목 모드는 반드시
+        # COCO person 결과를 사용한다. ROI 밖 사람과 쓰러진 환자 bbox와 겹치는
+        # 검출은 filter_nonfallen_people에서 제외한다.
+        if self.person_model is not None:
             person_result = self.person_model.predict(
                 frame,
                 conf=self.person_conf,
@@ -348,6 +332,19 @@ class InferencePipeline:
                 crowd_level = classify_crowd(person_count)
                 time_multiplier = crowd_time_multiplier(person_count)
                 crowd_traversable = time_multiplier is not None
+        elif self.detection_backend == "person_pose" and self.detect_people_as_helpers:
+            # 혼잡도 없이 Pose를 쓰는 로봇 모드는 별도 COCO 호출을 하지 않고,
+            # 관절 품질 필터를 통과한 사람 bbox를 helper 후보로 재사용한다.
+            height, width = frame.shape[:2]
+            people = filter_nonfallen_people(
+                pose_people,
+                fallen,
+                (width, height),
+                self.crowd_roi,
+                self.overlap_threshold,
+            )
+            person_count = len(people)
+            helpers = people
 
         return InferenceOutput(
             rescue_result,
@@ -406,7 +403,7 @@ class InferencePipeline:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.52, color, 2,
                 )
         boxes = getattr(output.person_result, "boxes", None)
-        if boxes is not None and output.detection_backend == "mannequin_detect":
+        if boxes is not None:
             for x1, y1, x2, y2 in boxes.xyxy.int().cpu().tolist():
                 cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 255), 2)
 
