@@ -9,10 +9,16 @@ from .qos import CAMERA_QOS
 
 
 class DirectCameraSource:
-    def __init__(self, node, image_topic: str, on_frame) -> None:
+    def __init__(
+        self,
+        node,
+        image_topic: str,
+        on_frame,
+        device_parameter: str = "camera_device",
+    ) -> None:
         self.node = node
         self.on_frame = on_frame
-        value = str(node.get_parameter("camera_device").value)
+        value = str(node.get_parameter(device_parameter).value)
         device = int(value) if value.isdigit() else value
         width = int(node.get_parameter("width").value)
         height = int(node.get_parameter("height").value)

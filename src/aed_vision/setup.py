@@ -28,6 +28,7 @@ setup(
     entry_points={
         "console_scripts": [
             "vision_detector = aed_vision.vision_detector:main",
+            "webcam_publisher = aed_vision.webcam_publisher:main",
         ],
     },
 )

@@ -28,11 +28,21 @@ router = APIRouter(prefix="/api/map", tags=["map"])
 
 # 저장소 안의 공용 지도. 두 로봇이 같은 지도를 쓴다.
 def _repo_root() -> str:
-    """이 파일에서 저장소 뿌리까지. api → backend → aed_hmi → src → 뿌리."""
-    here = os.path.abspath(__file__)
-    for _ in range(5):
-        here = os.path.dirname(here)
-    return here
+    """maps/map.yaml 이 있는 디렉터리를 위로 거슬러 찾는다.
+
+    단수를 세어 올라가면 소스에서 실행할 때만 맞는다. colcon 이 설치한
+    install/aed_hmi/lib/... 아래에서 돌면 깊이가 달라 엉뚱한 곳을 가리킨다.
+    실제로 launch 로 띄웠을 때 install/aed_hmi/lib/maps/map.yaml 을 찾아
+    지도가 안 떴다. 그래서 개수가 아니라 존재로 찾는다.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    while True:
+        if os.path.isfile(os.path.join(here, "maps", "map.yaml")):
+            return here
+        parent = os.path.dirname(here)
+        if parent == here:      # 루트까지 갔는데 없다
+            return here
+        here = parent
 
 
 MAP_YAML = os.environ.get(

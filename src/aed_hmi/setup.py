@@ -10,6 +10,9 @@ setup(
     name=package_name,
     version="0.1.0",
     packages=find_packages(exclude=["test"]),
+    # find_packages 는 .py 만 담는다. Repository 가 기동할 때 읽는 schema.sql 이
+    # 빠지면 install 로 실행한 백엔드가 FileNotFoundError 로 죽는다.
+    package_data={"backend.store": ["schema.sql"]},
     data_files=[
         (
             "share/ament_index/resource_index/packages",

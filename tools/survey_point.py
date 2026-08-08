@@ -56,9 +56,17 @@ def grab_pose(timeout_s=30.0):
 
 
 def grab_frame():
-    cap = cv2.VideoCapture(CAM_INDEX)
+    # 기본 백엔드로 열면 이 USB 웹캠에서 프레임이 오지 않고 read() 가 멈춘다.
+    # aed_vision/camera_source.py 와 같은 방식(V4L2 + MJPG)으로 연다.
+    cap = cv2.VideoCapture(CAM_INDEX, cv2.CAP_V4L2)
+    if not cap.isOpened():
+        cap = cv2.VideoCapture(CAM_INDEX)
     if not cap.isOpened():
         return None
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     frame = None
     for _ in range(10):  # 자동노출 안정화
         ok, f = cap.read()
