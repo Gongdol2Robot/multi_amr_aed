@@ -62,6 +62,12 @@ class RobotObservation:
 class EmergencyMissionManager(Node):
     """Compare both Nav2 plans and manage deadline-aware dispatch."""
 
+    # [CODE REVIEW]
+    # 이 노드가 AMR 중앙 관제의 핵심이다.
+    # 설명 순서: 응급 목표 수신 -> 양쪽 Nav2 경로 요청 -> ETA 계산/랭킹
+    # -> mission_assignment 발행 -> MissionStatus 기반 재배정/종료.
+    # 세부 수학/정책은 assignment.py, 군중 상태 안정화는 crowd.py로 분리했다.
+
     def __init__(self) -> None:
         """Create robot inputs, mission outputs, and Nav2 action clients."""
         super().__init__("emergency_mission_manager")
@@ -769,6 +775,9 @@ class EmergencyMissionManager(Node):
     def _on_request(
         self, message: PoseStamped, request_id: str | None = None
     ) -> None:
+        # [CODE REVIEW] 하나의 응급 이벤트를 하나의 mission cycle로 초기화한다.
+        # 이전 ETA/배정/도착/실패 상태를 비우고 현재 crowd snapshot 기준으로
+        # 두 로봇의 후보 경로 계산을 시작한다.
         request = deepcopy(message)
         if not request.header.frame_id:
             request.header.frame_id = self.map_frame
@@ -903,6 +912,8 @@ class EmergencyMissionManager(Node):
         self, robot_id: str, patient: PoseStamped
     ) -> PoseStamped:
         """Place a robot on the standoff circle facing the patient."""
+        # [CODE REVIEW] 환자 좌표 자체를 goal로 주지 않고 0.15 m 전방에서 멈춘다.
+        # 로봇이 환자와 겹치지 않게 하면서 최종 yaw는 환자를 바라보도록 만든다.
         if not self.patient_standoff_enabled:
             return deepcopy(patient)
         observation = self.observations.get(robot_id)
@@ -927,6 +938,9 @@ class EmergencyMissionManager(Node):
         return target
 
     def _calculate_and_assign(self, target: PoseStamped) -> None:
+        # [CODE REVIEW] 설계도의 'robot1/2 Candidate Path' 블록.
+        # Nav2 ComputePathToPose Action Client를 각 로봇에 동시에 호출한다.
+        # 여기서는 아직 로봇을 움직이지 않고 비교용 경로만 계산한다.
         self._publish_status("CALCULATING", "requesting both Nav2 paths")
         now = time.monotonic()
         self.planning_crowd_snapshot = self.crowd_filter.snapshot(now)
@@ -999,6 +1013,7 @@ class EmergencyMissionManager(Node):
                     )
                 goal.start.header.stamp = stamp
             self.pending_plans.add(robot_id)
+            # ACTION GOAL: /robotX/compute_path_to_pose
             future = client.send_goal_async(goal)
             future.add_done_callback(
                 lambda response, rid=robot_id, serial=self.request_serial:
@@ -1018,6 +1033,8 @@ class EmergencyMissionManager(Node):
         )
 
     def _on_plan_response(self, robot_id: str, serial: int, future) -> None:
+        # [CODE REVIEW] ComputePathToPose는 Goal 수락 후 Result를 별도로 받는다.
+        # Result 안의 nav_msgs/Path를 다음 callback에서 ETA 계산에 사용한다.
         if serial != self.request_serial or robot_id not in self.pending_plans:
             return
         try:
@@ -1039,6 +1056,8 @@ class EmergencyMissionManager(Node):
         )
 
     def _on_plan_result(self, robot_id: str, serial: int, future) -> None:
+        # [CODE REVIEW] ComputePathToPose ACTION RESULT 처리.
+        # wrapped_result.result.path가 Planner Server가 돌려준 실제 nav_msgs/Path다.
         if serial != self.request_serial or robot_id not in self.pending_plans:
             return
         try:
@@ -1093,6 +1112,8 @@ class EmergencyMissionManager(Node):
             crowded_distance = path_length_in_polygon(
                 points, self.crowd_zone_polygon
             )
+            # [CODE REVIEW] BLOCKED는 zone 교차 후보를 제외하고,
+            # BUSY/CROWDED는 zone 내부 거리만 느린 속도로 환산해 추가 지연을 준다.
             crowd = self.planning_crowd_snapshot
             if (
                 crowd.fresh
@@ -1181,6 +1202,8 @@ class EmergencyMissionManager(Node):
         self._finish_planning(serial)
 
     def _finish_planning(self, serial: int) -> None:
+        # [CODE REVIEW] 두 후보의 final ETA를 오름차순 정렬한다.
+        # 기본은 ETA 1위 한 대, deadline risk 조건이면 상위 두 대를 동시 출동시킨다.
         if serial != self.request_serial or not self.planning_active:
             return
         self.planning_active = False
@@ -1300,6 +1323,8 @@ class EmergencyMissionManager(Node):
         role: int,
         mission_suffix: str,
     ) -> None:
+        # [CODE REVIEW] 중앙에서 선택한 로봇에게 MissionAssignment를 발행한다.
+        # assignment_version은 늦게 도착한 과거 메시지를 구분하기 위한 순번이다.
         if target is None:
             self.navigation_active = False
             self._publish_status("FAILED", "assignment target was lost")
@@ -1343,6 +1368,8 @@ class EmergencyMissionManager(Node):
         )
 
     def _on_mission_status(self, status: MissionStatus) -> None:
+        # [CODE REVIEW] robotX -> 중앙 상태 회신 처리.
+        # event_id / robot_id / assignment_version이 현재 mission과 맞는 상태만 반영한다.
         if status.event_id != self.active_request_id:
             return
         if status.robot_id not in self.dispatched_robots:
@@ -1470,6 +1497,7 @@ class EmergencyMissionManager(Node):
     def _on_assignment_ack_timeout(
         self, event_id: str, robot_id: str, assignment_version: int
     ) -> None:
+        # [CODE REVIEW] 배정 발행 후 제한 시간 내 상태 회신이 없으면 실패로 보고 재배정한다.
         self._cancel_assignment_ack_timer(robot_id)
         if (
             event_id != self.active_request_id
@@ -1487,6 +1515,8 @@ class EmergencyMissionManager(Node):
     def _handle_navigation_failure(
         self, failed_robot: str, reason: str
     ) -> None:
+        # [CODE REVIEW] CANCELED/BLOCKED/NETWORK_LOST/NAVIGATION_ERROR 공통 fallback.
+        # 실패 로봇을 후보에서 제외하고 ETA 랭킹의 다음 로봇에게 재배정한다.
         # DDS or a Nav2 cancel completion can deliver the same terminal state
         # more than once. Never publish two replacement assignments for one
         # failed goal.
@@ -1559,6 +1589,8 @@ class EmergencyMissionManager(Node):
 
     def _monitor_live_replan(self) -> None:
         """Periodically compare fresh remaining ETAs while one robot runs."""
+        # [CODE REVIEW] 초기 선택을 고정하지 않고 주행 중 주기적으로 current/standby의
+        # ComputePathToPose를 다시 요청해 남은 ETA를 비교한다.
         now = time.monotonic()
         if self.live_replan_active:
             if now - self.live_replan_started_at >= self.live_replan_timeout:
@@ -1771,6 +1803,8 @@ class EmergencyMissionManager(Node):
             self._finish_live_replan(serial)
 
     def _finish_live_replan(self, serial: int) -> None:
+        # [CODE REVIEW] standby가 최소 2 s 빠르고 현재 ETA의 85% 이하일 때만 교체한다.
+        # 절대 이득 + 상대 비율을 함께 써서 작은 ETA 흔들림에 의한 잦은 전환을 막는다.
         if not self.live_replan_active or serial != self.live_replan_serial:
             return
         self.live_replan_active = False
@@ -1862,6 +1896,8 @@ class EmergencyMissionManager(Node):
 
     def _monitor_dual_robot_proximity(self) -> None:
         """Return the farther robot when a dual dispatch becomes unsafe."""
+        # [CODE REVIEW] deadline risk로 두 대가 출동했더라도 서로 가까워지면
+        # 환자에게 더 먼 한 대를 복귀시켜 로봇 간 충돌/혼잡 가능성을 줄인다.
         now = time.monotonic()
         if (
             not self.navigation_active

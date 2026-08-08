@@ -1,4 +1,9 @@
-"""Filtering for the crowd stage decided by the vision node."""
+"""Filtering for the crowd stage decided by the vision node.
+
+[CODE REVIEW]
+Vision이 정한 crowd level에 시간 필터만 적용한다. AMR이 person_count로 상태를
+다시 판정하지 않으며, person_count는 진단/표시용으로만 저장한다.
+"""
 
 from __future__ import annotations
 
@@ -86,6 +91,8 @@ class CrowdStateFilter:
             self.candidate_since = None
             return self.snapshot(now)
 
+        # [CODE REVIEW] 위험 단계 상승은 confirm 시간 후 반영하고,
+        # 단계 하강은 더 긴 hold 시간 후 반영해 카메라 한두 프레임의 튐을 억제한다.
         if self.stable_level < 0 and desired == 0:
             required = 0.0
         elif self.stable_level >= 0 and desired < self.stable_level:
@@ -109,6 +116,8 @@ class CrowdStateFilter:
 
     def snapshot(self, now: float) -> CrowdSnapshot:
         """Return UNKNOWN when the latest crowd-stage message is stale."""
+        # [CODE REVIEW] timeout 동안 새 crowd level이 없으면 마지막 값을 계속 쓰지 않고
+        # UNKNOWN/fresh=False로 바꿔 오래된 카메라 상태가 경로 판단에 남지 않게 한다.
         if not math.isfinite(now):
             raise ValueError("now must be finite")
         if self.received_at is None:

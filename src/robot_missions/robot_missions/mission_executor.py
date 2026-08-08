@@ -1,4 +1,9 @@
-"""Execute assigned Multi-AMR missions through Nav2."""
+"""Execute assigned Multi-AMR missions through Nav2.
+
+[CODE REVIEW]
+중앙의 MissionAssignment를 실제 Nav2 NavigateToPose Action으로 변환하는 로봇측 노드다.
+중앙은 '누가 갈지'를 결정하고, 이 노드는 이동 실행과 MissionStatus 회신을 담당한다.
+"""
 
 from copy import deepcopy
 import math
@@ -121,6 +126,8 @@ class MissionExecutor(Node):
         self.watchdog_timer = self.create_timer(1.0, self._check_progress)
 
     def _on_assignment(self, assignment: MissionAssignment) -> None:
+        # [CODE REVIEW] 같은 event에서 더 오래된 assignment_version은 무시한다.
+        # 새 배정이 오면 기존 goal을 정리한 뒤 최신 target만 Nav2에 전달한다.
         if assignment.robot_id != self.robot_id:
             return
         if not assignment.mission_id:
@@ -193,6 +200,8 @@ class MissionExecutor(Node):
         )
 
     def _send_goal(self, pose, serial: int) -> None:
+        # [CODE REVIEW] 실제 이동에 사용하는 Nav2 API는 NavigateToPose Action이다.
+        # feedback의 current_pose/distance_remaining은 progress watchdog에도 사용한다.
         if not pose.header.frame_id:
             self._publish_status(
                 MissionStatus.NAVIGATION_ERROR, "target frame_id is empty"
@@ -216,6 +225,7 @@ class MissionExecutor(Node):
         )
 
     def _goal_response(self, future, serial: int) -> None:
+        # [CODE REVIEW] Goal 수락 후 최종 Result는 별도로 받아 도착/실패를 판단한다.
         try:
             handle = future.result()
         except Exception as error:
@@ -303,6 +313,8 @@ class MissionExecutor(Node):
         self.destroy_timer(timer)
 
     def _on_feedback(self, feedback, serial: int) -> None:
+        # [CODE REVIEW] 거리 감소뿐 아니라 제자리 회전도 progress로 인정한다.
+        # 좁은 구간에서 회전 중인 로봇을 BLOCKED로 오판하는 것을 막기 위한 처리다.
         if serial != self.goal_serial or self.blocked_reported:
             return
         distance = float(feedback.feedback.distance_remaining)
@@ -344,6 +356,8 @@ class MissionExecutor(Node):
             self.last_progress_at = now
 
     def _check_progress(self) -> None:
+        # [CODE REVIEW] translation/rotation/path distance 모두 제한 시간 동안 진전이 없으면
+        # BLOCKED를 중앙에 회신해 중앙의 차순위 재배정 로직을 작동시킨다.
         if self.goal_handle is None or self.blocked_reported:
             return
         if time.monotonic() - self.last_progress_at < self.blocked_timeout:

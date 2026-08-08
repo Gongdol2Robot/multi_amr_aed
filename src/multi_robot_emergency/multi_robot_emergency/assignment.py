@@ -1,4 +1,9 @@
-"""Pure policies used by the emergency mission manager."""
+"""Pure policies used by the emergency mission manager.
+
+[CODE REVIEW]
+ROS2 I/O와 분리한 순수 정책/수학 모듈이다. 입력값만 주면 결과가 결정되므로
+standoff, dual dispatch, live ETA switch, ETA 계산을 단위 테스트하기 쉽다.
+"""
 
 from __future__ import annotations
 
@@ -52,6 +57,8 @@ def patient_standoff(
     fallback_robot_yaw: float = 0.0,
 ) -> tuple[float, float, float]:
     """Return a stop point on the patient circle and a patient-facing yaw."""
+    # [CODE REVIEW] 환자 중심 반지름 distance 원 위에 정지점을 만들고,
+    # 최종 yaw는 환자를 바라보게 해서 안전거리와 접근 방향을 동시에 만족시킨다.
     values = (*patient, *robot, distance, fallback_robot_yaw)
     if not all(math.isfinite(value) for value in values):
         raise ValueError("patient standoff inputs must be finite")
@@ -84,6 +91,8 @@ def dispatch_candidates(
     largest. Dual dispatch is used only when both candidates are valid and
     even the fastest ETA reaches the configured fraction of the target time.
     """
+    # [CODE REVIEW] 기본값은 30 s 목표 * 0.85 = 25.5 s.
+    # 가장 빠른 로봇도 임계 ETA를 넘으면 두 대를 보내 deadline miss 위험을 줄인다.
     if not math.isfinite(target_arrival_time) or target_arrival_time <= 0.0:
         raise ValueError("target_arrival_time must be positive")
     if (
@@ -119,6 +128,8 @@ def should_switch_for_live_eta(
     switch_ratio: float,
 ) -> bool:
     """Return whether a fresh standby ETA safely beats the active robot."""
+    # [CODE REVIEW] 절대 이득(minimum_gain)과 상대 비율(switch_ratio)을 둘 다 만족해야
+    # 교체해서 작은 ETA 흔들림 때문에 로봇 선택이 계속 바뀌는 것을 막는다.
     if not math.isfinite(replacement_eta) or replacement_eta < 0.0:
         return False
     if math.isinf(current_eta) and current_eta > 0.0:
@@ -242,6 +253,8 @@ def crowd_delay_seconds(
     crowded_speed: float,
 ) -> float:
     """Return only the extra time beyond the base normal-speed cost."""
+    # [CODE REVIEW] base ETA에 정상속도 이동시간이 이미 있으므로 추가분만 더한다.
+    # delay = d_zone * (1 / v_crowd - 1 / v_normal)
     values = (crowded_distance, normal_speed, crowded_speed)
     if not all(math.isfinite(value) for value in values):
         raise ValueError("crowd delay inputs must be finite")
@@ -309,6 +322,8 @@ def path_motion_cost(
 
     Returns ``(estimated_seconds, total_turn_radians, slowdown_count)``.
     """
+    # [CODE REVIEW] ETA = 거리/선속도 + 총 회전각/각속도 + 큰 코너 수*slowdown penalty.
+    # GridBased path의 작은 지터가 회전 비용으로 과대계산되지 않도록 먼저 단순화한다.
     if not math.isfinite(linear_speed) or linear_speed <= 0.0:
         raise ValueError("linear_speed must be positive")
     if not math.isfinite(angular_speed) or angular_speed <= 0.0:
