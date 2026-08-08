@@ -91,6 +91,7 @@ def latched_qos():
         durability=DurabilityPolicy.TRANSIENT_LOCAL,
     )
 
+
 # mission_manager 가 보는 공용 토픽.
 ROBOT_STATE_TOPIC = "/aed/robot_state"
 MISSION_STATUS_TOPIC = "/aed/mission_status"
@@ -101,6 +102,8 @@ AGGREGATE_EVENT_TOPIC = "/aed/emergency_event"
 # 화면의 목표 좌표와 도착 예상이 영영 빈다.
 #
 # DeliverAed action 으로 바뀌면 이 토픽은 사라지고 goal 이 같은 값을 싣는다.
+
+
 def assignment_topic(robot_id: str) -> str:
     return f"/{robot_id}/mission_assignment"
 
@@ -126,6 +129,7 @@ def lidar_state_topic(robot_id: str) -> str:
 def fallback_state_topic(robot_id: str) -> str:
     """fallback_path_follower.py의 Depth/cmd_vel 제어 상태."""
     return f"/{robot_id}/fallback_state"
+
 
 # vision_detector 가 카메라마다 따로 내는 토픽. 노트북 두 대가 같은
 # ROS_DOMAIN_ID 를 써도 섞이지 않도록 절대 경로를 쓴다.
@@ -164,9 +168,9 @@ def _topic(stream_id: str, default: str) -> str:
     return os.environ.get(f"AED_HMI_STREAM_{stream_id.upper()}", default)
 
 
-# 4분할 화면. 고정 웹캠은 검출 결과인 CompressedImage를 그대로 받고,
-# 로봇 OAK-D는 메인 RGB 대신 작은 preview Image를 받아 백엔드에서 JPEG로
-# 바꾼다. 메인 RGB를 두 대 동시에 구독하면 무선망 부하가 크게 늘어난다.
+# 4분할 화면. 모든 타일은 vision_detector가 압축한 debug 영상을 받는다.
+# 로봇 raw preview를 HMI와 vision이 각각 원격 구독하면 같은 비압축 프레임이
+# 두 번 전송되므로, HMI는 vision의 압축 결과만 받아 무선 중복을 없앤다.
 DEFAULT_STREAMS = (
     StreamSource(
         "camera_open", "고정 웹캠 · 개방구역", "webcam",
@@ -181,14 +185,12 @@ DEFAULT_STREAMS = (
     ),
     StreamSource(
         "robot1", "TurtleBot 1 · OAK-D", "robot",
-        _topic("robot1", "/robot1/oakd/rgb/preview/image_raw"),
-        detects=False,
-        compressed=False,
+        _topic("robot1", "/robot1/vision/debug/compressed"),
+        detects=True,
     ),
     StreamSource(
         "robot2", "TurtleBot 2 · OAK-D", "robot",
-        _topic("robot2", "/robot2/oakd/rgb/preview/image_raw"),
-        detects=False,
-        compressed=False,
+        _topic("robot2", "/robot2/vision/debug/compressed"),
+        detects=True,
     ),
 )

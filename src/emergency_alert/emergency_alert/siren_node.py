@@ -22,6 +22,9 @@ class SirenNode(Node):
         """음 길이와 반복 횟수를 읽고 cmd_audio publisher를 준비한다."""
         super().__init__("emergency_siren")
         self.declare_parameter("audio_topic", "cmd_audio")
+        self.declare_parameter("audio_backend", "system")
+        self.declare_parameter("audio_player", "auto")
+        self.declare_parameter("audio_device", "")
         self.declare_parameter("repeat", 2)
         self.declare_parameter("note_duration", 0.3)
 
@@ -31,7 +34,13 @@ class SirenNode(Node):
         if not isfinite(self.duration) or self.duration <= 0.0:
             raise ValueError("note_duration must be positive")
 
-        self.audio = AudioOutput(self, topic)
+        self.audio = AudioOutput(
+            self,
+            topic,
+            str(self.get_parameter("audio_backend").value),
+            str(self.get_parameter("audio_player").value),
+            str(self.get_parameter("audio_device").value),
+        )
         self.pattern = TonePattern.from_values(
             (1000, 440) * self.repeat, self.duration
         )

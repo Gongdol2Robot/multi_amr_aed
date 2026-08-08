@@ -12,11 +12,15 @@ AED를 전달한 로봇이 사고 지점에서 구조 인력을 직접 찾는 �
 1. coordinator가 `EmergencyEvent`와 AED 로봇의 `ARRIVED` 상태를 받습니다.
 2. 도착한 동일 로봇의 `/{robot_id}/aed/guide_helper` Action을 시작합니다.
 3. 로봇은 `/{robot_id}/cmd_vel`에 각속도만 발행해 제자리 회전합니다.
-4. 구조 인력이 감지될 때까지 `/{robot_id}/cmd_audio`로 2음 호출음을 반복합니다.
+4. 구조 인력이 감지될 때까지 PC 기본 출력(블루투스 스피커)으로 CC0 호출
+   경고음을 끊지 않고 연속 반복합니다.
 5. `aed_vision`이 쓰러진 대상과 겹치지 않는 COCO `person`을 최근 6프레임 중
    3프레임 이상 검출하면 `/{robot_id}/vision/helper_confirmed=true`를 냅니다.
 6. controller는 최신 true를 받는 즉시 0 속도와 오디오 정지 명령을 보냅니다.
-7. 블루투스 TTS 대신 임시 상승 3음 안내 신호를 한 번 재생하고 완료합니다.
+7. 블루투스 스피커로 `조력자를 확인했습니다. AED를 인계한 후 복귀합니다.`
+   TTS를 재생하고 5초 동안 정지 상태로 인계를 기다립니다.
+8. `HELPER_ARRIVED`를 발행하면 중앙 제어 노드가 출동 직전 위치로 복귀
+   임무를 전송합니다.
 
 `helper_wait_timeout`의 기본값은 `0`이므로 구조 인력이 올 때까지 계속
 회전·호출합니다. 취소, 예외, 노드 종료 시에도 반드시 0 속도와 오디오 정지
@@ -47,7 +51,7 @@ ros2 launch helper_mission helper_mission.launch.py \
 
 - `vision/helper_confirmed` → `/robotN/vision/helper_confirmed`
 - `cmd_vel` → `/robotN/cmd_vel`
-- `cmd_audio` → `/robotN/cmd_audio`
+- 시스템 오디오 → OS 기본 출력 장치(권장: 블루투스 스피커)
 - `aed/guide_helper` → `/robotN/aed/guide_helper`
 
 ## 주요 파라미터
@@ -60,13 +64,18 @@ ros2 launch helper_mission helper_mission.launch.py \
 | `vision_stale_seconds` | `1.0` | Vision true 신호의 최대 유효 시간 |
 | `vision_timeout_seconds` | `300.0` | Vision 메시지 단절 안전 정지 시간(5분) |
 | `helper_wait_timeout` | `0.0` | 탐색 제한 시간, 0이면 무제한 |
-| `buzzer_period` | `1.0` | 호출음 반복 주기(초) |
+| `buzzer_period` | `2.2` | 약 2초인 호출음의 반복 주기(초) |
 | `buzzer_frequencies` | `880,660` | 임시 호출 2음(Hz) |
 | `guide_frequencies` | `523,659,784` | 임시 안내 상승 3음(Hz) |
+| `audio_backend` | `system` | PC 스피커 사용, `create3`이면 기존 본체 부저 |
+| `audio_player` | `auto` | `paplay`, `pw-play`, `aplay` 자동 선택 |
+| `audio_device` | 빈 문자열 | 빈 값이면 OS 기본 출력, 필요 시 장치 지정 |
+| `call_audio_file` | 내장 CC0 WAV | 노드 직접 실행 시 별도 호출음 파일 지정 |
+| `handoff_wait_seconds` | `5.0` | TTS 재생 후 정지 상태로 인계를 기다리는 시간 |
+| `handoff_audio_file` | 내장 한국어 WAV | 노드 직접 실행 시 별도 안내 TTS 지정 |
 
 ## TTS 교체 지점
 
-블루투스 스피커가 준비되면
-`HelperMissionController._publish_guide_tone()`을 TTS publisher 또는 client로
-교체하면 됩니다. 구조 인력 탐색 중 반복 호출도 음성으로 바꾸려면
-`_publish_call_tone()`을 같은 방식으로 교체합니다.
+호출 경고음은 `emergency_alert/assets/cc0_warning_alarm.wav`(CC0), 인계 안내는
+`emergency_alert/assets/helper_confirmed_return_ko.wav`를 사용합니다. 각각
+`call_audio_file`, `handoff_audio_file`로 교체할 수 있습니다.

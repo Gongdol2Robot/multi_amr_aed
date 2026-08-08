@@ -262,9 +262,9 @@ class RosBridge:
     def _report_matches(self) -> None:
         """발행자를 못 찾은 토픽을 알린다.
 
-        QoS 가 안 맞으면 ROS 2 는 연결을 안 맺고 경고도 안 낸다. 특히
-        발행이 BEST_EFFORT 인데 구독이 RELIABLE 이면 그렇다. 화면에는
-        붙은 것처럼 보이므로, 여기서 이름을 대고 알려 준다.
+        count_publishers가 0인 항목은 발행 노드 미실행, Discovery 지연 또는
+        토픽명 불일치다. QoS 호환 여부와 관계없이 endpoint 자체는 graph에서
+        보이므로 여기서 QoS 문제라고 단정하지 않는다.
 
         바뀔 때만 적는다. 매번 적으면 로그가 같은 줄로 덮이고, 정작
         로봇이 들어오거나 빠진 순간을 못 찾는다.
@@ -290,13 +290,9 @@ class RosBridge:
             LOGGER.info("구독 %d개 모두 발행자를 찾았다", len(watched))
             return
         LOGGER.warning(
-            "발행자를 못 찾은 토픽 %d/%d: %s",
+            "ROS 발행자 미발견 %d/%d: %s "
+            "(노드 실행·Discovery·토픽명 확인)",
             len(missing), len(watched), ", ".join(sorted(missing)),
-        )
-        LOGGER.warning(
-            "ros2 topic list 에는 보이는데 여기 있다면 QoS 불일치다. "
-            "발행이 BEST_EFFORT 이면 "
-            "AED_HMI_STATE_RELIABILITY=best_effort 로 다시 띄운다."
         )
 
     # ------------------------------------------------------------------

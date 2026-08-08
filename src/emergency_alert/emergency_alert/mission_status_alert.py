@@ -25,6 +25,9 @@ class MissionStatusAlert(Node):
         self.declare_parameter("robot_id", "")
         self.declare_parameter("mission_status_topic", "/aed/mission_status")
         self.declare_parameter("audio_topic", "cmd_audio")
+        self.declare_parameter("audio_backend", "system")
+        self.declare_parameter("audio_player", "auto")
+        self.declare_parameter("audio_device", "")
         self.declare_parameter("mission_id_suffix", "-aed")
         self.declare_parameter("alarm_period", 0.8)
         self.declare_parameter("maximum_alarm_duration", 600.0)
@@ -69,7 +72,11 @@ class MissionStatusAlert(Node):
 
         self.policy = MissionAlertPolicy(self.robot_id)
         self.audio = AudioOutput(
-            self, str(self.get_parameter("audio_topic").value)
+            self,
+            str(self.get_parameter("audio_topic").value),
+            str(self.get_parameter("audio_backend").value),
+            str(self.get_parameter("audio_player").value),
+            str(self.get_parameter("audio_device").value),
         )
         self.alarm_active = False
         self.alarm_started_at = None

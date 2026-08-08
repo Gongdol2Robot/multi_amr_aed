@@ -94,6 +94,7 @@ class EmergencyMissionManager(Node):
         self.declare_parameter("dual_dispatch_trigger_ratio", 0.85)
         self.declare_parameter("patient_standoff_enabled", True)
         self.declare_parameter("patient_standoff_distance_m", 0.15)
+        self.declare_parameter("return_after_helper_enabled", True)
         self.declare_parameter("dual_robot_proximity_threshold_m", 0.40)
         self.declare_parameter("dual_robot_proximity_confirm_sec", 0.50)
         self.declare_parameter("dual_robot_proximity_grace_sec", 2.0)
@@ -204,6 +205,9 @@ class EmergencyMissionManager(Node):
         )
         self.patient_standoff_distance = float(
             self.get_parameter("patient_standoff_distance_m").value
+        )
+        self.return_after_helper = bool(
+            self.get_parameter("return_after_helper_enabled").value
         )
         self.dual_robot_proximity_threshold = float(
             self.get_parameter("dual_robot_proximity_threshold_m").value
@@ -612,6 +616,7 @@ class EmergencyMissionManager(Node):
         self.failed_robots: set[str] = set()
         self.return_failed_robots: set[str] = set()
         self.returning_robots: set[str] = set()
+        self.awaiting_helper_robots: set[str] = set()
         self.dual_dispatch_active = False
         self.dual_dispatch_started_at: float | None = None
         self.proximity_close_since: float | None = None
@@ -800,6 +805,7 @@ class EmergencyMissionManager(Node):
         self.failed_robots.clear()
         self.return_failed_robots.clear()
         self.returning_robots.clear()
+        self.awaiting_helper_robots.clear()
         self.dual_dispatch_active = False
         self.dual_dispatch_started_at = None
         self.proximity_close_since = None
@@ -1341,6 +1347,9 @@ class EmergencyMissionManager(Node):
             return
         if status.robot_id not in self.dispatched_robots:
             return
+        if status.status == MissionStatus.HELPER_ARRIVED:
+            self._return_after_helper_handoff(status)
+            return
         if status.assignment_version != self.assignment_versions.get(
             status.robot_id
         ):
@@ -1384,6 +1393,12 @@ class EmergencyMissionManager(Node):
             self._publish_status(
                 "ARRIVED", f"{status.robot_id} reached the emergency"
             )
+            if self.return_after_helper:
+                self.awaiting_helper_robots.add(status.robot_id)
+                self._publish_status(
+                    "HELPER_REQUESTED",
+                    f"{status.robot_id} is waiting for helper confirmation",
+                )
             if self.dual_dispatch_active:
                 self._return_late_robots(status.robot_id)
             self._finish_if_all_terminal()
@@ -1397,6 +1412,42 @@ class EmergencyMissionManager(Node):
             return
 
         self._handle_navigation_failure(status.robot_id, status.reason)
+
+    def _return_after_helper_handoff(self, status: MissionStatus) -> None:
+        """Send the arrived AED robot back after helper handoff completes."""
+        robot_id = status.robot_id
+        if not self.return_after_helper:
+            return
+        if robot_id not in self.awaiting_helper_robots:
+            self.get_logger().warning(
+                f"Ignoring unexpected helper completion from {robot_id}"
+            )
+            return
+        start_pose = self.dispatch_start_poses.get(robot_id)
+        if start_pose is None:
+            self.awaiting_helper_robots.discard(robot_id)
+            self._publish_status(
+                "RETURN_FAILED",
+                f"{robot_id}: dispatch start pose is unavailable",
+            )
+            return
+        self.awaiting_helper_robots.discard(robot_id)
+        # Helper action uses delivery_version + 1. Keep the return assignment
+        # strictly newer so its terminal status cannot be confused with helper
+        # completion.
+        self.assignment_version = max(
+            self.assignment_version, int(status.assignment_version)
+        )
+        self._publish_status(
+            "RETURNING",
+            f"{robot_id}: helper handoff completed; returning to start",
+        )
+        self._publish_assignment(
+            robot_id,
+            deepcopy(start_pose),
+            role=RobotState.ROLE_RETURN,
+            mission_suffix="helper-return",
+        )
 
     def _start_assignment_ack_timer(
         self, event_id: str, robot_id: str, assignment_version: int
@@ -1945,6 +1996,8 @@ class EmergencyMissionManager(Node):
             )
 
     def _finish_if_all_terminal(self) -> None:
+        if self.awaiting_helper_robots:
+            return
         if not self.dispatched_robots or not self.dispatched_robots.issubset(
             self.terminal_robots
         ):

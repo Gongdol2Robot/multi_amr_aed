@@ -14,6 +14,7 @@ from .detection_logic import (
     Box,
     classify_crowd,
     crowd_time_multiplier,
+    filter_helpers_near_fallen,
     filter_nonfallen_people,
 )
 from .pose_posture import TORSO_INDEXES, classify_posture
@@ -136,6 +137,7 @@ class InferencePipeline:
         crowd_roi: list[float],
         crowded_threshold: int,
         overlap_threshold: float,
+        helper_max_distance_ratio: float,
         pose_keypoint_conf: float,
         pose_min_keypoints: int,
         pose_min_box_area: float,
@@ -164,12 +166,19 @@ class InferencePipeline:
         if not 0.0 <= self.pose_min_box_area <= 1.0:
             raise ValueError("pose_min_box_area must be between 0 and 1")
         if not 1 <= self.pose_min_torso_keypoints <= len(TORSO_INDEXES):
-            raise ValueError("pose_min_torso_keypoints must be between 1 and 4")
+            raise ValueError(
+                "pose_min_torso_keypoints must be between 1 and 4"
+            )
         self.crowd_roi = crowd_roi
         # 하위 호환을 위해 파라미터는 받지만 혼잡 등급은 이제 사람 수 1/2/3을
         # 직접 사용한다.
         self.crowded_threshold = crowded_threshold
         self.overlap_threshold = overlap_threshold
+        self.helper_max_distance_ratio = helper_max_distance_ratio
+        if not 0.0 < self.helper_max_distance_ratio <= 1.0:
+            raise ValueError(
+                "helper_max_distance_ratio must be in (0, 1]"
+            )
         self.options = {"iou": iou, "imgsz": imgsz, "verbose": False}
         if device:
             self.options["device"] = device
@@ -349,6 +358,14 @@ class InferencePipeline:
                 time_multiplier = crowd_time_multiplier(person_count)
                 crowd_traversable = time_multiplier is not None
 
+        height, width = frame.shape[:2]
+        helpers = filter_helpers_near_fallen(
+            helpers,
+            fallen,
+            (width, height),
+            self.helper_max_distance_ratio,
+        )
+
         return InferenceOutput(
             rescue_result,
             person_result,
@@ -406,7 +423,10 @@ class InferencePipeline:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.52, color, 2,
                 )
         boxes = getattr(output.person_result, "boxes", None)
-        if boxes is not None and output.detection_backend == "mannequin_detect":
+        if (
+            boxes is not None
+            and output.detection_backend == "mannequin_detect"
+        ):
             for x1, y1, x2, y2 in boxes.xyxy.int().cpu().tolist():
                 cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 255), 2)
 

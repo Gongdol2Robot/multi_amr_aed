@@ -8,13 +8,13 @@ from backend.ros.images import raw_image_to_jpeg
 from backend.ros.topics import DEFAULT_STREAMS
 
 
-def test_robot_streams_use_raw_oakd_preview() -> None:
+def test_robot_streams_use_compressed_vision_preview() -> None:
     robots = {source.stream_id: source for source in DEFAULT_STREAMS
               if source.kind == "robot"}
-    assert robots["robot1"].topic == "/robot1/oakd/rgb/preview/image_raw"
-    assert robots["robot2"].topic == "/robot2/oakd/rgb/preview/image_raw"
-    assert not robots["robot1"].compressed
-    assert not robots["robot2"].compressed
+    assert robots["robot1"].topic == "/robot1/vision/debug/compressed"
+    assert robots["robot2"].topic == "/robot2/vision/debug/compressed"
+    assert robots["robot1"].compressed is True
+    assert robots["robot2"].compressed is True
 
 
 def test_rgb_preview_with_row_padding_becomes_jpeg() -> None:

@@ -2,6 +2,7 @@
 
 import time
 
+from ament_index_python.packages import get_package_share_directory
 from aed_interfaces.action import GuideHelper
 from aed_interfaces.msg import MissionStatus
 from geometry_msgs.msg import Twist
@@ -15,18 +16,15 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.task import Future
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool
+
+from emergency_alert.alert_logic import TonePattern
+from emergency_alert.audio_output import AudioOutput
 
 from helper_mission.mission_logic import (
     helper_confirmation_is_fresh,
     vision_stream_timed_out,
 )
-
-try:
-    from irobot_create_msgs.msg import AudioNote, AudioNoteVector
-except ImportError:  # 개발 PC에는 TurtleBot4 메시지가 없을 수 있다.
-    AudioNote = None
-    AudioNoteVector = None
 
 
 class HelperMissionController(Node):
@@ -44,6 +42,10 @@ class HelperMissionController(Node):
         self.declare_parameter("mission_status_topic", "/aed/mission_status")
         self.declare_parameter("cmd_vel_topic", "cmd_vel")
         self.declare_parameter("audio_topic", "cmd_audio")
+        self.declare_parameter("audio_backend", "system")
+        self.declare_parameter("audio_player", "auto")
+        self.declare_parameter("audio_device", "")
+        self.declare_parameter("call_audio_file", "")
         self.declare_parameter("rotation_speed_rps", 0.35)
         self.declare_parameter("control_period", 0.1)
         self.declare_parameter("stop_command_repeats", 3)
@@ -51,11 +53,14 @@ class HelperMissionController(Node):
         self.declare_parameter("vision_timeout_seconds", 300.0)
         # 0은 구조 인력이 올 때까지 시간 제한 없이 계속 탐색한다.
         self.declare_parameter("helper_wait_timeout", 0.0)
-        self.declare_parameter("buzzer_period", 1.0)
+        # 내장 CC0 WAV(약 2초)가 중간에 재시작되지 않도록 여유를 둔다.
+        self.declare_parameter("buzzer_period", 2.2)
         self.declare_parameter("buzzer_note_duration", 0.18)
         self.declare_parameter("buzzer_frequencies", [880, 660])
         self.declare_parameter("guide_note_duration", 0.3)
         self.declare_parameter("guide_frequencies", [523, 659, 784])
+        self.declare_parameter("handoff_wait_seconds", 5.0)
+        self.declare_parameter("handoff_audio_file", "")
 
         self.robot_id = str(self.get_parameter("robot_id").value)
         if not self.robot_id:
@@ -77,26 +82,38 @@ class HelperMissionController(Node):
         self.buzzer_period = self._positive("buzzer_period")
         self.buzzer_duration = self._positive("buzzer_note_duration")
         self.guide_duration = self._positive("guide_note_duration")
+        self.handoff_wait = float(
+            self.get_parameter("handoff_wait_seconds").value
+        )
+        if self.handoff_wait < 0.0:
+            raise ValueError("handoff_wait_seconds must be non-negative")
         self.buzzer_frequencies = self._frequencies("buzzer_frequencies")
         self.guide_frequencies = self._frequencies("guide_frequencies")
 
         self.cmd_vel_publisher = self.create_publisher(
             Twist, str(self.get_parameter("cmd_vel_topic").value), 10
         )
-        audio_topic = str(self.get_parameter("audio_topic").value)
-        self.uses_create_audio = AudioNoteVector is not None
-        if self.uses_create_audio:
-            self.audio_publisher = self.create_publisher(
-                AudioNoteVector, audio_topic, 10
-            )
-        else:
-            self.audio_publisher = self.create_publisher(
-                String, f"{audio_topic}_fallback", 10
-            )
-            self.get_logger().warning(
-                "irobot_create_msgs unavailable; publishing temporary audio "
-                f"commands on {audio_topic}_fallback"
-            )
+        self.audio = AudioOutput(
+            self,
+            str(self.get_parameter("audio_topic").value),
+            str(self.get_parameter("audio_backend").value),
+            str(self.get_parameter("audio_player").value),
+            str(self.get_parameter("audio_device").value),
+        )
+        configured_call_audio = str(
+            self.get_parameter("call_audio_file").value
+        ).strip()
+        self.call_audio_file = configured_call_audio or str(
+            get_package_share_directory("emergency_alert")
+            + "/assets/cc0_warning_alarm.wav"
+        )
+        configured_handoff_audio = str(
+            self.get_parameter("handoff_audio_file").value
+        ).strip()
+        self.handoff_audio_file = configured_handoff_audio or str(
+            get_package_share_directory("emergency_alert")
+            + "/assets/helper_confirmed_return_ko.wav"
+        )
         self.status_publisher = self.create_publisher(
             MissionStatus,
             str(self.get_parameter("mission_status_topic").value),
@@ -125,7 +142,9 @@ class HelperMissionController(Node):
         self.helper_confirmed = False
         self.helper_observed_at = None
         self.get_logger().info(
-            f"ready: robot={self.robot_id}, behavior=rotate+beep until vision"
+            f"ready: robot={self.robot_id}, "
+            "behavior=rotate+beep until vision, "
+            f"audio={self.audio.topic}"
         )
 
     def _positive(self, name: str) -> float:
@@ -173,6 +192,7 @@ class HelperMissionController(Node):
         result = GuideHelper.Result()
         started_at = time.monotonic()
         next_buzzer_at = 0.0
+        system_call_started = False
         try:
             self._publish_status(
                 MissionStatus.HELPER_REQUESTED,
@@ -203,24 +223,43 @@ class HelperMissionController(Node):
                     self._stop_rotation()
                     self._stop_audio()
                     self._publish_guide_tone()
+                    self._publish_status(
+                        MissionStatus.HELPER_EN_ROUTE,
+                        "helper confirmed; waiting for AED handoff",
+                    )
+                    handoff_deadline = time.monotonic() + self.handoff_wait
+                    while time.monotonic() < handoff_deadline:
+                        if goal_handle.is_cancel_requested:
+                            return self._terminate(
+                                goal_handle,
+                                result,
+                                GuideHelper.Result.CANCELED,
+                            )
+                        self._stop_rotation()
+                        await self._delay(
+                            min(
+                                self.control_period,
+                                handoff_deadline - time.monotonic(),
+                            )
+                        )
                     goal_handle.succeed()
                     result.code = GuideHelper.Result.SUCCEEDED
                     result.reason = (
-                        "helper detected; search stopped and guidance tone "
-                        "played"
+                        "helper detected; handoff wait completed; return "
+                        "requested"
                     )
                     result.finished_at = self.get_clock().now().to_msg()
                     self._publish_status(
                         MissionStatus.HELPER_ARRIVED, result.reason
                     )
-                    self._publish_status(
-                        MissionStatus.COMPLETED, result.reason
-                    )
                     return result
 
                 self._publish_rotation()
-                if now >= next_buzzer_at:
-                    self._publish_call_tone()
+                if self.audio.backend == "system" and not system_call_started:
+                    self._publish_call_tone(loop=True)
+                    system_call_started = True
+                elif self.audio.backend != "system" and now >= next_buzzer_at:
+                    self._publish_call_tone(loop=False)
                     next_buzzer_at = now + self.buzzer_period
                 self._publish_feedback(
                     goal_handle,
@@ -274,47 +313,35 @@ class HelperMissionController(Node):
         for _ in range(self.stop_command_repeats):
             self.cmd_vel_publisher.publish(Twist())
 
-    def _publish_call_tone(self) -> None:
-        """구조 인력을 부르는 반복 2음 임시 신호를 발행한다."""
-        self._publish_audio(
-            "CALL", self.buzzer_frequencies, self.buzzer_duration
+    def _publish_call_tone(self, loop: bool = False) -> None:
+        """블루투스 스피커로 CC0 구조 요청 경고음을 재생한다."""
+        self.audio.play_file(
+            self.call_audio_file,
+            TonePattern.from_values(
+                self.buzzer_frequencies, self.buzzer_duration
+            ),
+            loop=loop,
         )
 
     def _publish_guide_tone(self) -> None:
-        """추후 TTS로 교체할 상승 3음 안내 신호를 한 번 발행한다."""
-        self._publish_audio(
-            "GUIDE", self.guide_frequencies, self.guide_duration
+        """조력자 확인·인계·복귀 안내 TTS를 한 번 재생한다."""
+        self.audio.play_file(
+            self.handoff_audio_file,
+            TonePattern.from_values(
+                self.guide_frequencies, self.guide_duration
+            ),
         )
 
     def _publish_audio(
         self, label: str, frequencies: tuple[int, ...], duration: float
     ) -> None:
-        """TurtleBot4 AudioNoteVector 또는 개발용 문자열로 임시 음을 출력한다."""
-        if not self.uses_create_audio:
-            self.audio_publisher.publish(
-                String(data=f"{label} " + ",".join(map(str, frequencies)))
-            )
-            return
-        message = AudioNoteVector()
-        message.append = False
-        seconds = int(duration)
-        nanoseconds = int((duration - seconds) * 1_000_000_000)
-        for frequency in frequencies:
-            note = AudioNote()
-            note.frequency = frequency
-            note.max_runtime.sec = seconds
-            note.max_runtime.nanosec = nanoseconds
-            message.notes.append(note)
-        self.audio_publisher.publish(message)
+        """Bluetooth/default system speaker로 호출 또는 안내음을 재생한다."""
+        del label
+        self.audio.play(TonePattern.from_values(frequencies, duration))
 
     def _stop_audio(self) -> None:
         """호출음 큐를 비워 구조 인력 감지 즉시 반복음을 중지한다."""
-        if not self.uses_create_audio:
-            self.audio_publisher.publish(String(data="STOP"))
-            return
-        message = AudioNoteVector()
-        message.append = False
-        self.audio_publisher.publish(message)
+        self.audio.stop()
 
     def _publish_feedback(self, goal_handle, detail: str) -> None:
         """회전 탐색 단계를 coordinator에 Action feedback으로 전달한다."""
