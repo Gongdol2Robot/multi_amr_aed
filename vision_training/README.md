@@ -132,32 +132,25 @@ RTX 3060 6GB에서 CUDA 메모리가 부족하면 `--batch 4` 또는 `--batch 2`
 파인튜닝하지 말고 다양한 체형·옷·방향·조명의 실제 사람 데이터를 포함해야
 합니다.
 
-### 라벨링 전 단계별 Pose 테스트
+### 라벨링 전 Pose 테스트
 
-1단계에서 웹캠의 실제 사람에게 17개 관절이 안정적으로 표시되는지
-확인합니다.
+웹캠의 실제 사람을 먼저 검출하고 bbox 내부에서 17개 관절과
+`STANDING`, `SITTING`, `FALLEN`, `UNKNOWN` 자세 판정을 확인합니다.
 
 ```bash
-python3 vision_training/testing/pose_posture_test.py \
-  --source 2 --stage keypoints --device 0
+python3 vision_training/testing/detect_then_pose_webcam_test.py \
+  --source 0 --target person --device auto
 ```
 
-2단계에서는 `STANDING`, `SITTING`, `FALLEN`, `UNKNOWN` 자세 판정을 함께
-표시합니다. 서기·앉기·옆으로 눕기를 차례로 시험합니다.
+목각인형용 검출 모델을 시험하려면 다음처럼 실행합니다.
 
 ```bash
-python3 vision_training/testing/pose_posture_test.py \
-  --source 2 --stage posture --device 0
+python3 vision_training/testing/detect_then_pose_webcam_test.py \
+  --source 0 --target mannequin --device auto
 ```
 
 카메라 번호는 USB 웹캠 장치에 맞춰 `--source 0` 또는 `--source 2`로
-변경합니다. 창에서 `Q` 또는 `Esc`를 누르면 종료합니다. 이미지 파일로
-재현 테스트할 때는 다음처럼 실행하며 결과는 `runs/pose_test`에 저장됩니다.
-
-```bash
-python3 vision_training/testing/pose_posture_test.py \
-  --source /path/to/person.jpg --stage posture --device 0 --no-show
-```
+변경합니다. 창에서 `Q` 또는 `Esc`를 누르면 종료합니다.
 
 이 테스트에서 실제 사람의 자세별 오판 사례를 모은 다음에만 관절 라벨을
 검수하고 Pose 파인튜닝 여부를 결정합니다.
