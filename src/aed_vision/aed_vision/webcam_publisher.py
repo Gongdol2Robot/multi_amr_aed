@@ -1,4 +1,4 @@
-"""Publish JPEG-compressed frames from a webcam without running inference."""
+"""YOLO 추론 없이 웹캠 프레임을 JPEG 압축 토픽으로 발행한다."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from .camera_source import DirectCameraSource
 
 
 class WebcamPublisher(Node):
-    """Read a local webcam and publish only its compressed image stream."""
+    """로컬 웹캠을 읽어 압축 영상 스트림만 발행하는 ROS 2 노드."""
 
     def __init__(self) -> None:
         super().__init__("webcam_publisher")
@@ -36,7 +36,7 @@ class WebcamPublisher(Node):
 
     @staticmethod
     def _ignore_frame(_frame, _message) -> None:
-        """Discard the local frame after DirectCameraSource publishes it."""
+        """DirectCameraSource가 발행을 마친 로컬 프레임은 추가 처리하지 않는다."""
 
     def destroy_node(self) -> bool:
         self.camera_source.close()

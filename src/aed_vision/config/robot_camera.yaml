@@ -22,6 +22,7 @@
     detect_people_as_helpers: true
     iou: 0.5
     imgsz: 640
+    # 빈 값은 Ultralytics가 실행 환경에 맞춰 GPU 또는 CPU를 자동 선택하게 한다.
     inference_device: ""
 
     confirmation_window: 10

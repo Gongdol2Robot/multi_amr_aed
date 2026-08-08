@@ -163,7 +163,9 @@ ros2 run aed_vision webcam_publisher --ros-args \
 
 - `camera_device`: USB 웹캠 장치 경로. 기본값은 `/dev/video2`이며 가능하면
   재부팅 후에도 유지되는 `/dev/v4l/by-id/...` 경로 사용 권장
-- `inference_device`: YOLO 추론 장치 (`"cuda:0"`은 첫 GPU, `"cpu"`는 CPU)
+- `inference_device`: YOLO 추론 장치. `"cuda:0"`은 첫 GPU를 우선 사용하되
+  CUDA 또는 해당 GPU가 없으면 경고 후 CPU로 전환한다. `"cpu"`는 CPU 고정,
+  빈 문자열은 Ultralytics의 자동 장치 선택을 사용한다.
 - `target`: `person`(기본) 또는 `mannequin`
 - `pose_weights`: 실제 사람용 Pose 가중치
 - `person_conf`, `pose_keypoint_conf`, `pose_min_keypoints`,
