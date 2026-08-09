@@ -219,19 +219,17 @@ pytest src/sensor_recovery/test -q
 
 ---
 
-## 9. Mission Manager 연동 상태
+## 9. 상위 mission 계층으로 실패 상태 전달
 
-현재 중앙 Mission Manager가 `replacement_needed`와 `pending_goal`을 직접 구독하지 않는다.
-간접적으로는 fallback이 Nav2 goal을 취소하면 MissionExecutor가 `CANCELED`를 중앙에 보내고,
-중앙이 실패로 판단해 차순위 로봇을 재배정할 수 있다.
+fallback이 안전하게 계속 주행할 수 없으면 다음 두 정보를 latched Topic으로 함께
+발행한다.
 
-하지만 fallback 로봇이 계속 주행하는 동안 중앙이 다른 로봇을 보낼 수 있어 이중 출동
-가능성이 남는다. 코드 리뷰에서는 이를 완료 기능으로 설명하지 않고 다음 후속 과제로
-명확히 구분한다.
+- `replacement_needed=True`: 현재 로봇이 임무를 계속 수행할 수 없음을 알리는 상태
+- `pending_goal=<기존 목적지>`: 다른 로봇이 임무를 이어갈 때 필요한 목적지
 
-- typed fallback status/control 인터페이스 정의
-- 중앙이 fallback 진행 중인 임무를 즉시 재배정하지 않도록 상태 반영
-- fallback 성공/실패와 대체 요청을 assignment version에 연결
+LiDAR가 복구되어 상태를 정리할 때는 `replacement_needed=False`를 발행한다. 상태 Topic에
+`TRANSIENT_LOCAL` QoS를 사용하므로 상위 mission 계층이 늦게 연결되더라도 마지막 실패
+상태와 목적지를 확인할 수 있다.
 
 ---
 

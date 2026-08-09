@@ -1492,8 +1492,8 @@ class FallbackPathFollower(Node):
         return message
 
     def _request_replacement(self) -> None:
-        # [CODE REVIEW] fallback이 안전하게 계속 갈 수 없을 때 latch 상태와 원래 목적지를 발행한다.
-        # 현재 Mission Manager가 직접 구독하지 않는 인터페이스라 중앙 연동은 후속 과제다.
+        # [CODE REVIEW] fallback이 안전하게 계속 갈 수 없을 때 실패 상태와
+        # 원래 목적지를 latched Topic으로 함께 발행해 상위 mission 계층에 전달한다.
         self._replacement_dispatched = True
         self.replacement_needed_pub.publish(Bool(data=True))
         if self._fault_goal_pose is not None:
