@@ -1,6 +1,6 @@
 # aed_vision
 
-고정 웹캠 영상에서 쓰러진 구조 대상과 구조 보조자(`helper`)를 검출하고,
+고정 USB 웹캠 영상에서 쓰러진 구조 대상과 구조 보조자(`helper`)를 검출하고,
 골목 카메라에서는 실제 사람 수를 이용해 통로 혼잡도까지 판단하는 ROS 2
 패키지입니다.
 
@@ -104,14 +104,14 @@ ros2 launch aed_vision camera_vision.launch.py \
 ```
 
 `camera:=1`은 `camera_open` namespace와 `open_camera.yaml`을 자동 선택하며,
-기본적으로 실제 사람 Pose로 쓰러짐을 판정합니다. 실행한
+기본적으로 목각인형 파인튜닝 모델로 쓰러짐을 판정합니다. 실행한
 노트북에는 `AED Vision - camera_open (open)` 결과 창이 표시됩니다.
 
-기존 목각인형 파인튜닝 모델을 명시적으로 선택하려면 다음처럼 실행합니다.
+실제 사람 Pose 판정을 명시적으로 선택하려면 다음처럼 실행합니다.
 
 ```bash
 ros2 launch aed_vision camera_vision.launch.py \
-  camera:=1 target:=mannequin
+  camera:=1 target:=person
 ```
 
 backend별 confidence도 launch에서 조절할 수 있습니다.
@@ -128,9 +128,9 @@ ros2 launch aed_vision camera_vision.launch.py \
 
 두 backend는 다음 두 값만 허용합니다.
 
-- `person_pose`(기본): 실제 사람의 bbox·17관절을 검출하고 종횡비와 몸통 각도로
+- `person_pose`: 실제 사람의 bbox·17관절을 검출하고 종횡비와 몸통 각도로
   `STANDING`, `SITTING`, `FALLEN` 판정
-- `mannequin_detect`: 기존 `rescue_yolo11n.pt`의 목각인형 기반
+- `mannequin_detect`(기본): `rescue2_yolo11n.pt`의 목각인형 기반
   `fallen_person`, `helper_rc_car` 검출
 
 좁은 골목 노트북:
@@ -161,7 +161,8 @@ ros2 run aed_vision webcam_publisher --ros-args \
 
 실행 전 각 YAML에서 다음 값을 현장에 맞게 수정합니다.
 
-- `camera_device`: USB 웹캠 장치 경로. 기본값은 `/dev/video2`이며 가능하면
+- `camera_device`: USB 웹캠 장치 경로. 기본값 `auto`는
+  `/dev/v4l/by-id`에서 노트북 내장 카메라를 제외한 외장 USB 웹캠을 선택하며, 가능하면
   재부팅 후에도 유지되는 `/dev/v4l/by-id/...` 경로 사용 권장
 - `inference_device`: YOLO 추론 장치. `"cuda:0"`은 첫 GPU를 우선 사용하되
   CUDA 또는 해당 GPU가 없으면 경고 후 CPU로 전환한다. `"cpu"`는 CPU 고정,
@@ -184,7 +185,7 @@ ros2 run aed_vision webcam_publisher --ros-args \
 
 | 토픽 | 타입 | 내용 |
 |---|---|---|
-| `/<camera_id>/image_raw/compressed` | `sensor_msgs/CompressedImage` | 로컬 웹캠 JPEG |
+| `/<camera_id>/image_raw/compressed` | `sensor_msgs/CompressedImage` | 로컬 USB 웹캠 JPEG |
 | `/<camera_id>/vision/emergency_event` | `aed_interfaces/EmergencyEvent` | 확정 또는 해제된 구조 이벤트 |
 | `/<camera_id>/vision/status` | `std_msgs/String` | 전체 검출 상태 JSON |
 | `/<camera_id>/vision/crowd_level` | `std_msgs/String` | `NOT_APPLICABLE`, `0`, `1`, `2`, `3` (3은 3명 이상) |
@@ -201,7 +202,7 @@ ros2 run aed_vision webcam_publisher --ros-args \
 ```
 
 `CvBridge`로 BGR 프레임으로 변환한 뒤 동일한 YOLO11n Pose 파이프라인에
-입력합니다. 고정 웹캠의 `CompressedImage` 입력 방식은 그대로 유지됩니다.
+입력합니다. 고정 USB 웹캠의 `CompressedImage` 입력 방식은 그대로 유지됩니다.
 
 로봇의 조력자 후보는 환자와 같은 프레임에 있어야 하며, 조력자 bbox 하단
 중심과 쓰러진 환자 bbox 중심 사이 거리가 화면 대각선의 30% 이내여야 합니다.

@@ -2,10 +2,47 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import cv2
 from sensor_msgs.msg import CompressedImage
 
 from .qos import CAMERA_QOS
+
+
+_INTERNAL_CAMERA_MARKERS = (
+    "integrated",
+    "built-in",
+    "builtin",
+    "hp_wide_vision",
+    "facetime",
+    "front_camera",
+    "ir_camera",
+)
+
+
+def _resolve_camera_device(value: str) -> str | int:
+    """Resolve ``auto`` to one unambiguous external USB webcam."""
+    if value != "auto":
+        return int(value) if value.isdigit() else value
+
+    candidates = sorted(Path("/dev/v4l/by-id").glob("*-video-index0"))
+    external = [
+        path for path in candidates
+        if not any(marker in path.name.lower() for marker in _INTERNAL_CAMERA_MARKERS)
+    ]
+    if len(external) == 1:
+        return str(external[0])
+    if not external:
+        raise RuntimeError(
+            "No external USB webcam found under /dev/v4l/by-id; "
+            "set camera_device explicitly"
+        )
+    names = ", ".join(str(path) for path in external)
+    raise RuntimeError(
+        f"Multiple external USB webcams found ({names}); "
+        "set camera_device explicitly"
+    )
 
 
 class DirectCameraSource:
@@ -19,7 +56,7 @@ class DirectCameraSource:
         self.node = node
         self.on_frame = on_frame
         value = str(node.get_parameter(device_parameter).value)
-        device = int(value) if value.isdigit() else value
+        device = _resolve_camera_device(value)
         width = int(node.get_parameter("width").value)
         height = int(node.get_parameter("height").value)
         fps = float(node.get_parameter("fps").value)

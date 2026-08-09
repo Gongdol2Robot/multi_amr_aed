@@ -1,4 +1,4 @@
-"""YOLO 추론 없이 웹캠 프레임을 JPEG 압축 토픽으로 발행한다."""
+"""YOLO 추론 없이 USB 웹캠 프레임을 JPEG 압축 토픽으로 발행한다."""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ from .camera_source import DirectCameraSource
 
 
 class WebcamPublisher(Node):
-    """로컬 웹캠을 읽어 압축 영상 스트림만 발행하는 ROS 2 노드."""
+    """로컬 USB 웹캠을 읽어 압축 영상 스트림만 발행하는 ROS 2 노드."""
 
     def __init__(self) -> None:
         super().__init__("webcam_publisher")
-        self.declare_parameter("device", "/dev/video2")
+        self.declare_parameter("device", "auto")
         self.declare_parameter(
             "image_topic", "/camera_alley/image_raw/compressed"
         )

@@ -34,7 +34,7 @@ PARAMETER_DEFAULTS = (
     ("image_topic", "/camera/image_raw/compressed"),
     ("image_is_compressed", True),
     ("direct_camera", True),
-    ("camera_device", "/dev/video2"),
+    ("camera_device", "auto"),
     ("width", 640),
     ("height", 480),
     ("fps", 15.0),
@@ -306,14 +306,14 @@ class VisionDetector(Node):
             self.subscription = self.create_subscription(
                 Image, image_topic, self._on_raw_image, CAMERA_QOS
             )
-        # 기본 실행은 한 노드가 웹캠을 직접 읽는다. 같은 노트북 안에서 영상을
+        # 기본 실행은 한 노드가 USB 웹캠을 직접 읽는다. 같은 노트북 안에서 영상을
         # DDS로 왕복시키지 않아 화면 지연과 publisher/subscriber 연결 문제를 없앤다.
         self.direct_camera = bool(
             self.get_parameter("direct_camera").value
         )
         self.camera_source = None
         if self.direct_camera:
-            # 구독 대신 웹캠을 직접 폴링하는 DirectCameraSource로 대체한다.
+            # 구독 대신 USB 웹캠을 직접 폴링하는 DirectCameraSource로 대체한다.
             # image_topic은 그대로 두어 이 노드가 발행하는 원본 영상 토픽 이름으로
             # 재사용한다(구독은 안 하고 publish만).
             self.destroy_subscription(self.subscription)

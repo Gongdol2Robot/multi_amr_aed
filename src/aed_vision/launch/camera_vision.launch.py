@@ -1,4 +1,4 @@
-"""카메라 번호 1/2에 맞는 웹캠 발행기와 비전 검출기를 실행한다."""
+"""카메라 번호 1/2에 맞는 USB 웹캠 발행기와 비전 검출기를 실행한다."""
 
 from pathlib import Path
 
@@ -21,7 +21,7 @@ def _create_camera_nodes(context):
 
     OpaqueFunction을 쓰는 이유는 launch 실행 시점에 camera 인자를 실제 문자열로
     평가한 뒤 Python 딕셔너리에서 namespace와 YAML을 함께 선택하기 위해서다.
-    vision_detector가 웹캠을 직접 읽고 추론하므로 카메라별 ROS 노드는 하나다.
+    vision_detector가 USB 웹캠을 직접 읽고 추론하므로 카메라별 ROS 노드는 하나다.
     """
     camera = LaunchConfiguration("camera").perform(context)
     target = LaunchConfiguration("target").perform(context)
@@ -31,6 +31,7 @@ def _create_camera_nodes(context):
     }[target]
     person_conf = float(LaunchConfiguration("person_conf").perform(context))
     rescue_conf = float(LaunchConfiguration("rescue_conf").perform(context))
+    camera_device = LaunchConfiguration("camera_device").perform(context)
     if not 0.0 <= person_conf <= 1.0 or not 0.0 <= rescue_conf <= 1.0:
         raise ValueError("person_conf and rescue_conf must be between 0 and 1")
     namespace, config_name = CAMERA_PROFILES[camera]
@@ -48,6 +49,7 @@ def _create_camera_nodes(context):
             parameters=[
                 str(config),
                 {
+                    "camera_device": camera_device,
                     "detection_backend": detection_backend,
                     "person_conf": person_conf,
                     "rescue_conf": rescue_conf,
@@ -75,10 +77,18 @@ def generate_launch_description() -> LaunchDescription:
                 ),
             ),
             DeclareLaunchArgument(
+                "camera_device",
+                default_value="auto",
+                description=(
+                    "USB webcam device path; auto selects the external webcam "
+                    "from /dev/v4l/by-id"
+                ),
+            ),
+            DeclareLaunchArgument(
                 "target",
-                default_value="person",
+                default_value="mannequin",
                 choices=("person", "mannequin"),
-                description="person (default) or mannequin",
+                description="mannequin (default) or person",
             ),
             DeclareLaunchArgument(
                 "person_conf",

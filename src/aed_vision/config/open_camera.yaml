@@ -2,7 +2,7 @@
   ros__parameters:
     direct_camera: true
     # 노트북 내장 카메라가 아니라 연결한 USB 웹캠 장치이다.
-    camera_device: /dev/video2
+    camera_device: auto
     width: 640
     height: 480
     fps: 10.0
@@ -12,9 +12,8 @@
     zone_id: open_zone
     mode: open
     image_topic: /camera_open/image_raw/compressed
-    # 기본은 실제 사람 Pose 판정이다. launch에서
-    # launch에서 target:=mannequin을 주면 기존 목각인형 모델을 쓴다.
-    detection_backend: person_pose
+    # 기본은 목각인형 파인튜닝 모델을 사용한다.
+    detection_backend: mannequin_detect
     rescue_weights: package://aed_vision/models/rescue2_yolo11n.pt
     person_weights: ""
     pose_weights: package://aed_vision/models/yolo11n-pose.pt
