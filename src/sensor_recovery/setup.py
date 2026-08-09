@@ -1,3 +1,5 @@
+import glob
+
 from setuptools import find_packages, setup
 
 
@@ -13,6 +15,8 @@ setup(
             ["resource/" + package_name],
         ),
         ("share/" + package_name, ["package.xml"]),
+        ("share/" + package_name + "/launch", glob.glob("launch/*.launch.py")),
+        ("share/" + package_name + "/config", glob.glob("config/*.yaml")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -23,6 +27,13 @@ setup(
     entry_points={
         "console_scripts": [
             "sensor_health_monitor = sensor_recovery.sensor_health_monitor:main",
+            "lidar_watchdog = sensor_recovery.lidar_watchdog_node:main",
+            "lidar_fallback_controller = sensor_recovery.fallback_path_follower:main",
+            "fallback_route_test = sensor_recovery.fallback_route_test:main",
+            "cmd_vel_distance_test = sensor_recovery.cmd_vel_distance_test:main",
+            "cmd_vel_route_follower = sensor_recovery.cmd_vel_route_follower:main",
+            "depth_distance_viewer = sensor_recovery.depth_distance_viewer:main",
+            "lidar_replacement_request = sensor_recovery.replacement_request:main",
         ],
     },
 )

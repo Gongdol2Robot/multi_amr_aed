@@ -1,5 +1,9 @@
 # AMR Code Review Guide
 
+박재현의 LiDAR 장애 감지/fallback 담당 파트는
+[`JAEHYEON_SENSOR_RECOVERY_CODE_REVIEW.md`](JAEHYEON_SENSOR_RECOVERY_CODE_REVIEW.md)를
+따른다.
+
 ## 0. 리뷰 목표
 
 PPT 없이 **설계도 -> 실제 코드 -> 테스트/검증 결과** 순서로 설명한다.

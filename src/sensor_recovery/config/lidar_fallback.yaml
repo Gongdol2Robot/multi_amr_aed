@@ -1,0 +1,71 @@
+/**:
+  ros__parameters:
+    # Nav2 RPP의 desired_linear_vel / rotate_to_heading_angular_vel과 동일.
+    max_linear_speed: 0.20
+    max_angular_speed: 0.60
+    max_linear_accel: 0.15
+    max_angular_accel: 0.5
+
+    lookahead_m: 0.2
+    closest_search_ahead_m: 1.0
+    closest_search_backtrack_m: 0.3
+    path_reacquire_distance_m: 0.5
+    linear_heading_threshold_deg: 30.0
+    arrival_tolerance_m: 0.15
+
+    min_obstacle_distance_m: 0.65
+    obstacle_pixel_ratio: 0.03
+    min_valid_pixel_ratio: 0.20
+    noise_valid_pixel_ratio: 0.60
+    # 네트워크 지터가 1초 안팎 발생할 수 있으므로 로컬 수신 기준 2초까지
+    # 허용한다. 초과 시 실패하지 않고 정지해 fresh odom을 기다린다.
+    odom_timeout_sec: 2.0
+    depth_clear_hold_sec: 0.5
+    blocked_timeout_sec: 5.0
+    stuck_timeout_sec: 3.0
+    stuck_distance_m: 0.03
+    max_path_deviation_m: 0.7
+
+    fallback_control_period_sec: 0.1
+    pre_replan_delay_sec: 1.0
+    nav2_cancel_timeout_sec: 3.0
+    reconvergence_timeout_sec: 5.0
+    recovery_amcl_required_samples: 3
+    recovery_amcl_stability_distance_m: 0.15
+    recovery_amcl_stability_angle_deg: 15.0
+    recovery_amcl_update_period_sec: 1.0
+
+    robot_radius_m: 0.20
+    hard_margin_m: 0.05
+    soft_clearance_m: 0.4
+    wall_clearance_weight: 2.0
+    occupied_threshold: 50
+    allow_unknown_cells: false
+
+    navigate_action: navigate_to_pose
+    map_topic: map
+    # Nav2 velocity_smoother의 입력 토픽. 물리 cmd_vel에는 smoother만 발행해
+    # Nav2와 fallback이 동시에 출력 명령을 쓰지 않게 한다.
+    cmd_vel_topic: cmd_vel_nav
+    depth_topic: oakd/stereo/image_raw/compressedDepth
+    depth_compressed: true
+    # 프레임이 아직 없거나 유효 픽셀이 부족할 때는 저속 주행을 계속한다.
+    # 실제 장애물/근거리 노이즈 판정은 이 옵션과 무관하게 계속 정지한다.
+    allow_insufficient_depth_motion: true
+    require_active_nav_goal: true
+    prefer_saved_nav2_path: true
+    resume_nav2_after_failure: true
+    corner_angle_threshold_deg: 35.0
+    corner_sample_distance_m: 0.25
+    corner_cluster_distance_m: 0.35
+    corner_slowdown_distance_m: 0.35
+    corner_position_tolerance_m: 0.08
+    corner_heading_tolerance_deg: 5.0
+    debug_enabled: false
+    debug_log_period_sec: 1.0
+
+    # 기본값은 무보정이다. 실측이 끝난 로봇의 값은 launch/test wrapper에서
+    # namespace별로 덮어써 robot2에 robot1 보정치가 섞이지 않게 한다.
+    odom_translation_scale: 1.0
+    odom_translation_heading_correction_deg: 0.0
+    odom_yaw_delta_scale: 1.0
