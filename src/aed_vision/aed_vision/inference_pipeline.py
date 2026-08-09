@@ -22,7 +22,6 @@ from .pose_posture import TORSO_INDEXES, classify_posture
 
 
 RESCUE_CLASS_NAMES = ["mannequin", "helping_person"]
-DISPLAY_NAMES = {0: "fallen_person", 1: "helper_rc_car"}
 DETECTION_BACKENDS = ("person_pose", "mannequin_detect")
 POSTURE_COLORS = {
     "STANDING": (0, 200, 0),
@@ -480,10 +479,10 @@ class InferencePipeline:
 
     def render_debug(self, output: InferenceOutput, camera_id: str):
         if output.detection_backend == "mannequin_detect":
-            # Ultralytics 기본 plot()에 class id 대신 사람이 읽을 이름을
-            # 보여주려고 표시 직전에만 names를 덮어쓴다.
-            output.rescue_result.names = DISPLAY_NAMES
-            image = output.rescue_result.plot()
+            # 1차 목각인형/조력자 검출은 bbox만 표시하고 클래스명과
+            # confidence는 숨긴다. Pose를 통과한 자세 라벨과 골격은
+            # 아래에서 별도로 덮어 그린다.
+            image = output.rescue_result.plot(labels=False, conf=False)
         else:
             image = output.rescue_result.orig_img.copy()
         # 두 backend 모두 Pose 자세·골격을 같은 방식으로 덧그린다.
