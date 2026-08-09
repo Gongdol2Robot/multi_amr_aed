@@ -22,7 +22,7 @@ from .pose_posture import TORSO_INDEXES, classify_posture
 
 
 RESCUE_CLASS_NAMES = ["mannequin", "helping_person"]
-DISPLAY_NAMES = {0: "mannequin", 1: "helper_rc_car"}
+DISPLAY_NAMES = {0: "fallen_person", 1: "helper_rc_car"}
 DETECTION_BACKENDS = ("person_pose", "mannequin_detect")
 POSTURE_COLORS = {
     "STANDING": (0, 200, 0),
