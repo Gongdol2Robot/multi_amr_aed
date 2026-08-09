@@ -1,0 +1,365 @@
+"""Launch the central path manager and the two mission executors."""
+
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
+from launch_ros.substitutions import FindPackageShare
+
+
+def generate_launch_description() -> LaunchDescription:
+    """Start central control, helper behavior, and robot Vision processes."""
+    crowd_config = PathJoinSubstitution(
+        [
+            FindPackageShare("multi_robot_emergency"),
+            "config",
+            "crowd_zones.yaml",
+        ]
+    )
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "dispatch_enabled",
+                default_value="false",
+                choices=["true", "false"],
+                description="Send assignments chosen by the ETA policy",
+            ),
+            DeclareLaunchArgument(
+                "pose_timeout_sec", default_value="15.0"
+            ),
+            DeclareLaunchArgument(
+                "allow_stale_pose",
+                default_value="true",
+                choices=["true", "false"],
+            ),
+            DeclareLaunchArgument(
+                "use_planner_start",
+                default_value="true",
+                choices=["true", "false"],
+            ),
+            DeclareLaunchArgument(
+                "docked_start_offset_m", default_value="0.35"
+            ),
+            DeclareLaunchArgument(
+                "planning_timeout_sec", default_value="30.0"
+            ),
+            DeclareLaunchArgument(
+                "dispatch_retry_timeout_sec", default_value="15.0"
+            ),
+            DeclareLaunchArgument(
+                "assignment_ack_timeout_sec", default_value="3.0"
+            ),
+            DeclareLaunchArgument(
+                "blocked_timeout_sec",
+                default_value="8.0",
+                description=(
+                    "Declare a moving robot blocked after this many seconds "
+                    "without measurable progress"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "live_replan_enabled",
+                default_value="true",
+                choices=["true", "false"],
+            ),
+            DeclareLaunchArgument(
+                "live_replan_interval_sec", default_value="3.0"
+            ),
+            DeclareLaunchArgument(
+                "live_replan_timeout_sec", default_value="4.0"
+            ),
+            DeclareLaunchArgument(
+                "live_replan_min_eta_gain_sec", default_value="2.0"
+            ),
+            DeclareLaunchArgument(
+                "live_replan_switch_ratio", default_value="0.85"
+            ),
+            DeclareLaunchArgument(
+                "dual_dispatch_enabled",
+                default_value="true",
+                choices=["true", "false"],
+                description=(
+                    "Dispatch both valid robots when the fastest ETA is "
+                    "close to the target arrival time"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "target_arrival_time_sec", default_value="30.0"
+            ),
+            DeclareLaunchArgument(
+                "dual_dispatch_trigger_ratio", default_value="0.85"
+            ),
+            DeclareLaunchArgument(
+                "patient_standoff_enabled",
+                default_value="true",
+                choices=["true", "false"],
+            ),
+            DeclareLaunchArgument(
+                "patient_standoff_distance_m", default_value="0.15"
+            ),
+            DeclareLaunchArgument(
+                "return_after_helper_enabled",
+                default_value="true",
+                choices=["true", "false"],
+            ),
+            DeclareLaunchArgument(
+                "dual_robot_proximity_threshold_m", default_value="0.40"
+            ),
+            DeclareLaunchArgument(
+                "dual_robot_proximity_confirm_sec", default_value="0.50"
+            ),
+            DeclareLaunchArgument(
+                "dual_robot_proximity_grace_sec", default_value="2.0"
+            ),
+            DeclareLaunchArgument("planner_id", default_value="GridBased"),
+            DeclareLaunchArgument(
+                "start_helper_mission",
+                default_value="true",
+                choices=["true", "false"],
+            ),
+            DeclareLaunchArgument(
+                "start_robot_vision",
+                default_value="true",
+                choices=["true", "false"],
+            ),
+            DeclareLaunchArgument(
+                "robot_vision_target",
+                default_value="person",
+                choices=["person", "mannequin"],
+            ),
+            DeclareLaunchArgument(
+                "automatic_request",
+                default_value="false",
+                choices=["true", "false"],
+            ),
+            DeclareLaunchArgument(
+                "automatic_request_delay_sec", default_value="5.0"
+            ),
+            DeclareLaunchArgument("emergency_x", default_value="1.2"),
+            DeclareLaunchArgument("emergency_y", default_value="2.4"),
+            DeclareLaunchArgument("emergency_yaw", default_value="0.0"),
+            Node(
+                package="multi_robot_emergency",
+                executable="emergency_mission_manager",
+                name="emergency_mission_manager",
+                output="screen",
+                parameters=[
+                    crowd_config,
+                    {
+                        "robot_ids": ["robot1", "robot2"],
+                        "dispatch_enabled": ParameterValue(
+                            LaunchConfiguration("dispatch_enabled"),
+                            value_type=bool,
+                        ),
+                        "pose_timeout_sec": ParameterValue(
+                            LaunchConfiguration("pose_timeout_sec"),
+                            value_type=float,
+                        ),
+                        "allow_stale_pose": ParameterValue(
+                            LaunchConfiguration("allow_stale_pose"),
+                            value_type=bool,
+                        ),
+                        "use_planner_start": ParameterValue(
+                            LaunchConfiguration("use_planner_start"),
+                            value_type=bool,
+                        ),
+                        "docked_start_offset_m": ParameterValue(
+                            LaunchConfiguration("docked_start_offset_m"),
+                            value_type=float,
+                        ),
+                        "planning_timeout_sec": ParameterValue(
+                            LaunchConfiguration("planning_timeout_sec"),
+                            value_type=float,
+                        ),
+                        "dispatch_retry_timeout_sec": ParameterValue(
+                            LaunchConfiguration("dispatch_retry_timeout_sec"),
+                            value_type=float,
+                        ),
+                        "assignment_ack_timeout_sec": ParameterValue(
+                            LaunchConfiguration("assignment_ack_timeout_sec"),
+                            value_type=float,
+                        ),
+                        "live_replan_enabled": ParameterValue(
+                            LaunchConfiguration("live_replan_enabled"),
+                            value_type=bool,
+                        ),
+                        "live_replan_interval_sec": ParameterValue(
+                            LaunchConfiguration("live_replan_interval_sec"),
+                            value_type=float,
+                        ),
+                        "live_replan_timeout_sec": ParameterValue(
+                            LaunchConfiguration("live_replan_timeout_sec"),
+                            value_type=float,
+                        ),
+                        "live_replan_min_eta_gain_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "live_replan_min_eta_gain_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "live_replan_switch_ratio": ParameterValue(
+                            LaunchConfiguration("live_replan_switch_ratio"),
+                            value_type=float,
+                        ),
+                        "dual_dispatch_enabled": ParameterValue(
+                            LaunchConfiguration("dual_dispatch_enabled"),
+                            value_type=bool,
+                        ),
+                        "target_arrival_time_sec": ParameterValue(
+                            LaunchConfiguration("target_arrival_time_sec"),
+                            value_type=float,
+                        ),
+                        "dual_dispatch_trigger_ratio": ParameterValue(
+                            LaunchConfiguration(
+                                "dual_dispatch_trigger_ratio"
+                            ),
+                            value_type=float,
+                        ),
+                        "patient_standoff_enabled": ParameterValue(
+                            LaunchConfiguration("patient_standoff_enabled"),
+                            value_type=bool,
+                        ),
+                        "patient_standoff_distance_m": ParameterValue(
+                            LaunchConfiguration(
+                                "patient_standoff_distance_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "return_after_helper_enabled": ParameterValue(
+                            LaunchConfiguration(
+                                "return_after_helper_enabled"
+                            ),
+                            value_type=bool,
+                        ),
+                        "dual_robot_proximity_threshold_m": ParameterValue(
+                            LaunchConfiguration(
+                                "dual_robot_proximity_threshold_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "dual_robot_proximity_confirm_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "dual_robot_proximity_confirm_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "dual_robot_proximity_grace_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "dual_robot_proximity_grace_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "planner_id": LaunchConfiguration("planner_id"),
+                        "automatic_request": ParameterValue(
+                            LaunchConfiguration("automatic_request"),
+                            value_type=bool,
+                        ),
+                        "automatic_request_delay_sec": ParameterValue(
+                            LaunchConfiguration("automatic_request_delay_sec"),
+                            value_type=float,
+                        ),
+                        "initial_target_x": ParameterValue(
+                            LaunchConfiguration("emergency_x"),
+                            value_type=float,
+                        ),
+                        "initial_target_y": ParameterValue(
+                            LaunchConfiguration("emergency_y"),
+                            value_type=float,
+                        ),
+                        "initial_target_yaw": ParameterValue(
+                            LaunchConfiguration("emergency_yaw"),
+                            value_type=float,
+                        ),
+                    }
+                ],
+            ),
+            Node(
+                package="robot_missions",
+                executable="mission_executor",
+                name="robot1_mission_executor",
+                output="screen",
+                parameters=[{
+                    "robot_id": "robot1",
+                    "assignment_topic": "/robot1/mission_assignment",
+                    "navigate_action": "/robot1/navigate_to_pose",
+                    "dispatch_retry_timeout_sec": ParameterValue(
+                        LaunchConfiguration("dispatch_retry_timeout_sec"),
+                        value_type=float,
+                    ),
+                    "blocked_timeout_sec": ParameterValue(
+                        LaunchConfiguration("blocked_timeout_sec"),
+                        value_type=float,
+                    ),
+                }],
+            ),
+            Node(
+                package="robot_missions",
+                executable="mission_executor",
+                name="robot2_mission_executor",
+                output="screen",
+                parameters=[{
+                    "robot_id": "robot2",
+                    "assignment_topic": "/robot2/mission_assignment",
+                    "navigate_action": "/robot2/navigate_to_pose",
+                    "dispatch_retry_timeout_sec": ParameterValue(
+                        LaunchConfiguration("dispatch_retry_timeout_sec"),
+                        value_type=float,
+                    ),
+                    "blocked_timeout_sec": ParameterValue(
+                        LaunchConfiguration("blocked_timeout_sec"),
+                        value_type=float,
+                    ),
+                }],
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    PathJoinSubstitution([
+                        FindPackageShare("helper_mission"),
+                        "launch",
+                        "helper_mission.launch.py",
+                    ])
+                ),
+                condition=IfCondition(
+                    LaunchConfiguration("start_helper_mission")
+                ),
+                launch_arguments={
+                    "robot_ids": "robot1,robot2",
+                }.items(),
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    PathJoinSubstitution([
+                        FindPackageShare("aed_vision"),
+                        "launch",
+                        "robot_vision.launch.py",
+                    ])
+                ),
+                condition=IfCondition(
+                    LaunchConfiguration("start_robot_vision")
+                ),
+                launch_arguments={
+                    "robot_id": "robot1",
+                    "target": LaunchConfiguration("robot_vision_target"),
+                }.items(),
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    PathJoinSubstitution([
+                        FindPackageShare("aed_vision"),
+                        "launch",
+                        "robot_vision.launch.py",
+                    ])
+                ),
+                condition=IfCondition(
+                    LaunchConfiguration("start_robot_vision")
+                ),
+                launch_arguments={
+                    "robot_id": "robot2",
+                    "target": LaunchConfiguration("robot_vision_target"),
+                }.items(),
+            ),
+        ]
+    )

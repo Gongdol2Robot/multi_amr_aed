@@ -1,0 +1,27 @@
+uint8 PHASE_MOVING_TO_HELPER=1
+uint8 PHASE_CALLING_HELPER=2
+uint8 PHASE_GUIDING_TO_PATIENT=3
+uint8 PHASE_CONFIRMING_ARRIVAL=4
+
+string mission_id
+string event_id
+string robot_id
+uint32 mission_version
+geometry_msgs/PoseStamped helper_search_pose
+geometry_msgs/PoseStamped patient_pose
+---
+uint8 SUCCEEDED=0
+uint8 CANCELED=1
+uint8 NAVIGATION_FAILED=2
+uint8 HELPER_NOT_FOUND=3
+uint8 HELPER_LOST=4
+uint8 INVALID_GOAL=5
+
+uint8 code
+geometry_msgs/PoseStamped helper_pose
+builtin_interfaces/Time finished_at
+string reason
+---
+uint8 phase
+float32 helper_distance_m
+string detail

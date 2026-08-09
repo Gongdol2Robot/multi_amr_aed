@@ -147,9 +147,14 @@ local_costmap:
       # 실측 반경 0.175 m + 2.5 cm 충돌 여유.
       robot_radius: 0.20
       plugins: ["static_layer", "voxel_layer", "inflation_layer"]
+      filters: ["crowd_keepout_filter"]
+      crowd_keepout_filter:
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: True
+        filter_info_topic: /emergency/crowd_filter_info
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        # 충돌 반경 바깥 2 cm만 비용띠로 둔다 (기존 8 cm의 25%).
+        # 실측 반경보다 크게 잡은 robot_radius 바깥 2 cm만 비용띠로 둔다.
         cost_scaling_factor: 8.0
         inflation_radius: 0.22
       voxel_layer:
@@ -190,6 +195,11 @@ global_costmap:
       resolution: 0.06
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      filters: ["crowd_keepout_filter"]
+      crowd_keepout_filter:
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: True
+        filter_info_topic: /emergency/crowd_filter_info
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True

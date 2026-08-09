@@ -8,7 +8,7 @@ package_name = "aed_vision"
 setup(
     name=package_name,
     version="0.1.0",
-    packages=find_packages(exclude=["test"]),
+    packages=find_packages(),
     data_files=[
         (
             "share/ament_index/resource_index/packages",
@@ -16,6 +16,8 @@ setup(
         ),
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/config", glob("config/*.yaml")),
+        ("share/" + package_name + "/launch", glob("launch/*.launch.py")),
+        ("share/" + package_name + "/models", glob("models/*.pt")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -25,8 +27,8 @@ setup(
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
+            "vision_detector = aed_vision.vision_detector:main",
             "webcam_publisher = aed_vision.webcam_publisher:main",
         ],
     },
 )
-

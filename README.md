@@ -18,6 +18,7 @@ multi_amr_aed/
 │   ├── mission_manager/         # 경로비용 비교, 배정·재할당·복구 지속
 │   ├── robot_missions/          # Undock, Nav2 AED 전달, 도착 판정
 │   ├── robot_state_monitor/     # 위치·배터리·Localization·Nav2 상태
+│   ├── turtlebot4_map_navigation/ # 공용 지도 Localization·Nav2·RViz 통합
 │   ├── amr_recovery/            # Heartbeat·Nav2·네트워크 복구
 │   ├── sensor_recovery/         # LiDAR 감시·안전 정지·센서 복구
 │   ├── helper_mission/          # AED 도착 후 사람 호출·현장 안내
@@ -79,11 +80,13 @@ PR에는 구현 내용, 확인 방법, 아직 남은 문제를 작성합니다. 
 - `emergency_alert`: TurtleBot4 긴급 부저 이관 완료
 - `aed_interfaces`: 응급 이벤트·로봇 상태·미션 배정 메시지 구현 완료
 - `robot_missions`: typed 상태를 발행하는 단일 AED Nav2 실행기 구현 완료
-- `mission_manager`: 경로비용 기반 우선 배정과 장애 재할당 골격 구현 완료
-- `aed_bringup`: 실기 Nav2 안전 설정 이관 완료
+- `robot_state_monitor`: 두 Nav2 실제 경로 길이 계산과 이벤트별 RobotState 발행 구현 완료
+- `mission_manager`: 실제 경로비용 수집 대기, 우선 배정과 장애 재할당 구현 완료
+- `aed_bringup`: 실기 Nav2 안전 설정과 중앙 dispatch launch 구현 완료
+- `multi_robot_emergency`: 기존 `a1inteli` 중앙 거리 비교·직접 Nav2 출동 패키지 이관 완료
 - 모든 담당 영역을 `colcon`이 인식하는 ROS 2 패키지로 구성 완료
 - `amr_recovery`, `sensor_recovery`, `helper_mission`: 실행 노드 scaffold 구성 완료
-- `event_logger`, `robot_state_monitor`, `aed_hmi`, `emergency_location_mapper`: 실행 노드 scaffold 구성 완료
+- `event_logger`, `aed_hmi`, `emergency_location_mapper`: 실행 노드 scaffold 구성 완료
 - 다음 단계: 담당자별 callback·토픽·서비스 구현과 단위시험 작성
 
 ## Package maturity
@@ -142,8 +145,20 @@ git clone https://github.com/Gongdol2Robot/multi_amr_aed.git
 cd multi_amr_aed
 
 source /opt/ros/humble/setup.bash
-colcon build --symlink-install
+PYTHONNOUSERSITE=1 colcon build --symlink-install
 source install/setup.bash
+```
+
+기존 `a1inteli`에서 사용하던 중앙 거리 비교 명령도 이 저장소에서 그대로
+실행할 수 있습니다. 이 명령은 단독 호환 실행용이며, 팀 통합 배정·복구 정책은
+`aed_bringup central_dispatch.launch.py`를 사용합니다. 아래 호환 중앙 노드는
+기본적으로 최소 ETA 로봇을 보내며, 목표시간 미달 위험이 크면 두 로봇을
+동시에 출동시킨 뒤 먼저 도착한 로봇이 생겼을 때 늦은 로봇을 출발 위치로
+복귀시킵니다.
+
+```bash
+ros2 launch multi_robot_emergency central_dispatch.launch.py \
+  dispatch_enabled:=false
 ```
 
 단축 명령을 사용하려면 다음 한 줄을 등록합니다.
@@ -159,9 +174,19 @@ aedenv
 ```bash
 cd ~/rokey_ws/multi_amr_aed
 source /opt/ros/humble/setup.bash
-colcon build --symlink-install
+PYTHONNOUSERSITE=1 colcon build --symlink-install
 source install/setup.bash
 ```
 
-환경별 지도, 카메라 보정값, YOLO 모델은 저장소 기본값으로 간주하지 않습니다.
-현장 측정과 모델 검증 후 별도로 설정해야 합니다.
+이 PC는 사용자 영역 `setuptools`와 Ubuntu `packaging`의 버전이 맞지 않으므로
+빌드할 때 `PYTHONNOUSERSITE=1`을 사용합니다. 단축 명령을 불러온 뒤에는
+`aedbuild`로 같은 빌드를 실행할 수 있습니다.
+
+현재 두 로봇의 공통 기본 지도는 `maps/map.yaml`입니다. robot2가 작성한
+map2를 공용 좌표계로 채택했으며, `loc 1`, `loc 2`와 `robotstart`의
+localization 터미널은 이 지도를 자동으로 사용합니다. 초기 위치는
+`src/aed_bringup/config/dock_poses.yaml`의 로봇별 Dock 좌표를 `initpose 1`,
+`initpose 2`가 발행합니다. 다른
+지도를 시험할 때만 `loc <robot_number> /absolute/path/to/map.yaml`처럼 경로를
+명시합니다. 카메라 보정값과 YOLO 모델은 현장 측정과 모델 검증 후 별도로
+설정해야 합니다.

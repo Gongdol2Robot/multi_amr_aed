@@ -17,6 +17,9 @@ uint8 ROLE_RETURN=4
 string robot_id
 builtin_interfaces/Time stamp
 geometry_msgs/PoseStamped pose
+# 관제와 ETA 계산이 모두 쓴다. 받는 쪽마다 pose 로 다시 계산하면
+# 같은 값이 화면마다 달라진다.
+float32 speed_mps
 float32 battery_percentage
 uint8 availability
 uint8 role
@@ -28,5 +31,6 @@ bool nav2_ok
 bool emergency_stop
 bool path_valid
 float32 estimated_path_cost
+string path_event_id
 builtin_interfaces/Time last_heartbeat
 string detail

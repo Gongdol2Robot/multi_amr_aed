@@ -1,1 +1,1 @@
-
+"""Mission assignment package."""

@@ -1,0 +1,46 @@
+/camera_open/vision_detector:
+  ros__parameters:
+    direct_camera: true
+    # 노트북 내장 카메라가 아니라 연결한 USB 웹캠 장치이다.
+    camera_device: /dev/video2
+    width: 640
+    height: 480
+    fps: 10.0
+    frame_id: camera_open_optical_frame
+    jpeg_quality: 85
+    camera_id: camera_open
+    zone_id: open_zone
+    mode: open
+    image_topic: /camera_open/image_raw/compressed
+    # 기본은 실제 사람 Pose 판정이다. launch에서
+    # launch에서 target:=mannequin을 주면 기존 목각인형 모델을 쓴다.
+    detection_backend: person_pose
+    rescue_weights: package://aed_vision/models/rescue_yolo11n.pt
+    person_weights: ""
+    pose_weights: package://aed_vision/models/yolo11n-pose.pt
+    rescue_conf: 0.25
+    person_conf: 0.5
+    pose_keypoint_conf: 0.3
+    pose_min_keypoints: 8
+    pose_min_box_area: 0.02
+    pose_min_torso_keypoints: 3
+    iou: 0.5
+    imgsz: 640
+    # 첫 GPU를 우선 사용하며, CUDA가 없거나 GPU 0이 없으면 CPU로 자동 전환한다.
+    inference_device: "cuda:0"
+    confirmation_window: 10
+    confirmation_hits: 6
+    # open 모드에서는 혼잡도 관련 값이 사용되지 않는다.
+    crowd_roi: [0.0, 0.0, 1.0, 1.0]
+    crowded_person_threshold: 3
+    fallen_person_overlap_iou: 0.4
+    location_frame_id: map
+    # 고정 카메라가 담당하는 구조 지점의 실제 map 좌표로 변경한다.
+    location_x: 0.0
+    location_y: 0.0
+    # camera 1 측량값으로 fallen_person bbox 하단을 map 좌표로 변환한다.
+    homography_camera_id: cam1
+    homography_margin_m: 0.15
+    publish_debug_image: true
+    show_window: true
+    debug_jpeg_quality: 80

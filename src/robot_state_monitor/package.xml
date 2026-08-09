@@ -3,14 +3,18 @@
 <package format="3">
   <name>robot_state_monitor</name>
   <version>0.1.0</version>
-  <description>Aggregate robot localization, battery, navigation, and health state.</description>
+  <description>Robot health and Nav2 path-cost state publisher.</description>
   <maintainer email="team@example.com">multi_amr_aed team</maintainer>
   <license>Apache-2.0</license>
 
   <depend>aed_interfaces</depend>
+  <depend>action_msgs</depend>
+  <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
+  <depend>nav2_msgs</depend>
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
 
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>

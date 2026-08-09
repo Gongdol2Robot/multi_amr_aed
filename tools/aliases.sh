@@ -11,6 +11,11 @@ aedenv() {
   source "$AED_WS/install/setup.bash"
 }
 
+aedbuild() {
+  (cd "$AED_WS" && source /opt/ros/humble/setup.bash && \
+    PYTHONNOUSERSITE=1 colcon build --symlink-install "$@")
+}
+
 roskill() {
   local uid workspace_pattern
   uid="$(id -u)"
@@ -36,13 +41,53 @@ robotstart() {
   disown
 }
 
+_preflight_robot() {
+  local n="$1" host="$2"
+  shift 2
+
+  # aed_interfaces 등 overlay 타입까지 preflight에서 확인할 수 있게 환경을 갱신한다.
+  aedenv
+  python3 "$AED_WS/tools/preflight.py" \
+    --namespace "robot$n" \
+    --host "$host" \
+    "$@"
+}
+
+pf1() {
+  _preflight_robot 1 "${ROBOT1_IP:-192.168.107.101}" "$@"
+}
+
+pf2() {
+  _preflight_robot 2 "${ROBOT2_IP:-192.168.107.102}" "$@"
+}
+
+pfboth() {
+  local rc=0
+
+  echo "===== robot1 preflight ====="
+  pf1 "$@" || rc=1
+  echo
+  echo "===== robot2 preflight ====="
+  pf2 "$@" || rc=1
+
+  return "$rc"
+}
+
+# 기존 pf 사용법도 유지한다: pf 1, pf 2, pf 1 --nav
 pf() {
-  local n=${1:-1}
-  if [[ -n "${2:-}" ]]; then
-    python3 "$AED_WS/tools/preflight.py" --namespace "robot$n" --host "$2"
-  else
-    python3 "$AED_WS/tools/preflight.py" --namespace "robot$n"
+  local n="${1:-1}"
+  if [ "$#" -gt 0 ]; then
+    shift
   fi
+
+  case "$n" in
+    1) pf1 "$@" ;;
+    2) pf2 "$@" ;;
+    *)
+      echo "사용: pf <1|2> [--localization|--nav|--detect]" >&2
+      return 2
+      ;;
+  esac
 }
 
 fit() {
@@ -59,6 +104,31 @@ undock() {
 dock() {
   local n=${1:-1}
   ros2 action send_goal /robot$n/dock irobot_create_msgs/action/Dock "{}"
+}
+
+slam() {
+  local n=${1:-1}
+  ros2 launch turtlebot4_navigation slam.launch.py namespace:=/robot$n
+}
+
+drive() {
+  local n=${1:-1}
+  ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args \
+    -r /cmd_vel:=/robot$n/cmd_vel
+}
+
+explore() {
+  "$AED_WS/tools/explore.sh" "${1:-1}"
+}
+
+savemap() {
+  local n=${1:-1} name=${2:-map}
+  mkdir -p "$AED_WS/maps"
+  ros2 run nav2_map_server map_saver_cli \
+    -f "$AED_WS/maps/$name" -t "/robot$n/map" \
+    --ros-args -p save_map_timeout:=15.0 || return 1
+  ros2 service call /robot$n/slam_toolbox/serialize_map \
+    slam_toolbox/srv/SerializePoseGraph "{filename: '$AED_WS/maps/$name'}"
 }
 
 loc() {
@@ -97,7 +167,8 @@ mapnav() {
 #   initpose 2            robot2 의 Dock 위치를 발행
 #   initpose 1 --record   현재 위치를 robot1 항목에 기록
 initpose() {
-  local n=${1:-1}; shift 2>/dev/null || true
+  local n=${1:-1}
+  shift 2>/dev/null || true
   python3 "$AED_WS/tools/initpose.py" "$n" "$@"
 }
 
@@ -124,6 +195,20 @@ vision() {
 
 manager() {
   ros2 run mission_manager mission_manager
+}
+
+# 중앙 노트북 통합 런타임. 기존 central 인자 순서를 그대로 유지한다.
+central() {
+  local dispatch=${1:-false}
+  local target_time=${2:-30.0}
+  local trigger_ratio=${3:-0.85}
+  local dual_dispatch=${4:-true}
+  aedenv
+  ros2 launch aed_bringup server_runtime.launch.py \
+    dispatch_enabled:="$dispatch" \
+    target_arrival_time_sec:="$target_time" \
+    dual_dispatch_trigger_ratio:="$trigger_ratio" \
+    dual_dispatch_enabled:="$dual_dispatch"
 }
 
 executor() {

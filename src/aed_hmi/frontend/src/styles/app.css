@@ -1,0 +1,848 @@
+/*
+ * 화면 배치.
+ *
+ * 전체를 grid 한 장으로 잡고 영상 영역만 늘어나게 한다. 창 크기가 바뀌어도
+ * 상단 경보와 하단 이력의 높이는 그대로 두어, 운영자가 보던 자리가 흔들리지
+ * 않게 한다.
+ */
+
+@import './theme.css';
+
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: var(--gap);
+  padding: var(--gap);
+}
+
+.app__main {
+  display: grid;
+  /* 지도가 들어오면서 320px 로는 좁다. 지도는 가로가 세로보다 긴
+     그림(139x88)이라 폭이 곧 크기다. */
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: var(--gap);
+  min-height: 0;
+}
+
+/* 상단 표시줄 ------------------------------------------------------ */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 8px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.topbar__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topbar__mark {
+  background: var(--danger);
+  color: #fff;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 3px 6px;
+  border-radius: 3px;
+}
+
+.topbar__title {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.topbar__status {
+  display: flex;
+  gap: 16px;
+  margin-left: auto;
+  color: var(--text-dim);
+}
+
+.topbar__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.topbar__item b {
+  color: var(--text);
+}
+
+.topbar__clock {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+
+/* 응급 상황 배너 --------------------------------------------------- */
+
+.alert {
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg-panel);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-height: 74px;
+}
+
+.alert--idle {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  color: var(--text-faint);
+}
+
+.alert__idle-text {
+  font-size: 14px;
+  font-weight: 600;
+}
+.alert__idle-sub {
+  font-size: 11px;
+}
+
+.alert--active {
+  border-color: rgba(255, 77, 94, 0.55);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 77, 94, 0.12),
+    var(--bg-panel) 45%
+  );
+}
+
+.alert__left {
+  min-width: 0;
+  flex: 1;
+}
+
+.alert__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.alert__id {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.alert__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.alert__meta b {
+  color: var(--text);
+}
+
+.alert__center,
+.alert__right {
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.alert__label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.alert__elapsed {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.05;
+  color: var(--danger);
+}
+
+.alert__coord {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 2px 0 6px;
+}
+
+.alert__missions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+.alert__mission {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.alert__retry {
+  color: var(--warn);
+  font-size: 11px;
+}
+
+/* 영상 벽 ---------------------------------------------------------- */
+
+.wall {
+  min-width: 0;
+}
+
+.wall__ok {
+  color: var(--ok);
+}
+.wall__warn {
+  color: var(--danger);
+}
+
+.wall__tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wall__keys {
+  display: flex;
+  gap: 3px;
+}
+
+.wall__key {
+  min-width: 22px;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.wall__key:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.wall__key--on {
+  color: var(--bg-base);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.wall__grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+  padding: 2px;
+}
+
+/* 한 갈래만 볼 때. 4분할과 같은 격자를 쓰되 칸을 하나로 만든다. */
+.wall__grid--one {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+.tile {
+  position: relative;
+  margin: 0;
+  background: var(--bg-tile);
+  overflow: hidden;
+  border-radius: 3px;
+  min-height: 0;
+  cursor: pointer;
+}
+
+.tile--focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* 자리 번호. 영상 위에 얹히므로 그림을 가리지 않을 만큼만 밝게 둔다. */
+.tile__seat {
+  position: absolute;
+  top: 4px;
+  left: 5px;
+  padding: 0 5px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 17px;
+  pointer-events: none;
+}
+
+.tile--focus .tile__seat {
+  color: var(--accent);
+}
+
+.tile__image {
+  width: 100%;
+  height: 100%;
+  /* contain 이면 원본 비율을 지키느라 좌우가 검게 남는다. 4분할에서 그
+     검은 띠가 화면의 3할을 먹었다. cover 로 채우면 가장자리가 조금
+     잘리는 대신 타일이 그림으로 꽉 찬다. 관제 화면에서 가운데가 아니라
+     가장자리가 잘리는 것은 판단에 지장이 없다. */
+  object-fit: cover;
+  display: block;
+}
+
+.tile__bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+  font-size: 11px;
+}
+
+.tile__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.tile__stats {
+  color: var(--text-dim);
+  display: flex;
+  gap: 8px;
+}
+
+.tile__detect {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+/* 검출이 잡힌 타일은 테두리로 알린다. 4분할에서 숫자만으로는 안 보인다. */
+.tile__alarm {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 2px solid var(--danger);
+  border-radius: 3px;
+  box-shadow: inset 0 0 22px rgba(255, 77, 94, 0.35);
+  animation: detect-blink 0.9s ease-in-out infinite;
+}
+
+@keyframes detect-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.tile__offline {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: rgba(5, 8, 11, 0.92);
+  color: var(--danger);
+}
+
+.tile__offline-text {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+.tile__offline-sub {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* 로봇 패널 -------------------------------------------------------- */
+
+.fleet__count {
+  color: var(--text-dim);
+}
+
+.fleet__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fleet__empty {
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.fleet__empty span {
+  font-size: 11px;
+}
+
+.robot {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel-2);
+  padding: 9px 10px;
+}
+
+.robot--fault {
+  border-color: rgba(255, 77, 94, 0.5);
+}
+
+.robot__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.robot__id {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+}
+
+.robot__dock {
+  font-size: 10px;
+  color: var(--info);
+  border: 1px solid rgba(74, 168, 255, 0.35);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.robot__metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+  margin-bottom: 8px;
+}
+
+.metric__label {
+  font-size: 10px;
+  color: var(--text-faint);
+  letter-spacing: 0.05em;
+}
+
+.metric__value {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.metric__unit {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-left: 2px;
+}
+
+.robot__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 7px;
+}
+
+.robot__recovery {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 6px 7px;
+  border: 1px solid rgba(255, 184, 77, 0.28);
+  border-radius: 4px;
+  background: rgba(255, 184, 77, 0.06);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.flag {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid;
+}
+
+.flag--ok {
+  color: var(--ok);
+  border-color: rgba(46, 204, 113, 0.3);
+  background: rgba(46, 204, 113, 0.07);
+}
+
+.flag--bad {
+  color: var(--danger);
+  border-color: rgba(255, 77, 94, 0.45);
+  background: rgba(255, 77, 94, 0.1);
+  font-weight: 700;
+}
+
+.robot__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.robot__mission {
+  color: var(--text-faint);
+}
+
+.robot__stale {
+  margin-left: auto;
+  color: var(--warn);
+}
+
+.robot__detail {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--warn);
+}
+
+/* 이력 ------------------------------------------------------------- */
+
+.history {
+  max-height: 260px;
+}
+
+.history__error {
+  color: var(--danger);
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.history__stats {
+  display: flex;
+  gap: 28px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  flex: 0 0 auto;
+}
+
+.history__body {
+  padding: 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-panel);
+  text-align: left;
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+}
+
+.table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.table__empty {
+  text-align: center;
+  color: var(--text-faint);
+  padding: 22px;
+}
+
+.table__reason {
+  color: var(--text-dim);
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table__eta-ok {
+  color: var(--ok);
+}
+
+.table__eta-warn {
+  color: var(--warn);
+}
+
+/* 좁은 화면에서는 세로로 쌓는다. 관제 화면은 보통 넓지만, 노트북에서
+   확인할 때 배치가 깨지면 검토가 안 된다. */
+@media (max-width: 1180px) {
+  .app__main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+}
+
+/* 도착 예상 ------------------------------------------------------- */
+
+.etapanel {
+  flex: 0 0 auto;
+  text-align: right;
+  min-width: 130px;
+  padding-left: 18px;
+  border-left: 1px solid var(--line);
+}
+
+.etapanel__value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--accent);
+}
+
+/* 최초 예상보다 늦어진 현재 ETA만 경고색으로 표시한다. */
+.etapanel__value--delayed {
+  color: var(--warn);
+}
+
+.etapanel__meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.etapanel__comparison {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: end;
+  gap: 2px 8px;
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid var(--line);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.etapanel__comparison b {
+  color: var(--text-dim);
+}
+
+.etapanel__comparison .etapanel__delay--late {
+  color: var(--danger);
+}
+
+.etapanel--none .etapanel__none-text {
+  font-size: 14px;
+  color: var(--text-faint);
+  margin-top: 6px;
+}
+
+.eta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.eta__label {
+  color: var(--text-faint);
+}
+
+.eta__value {
+  font-weight: 600;
+}
+
+.eta--sure .eta__value {
+  color: var(--accent);
+}
+.eta--delayed .eta__value {
+  color: var(--warn);
+}
+
+
+/* 오른쪽 칸 -------------------------------------------------------- */
+
+.app__side {
+  display: grid;
+  /* 로봇 카드에 auto 를 주면 화면이 낮을 때(1366x768) 카드 둘이 자리를
+     다 먹고 지도 칸이 0 으로 눌린다. 그러면 지도가 아예 안 보인다.
+     카드는 줄어들 수 있게 두고, 지도에는 최소 높이를 보장한다. */
+  /* 지도를 주인공으로 둔다. 로봇 카드는 필요한 만큼만 쓰고 나머지는
+     지도에 준다. 낮은 화면(768)에서도 지도가 270px 은 갖는다. */
+  grid-template-rows: minmax(0, auto) minmax(270px, 1fr);
+  gap: var(--gap);
+  min-height: 0;
+}
+
+/* 로봇 카드가 넘치면 그 안에서 스크롤한다. 지도를 밀어내지 않는다. */
+.fleet {
+  min-height: 0;
+}
+
+.fleet .panel__body {
+  overflow-y: auto;
+}
+
+/* 지도 ------------------------------------------------------------- */
+
+.map {
+  /* 패널이 자기 칸을 넘지 않게 가둔다. 안 그러면 지도가 아래 이력표를
+     덮는다. 지도는 가로세로 비가 정해져 있어 폭에 맞추면 높이가 따라
+     정해지는데, 그 높이가 남은 자리보다 클 수 있다. */
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.map__scale {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.map__frame {
+  position: relative;
+  margin: 8px;
+  /* 남은 높이를 넘지 않게 한다. 그림은 아래 max-height 로 줄어든다. */
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 그림에 딱 맞는 상자. 로봇·목표 표시의 % 기준이 된다.
+   비율(aspect-ratio)을 이 상자가 들고 있고 그림은 상자를 채운다. 그림에
+   max-width/max-height 를 걸어 두면 둘이 서로를 참조해 실제보다 작게
+   멈춘다. 상자가 먼저 정해지면 칸을 꽉 채운다. */
+.map__inner {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  line-height: 0;
+}
+
+.map__image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 4px;
+  /* 88x139 짜리 작은 그림이라 늘리면 흐려진다. 격자를 살려 벽이 또렷하게
+     보이도록 확대 보간을 끈다. */
+  image-rendering: pixelated;
+  /* PGM 은 빈 공간이 밝고 벽이 어둡다. 어두운 관제 화면에서는 그대로 두면
+     빈 공간이 하얗게 번져 눈이 아프다. 반전해서 빈 공간을 어둡게, 벽을
+     밝게 만든다. 지도에서 눈이 좇는 것은 벽이다. */
+  filter: invert(1);
+  opacity: 0.55;
+}
+
+.map__empty {
+  color: var(--text-faint);
+  font-size: 12px;
+  padding: 16px;
+}
+
+/* 로봇 표시. 삼각형 머리로 바라보는 쪽을 알린다. */
+.map__robot {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border-radius: 50%;
+  background: var(--info);
+  border: 2px solid var(--bg-panel);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--bg-base);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+.map__robot--busy {
+  background: var(--accent);
+}
+
+.map__robot b {
+  /* 표시는 방위대로 돌아가지만 숫자는 똑바로 서 있어야 읽힌다. */
+  display: block;
+}
+
+.map__target {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px solid var(--danger);
+  box-shadow: 0 0 0 4px rgba(255, 77, 94, 0.25);
+  animation: detect-blink 1.2s ease-in-out infinite;
+}
+
+/* 지도 위의 좌표 글. 표시 바로 아래에 붙인다. */
+.map__label {
+  position: absolute;
+  transform: translate(-50%, 12px);
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 14px;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: rgba(5, 8, 11, 0.78);
+  color: var(--text-dim);
+  pointer-events: none;
+}
+
+.map__label--target {
+  transform: translate(-50%, -26px);
+  color: var(--danger);
+}
+
+/* 지도를 눌러 신고할 수 있다는 표시 */
+.map__inner--pickable {
+  cursor: crosshair;
+}
+
+.map__picked {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border: 2px solid var(--warn);
+  background: rgba(245, 181, 68, 0.25);
+}
+
+.map__label--picked {
+  transform: translate(-50%, -26px);
+  color: var(--warn);
+}
+
+.map__notice {
+  padding: 4px 12px 8px;
+  font-size: 12px;
+  color: var(--warn);
+}

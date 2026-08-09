@@ -1,0 +1,618 @@
+<meta charset="utf-8">
+<title>SysMon 설계 — Multi-AMR AED 관제</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #16202b;
+    --dim: #5b6b7d;
+    --line: #c9d3de;
+    --soft: #f2f5f8;
+    --accent: #0a7d76;
+    --warn: #a8620a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f151c;
+      --fg: #dce6f2;
+      --dim: #8496ab;
+      --line: #2b3846;
+      --soft: #161f29;
+      --accent: #24c8bd;
+      --warn: #f5b544;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0 auto;
+    padding: 32px 28px 96px;
+    max-width: 1080px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.65 "Noto Sans KR", -apple-system, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 {
+    font-size: 20px;
+    margin: 52px 0 6px;
+    padding-top: 14px;
+    border-top: 2px solid var(--line);
+  }
+  h3 { font-size: 16px; margin: 28px 0 6px; }
+  p { margin: 8px 0; }
+  .lede { color: var(--dim); margin-bottom: 28px; }
+  code, .mono {
+    font-family: "JetBrains Mono", "D2Coding", ui-monospace, monospace;
+    font-size: 0.9em;
+  }
+  code { background: var(--soft); padding: 1px 5px; border-radius: 3px; }
+  figure { margin: 20px 0 8px; }
+  svg { max-width: 100%; height: auto; display: block; }
+  figcaption {
+    color: var(--dim);
+    font-size: 13px;
+    margin-top: 8px;
+    padding-left: 2px;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 14px 0;
+    font-size: 13.5px;
+  }
+  th, td {
+    border: 1px solid var(--line);
+    padding: 7px 9px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: var(--soft); font-weight: 600; }
+  .key { color: var(--accent); font-weight: 700; }
+  .note {
+    border-left: 3px solid var(--accent);
+    background: var(--soft);
+    padding: 10px 14px;
+    margin: 16px 0;
+  }
+  .note b { color: var(--accent); }
+  ul { margin: 8px 0; padding-left: 22px; }
+  li { margin: 3px 0; }
+  .sub { color: var(--dim); font-size: 13px; }
+</style>
+
+<h1>SysMon 설계 — Multi-AMR AED 관제 화면</h1>
+<p class="lede">
+  화면 구성(UI 설계안) · 웹 페이지 구조 · DB 테이블 구조 ·
+  <b>기동에서 화면 반영까지의 적재 로직</b>
+</p>
+
+<div class="note">
+  전체 시스템 설계도(HW/SW 경계, 메시지 인터페이스, function flow)는
+  <code>docs/multi_amr_aed_architecture.drawio</code> 와
+  <code>docs/multi_amr_aed_review_architecture.drawio</code> 에 있습니다.
+  이 문서는 그중 <b>SysMon 파트 내부</b>만 확대한 것입니다.
+</div>
+
+<!-- ============================================================ -->
+<h2>1. 화면 구성 (UI 설계안)</h2>
+
+<p>
+  관제실 화면 한 장에 모든 것이 들어갑니다. 창 크기가 바뀌어도
+  <b>영역의 높이는 고정</b>하고 영상 영역만 늘어납니다. 사건이 터졌을 때
+  운영자가 보던 자리가 흔들리면 안 되기 때문입니다.
+</p>
+
+<figure>
+<svg viewBox="0 0 960 640" role="img"
+     aria-label="관제 화면 와이어프레임. 상단 표시줄, 응급 배너, 4분할 영상과 로봇 상태 패널, 하단 출동 이력의 다섯 영역으로 나뉜다.">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <!-- 화면 바깥 테두리 -->
+  <rect x="14" y="14" width="932" height="592" rx="6"
+        fill="none" stroke="currentColor" stroke-width="2" opacity="0.5"/>
+
+  <!-- ① 상단 표시줄 -->
+  <rect x="26" y="26" width="908" height="46" rx="4"
+        fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="40" y="55" font-size="13" fill="currentColor" font-weight="700">AED</text>
+  <text x="82" y="55" font-size="13" fill="currentColor">Multi-AMR 관제</text>
+  <text x="560" y="55" font-size="12" fill="currentColor" opacity="0.75">
+    관제 서버 연결 · ROS 수신 · 로봇 2대 · 최종 수신 0.2초 전</text>
+  <text x="860" y="56" font-size="16" fill="currentColor" font-weight="700">21:09:44</text>
+  <circle cx="26" cy="26" r="11" fill="currentColor"/>
+  <text x="26" y="30" font-size="12" text-anchor="middle" fill="var(--bg)" font-weight="700">1</text>
+
+  <!-- ② 응급 배너 -->
+  <rect x="26" y="84" width="908" height="76" rx="4"
+        fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <rect x="38" y="96" width="34" height="16" rx="3" fill="currentColor" opacity="0.85"/>
+  <text x="55" y="108" font-size="10" text-anchor="middle" fill="var(--bg)" font-weight="700">확정</text>
+  <text x="82" y="109" font-size="13" fill="currentColor" font-weight="700">evt-0101</text>
+  <text x="38" y="130" font-size="11" fill="currentColor" opacity="0.75">
+    출처 · 카메라 · 구역 · 신뢰도 · 연속검출</text>
+  <text x="600" y="105" font-size="10" fill="currentColor" opacity="0.6">경과</text>
+  <text x="600" y="130" font-size="22" fill="currentColor" font-weight="700">25초</text>
+  <text x="720" y="105" font-size="10" fill="currentColor" opacity="0.6">도착 예상</text>
+  <text x="720" y="130" font-size="22" fill="var(--accent)" font-weight="700">9.7초</text>
+  <text x="850" y="105" font-size="10" fill="currentColor" opacity="0.6">목표 좌표</text>
+  <text x="850" y="128" font-size="14" fill="currentColor" font-weight="600">-2.44, 1.84</text>
+  <circle cx="26" cy="84" r="11" fill="currentColor"/>
+  <text x="26" y="88" font-size="12" text-anchor="middle" fill="var(--bg)" font-weight="700">2</text>
+
+  <!-- ③ 4분할 영상 -->
+  <rect x="26" y="172" width="660" height="316" rx="4"
+        fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="38" y="190" font-size="11" fill="currentColor" opacity="0.75">현장 영상</text>
+  <text x="596" y="190" font-size="11" fill="currentColor" opacity="0.75">1 2 3 4 전체</text>
+
+  <rect x="34" y="200" width="320" height="138" rx="3" fill="currentColor" opacity="0.07"/>
+  <rect x="34" y="200" width="320" height="138" rx="3" fill="none" stroke="currentColor" stroke-width="1"/>
+  <text x="42" y="214" font-size="10" fill="currentColor" opacity="0.7">1</text>
+  <text x="194" y="272" font-size="12" text-anchor="middle" fill="currentColor">TurtleBot 1 · OAK-D</text>
+
+  <rect x="358" y="200" width="320" height="138" rx="3" fill="currentColor" opacity="0.07"/>
+  <rect x="358" y="200" width="320" height="138" rx="3" fill="none" stroke="currentColor" stroke-width="1"/>
+  <text x="366" y="214" font-size="10" fill="currentColor" opacity="0.7">2</text>
+  <text x="518" y="272" font-size="12" text-anchor="middle" fill="currentColor">TurtleBot 2 · OAK-D</text>
+
+  <rect x="34" y="342" width="320" height="138" rx="3" fill="currentColor" opacity="0.07"/>
+  <rect x="34" y="342" width="320" height="138" rx="3" fill="none" stroke="var(--warn)" stroke-width="2.5"/>
+  <text x="42" y="356" font-size="10" fill="currentColor" opacity="0.7">3</text>
+  <text x="194" y="414" font-size="12" text-anchor="middle" fill="currentColor">고정 웹캠 · 골목</text>
+  <text x="330" y="472" font-size="10" text-anchor="end" fill="var(--warn)" font-weight="700">검출 2</text>
+
+  <rect x="358" y="342" width="320" height="138" rx="3" fill="currentColor" opacity="0.07"/>
+  <rect x="358" y="342" width="320" height="138" rx="3" fill="none" stroke="var(--warn)" stroke-width="2.5"/>
+  <text x="366" y="356" font-size="10" fill="currentColor" opacity="0.7">4</text>
+  <text x="518" y="414" font-size="12" text-anchor="middle" fill="currentColor">고정 웹캠 · 개방구역</text>
+  <text x="654" y="472" font-size="10" text-anchor="end" fill="var(--warn)" font-weight="700">검출 1</text>
+
+  <circle cx="26" cy="172" r="11" fill="currentColor"/>
+  <text x="26" y="176" font-size="12" text-anchor="middle" fill="var(--bg)" font-weight="700">3</text>
+
+  <!-- ④ 로봇 상태 -->
+  <rect x="698" y="172" width="236" height="316" rx="4"
+        fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="710" y="190" font-size="11" fill="currentColor" opacity="0.75">로봇 상태</text>
+  <rect x="708" y="200" width="216" height="128" rx="4" fill="currentColor" opacity="0.06"/>
+  <rect x="708" y="200" width="216" height="128" rx="4" fill="none" stroke="currentColor" stroke-width="1"/>
+  <text x="720" y="222" font-size="13" fill="currentColor" font-weight="700">robot1</text>
+  <text x="720" y="246" font-size="10" fill="currentColor" opacity="0.6">속도 / 배터리</text>
+  <text x="720" y="266" font-size="10" fill="currentColor" opacity="0.6">위치 / 방위</text>
+  <text x="720" y="296" font-size="10" fill="currentColor" opacity="0.75">통신 위치추정 Nav2 경로</text>
+  <rect x="708" y="338" width="216" height="128" rx="4" fill="currentColor" opacity="0.06"/>
+  <rect x="708" y="338" width="216" height="128" rx="4" fill="none" stroke="currentColor" stroke-width="1"/>
+  <text x="720" y="360" font-size="13" fill="currentColor" font-weight="700">robot2</text>
+  <circle cx="698" cy="172" r="11" fill="currentColor"/>
+  <text x="698" y="176" font-size="12" text-anchor="middle" fill="var(--bg)" font-weight="700">4</text>
+
+  <!-- ⑤ 출동 이력 -->
+  <rect x="26" y="500" width="908" height="94" rx="4"
+        fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="38" y="518" font-size="11" fill="currentColor" opacity="0.75">출동 이력</text>
+  <text x="38" y="540" font-size="11" fill="currentColor" opacity="0.6">
+    총 출동 · 도착 완료 · 평균 응답 · 최단 · 최장 · 예상 오차 · 예상보다 늦음</text>
+  <line x1="38" y1="550" x2="922" y2="550" stroke="currentColor" stroke-width="1" opacity="0.4"/>
+  <text x="38" y="566" font-size="10" fill="currentColor" opacity="0.55">
+    임무 | 로봇 | 상태 | 접수 | 도착 | 응답시간 | 재할당 | 사유</text>
+  <line x1="38" y1="574" x2="922" y2="574" stroke="currentColor" stroke-width="1" opacity="0.2"/>
+  <text x="38" y="588" font-size="10" fill="currentColor" opacity="0.4">evt-0101-aed …</text>
+  <circle cx="26" cy="500" r="11" fill="currentColor"/>
+  <text x="26" y="504" font-size="12" text-anchor="middle" fill="var(--bg)" font-weight="700">5</text>
+</svg>
+<figcaption>
+  관제 화면 와이어프레임. ③ 두 타일의 굵은 테두리는 그 갈래에 검출이 잡혔다는 표시로,
+  4분할에서는 숫자만으로 눈에 들어오지 않기 때문에 테두리로 알린다.
+</figcaption>
+</figure>
+
+<table>
+  <tr><th>영역</th><th>보여주는 것</th><th>어디서 오나</th><th>갱신</th></tr>
+  <tr>
+    <td class="key">① 상단 표시줄</td>
+    <td>서버·ROS 연결, 로봇 수, 마지막 수신 경과, 현재 시각</td>
+    <td>WebSocket 스냅샷</td><td>0.25초</td>
+  </tr>
+  <tr>
+    <td class="key">② 응급 배너</td>
+    <td>진행 중 사건, 경과 시간, 도착 예상, 목표 좌표, 재할당 배지</td>
+    <td>WebSocket 스냅샷</td><td>0.25초 / 경과·ETA는 매초</td>
+  </tr>
+  <tr>
+    <td class="key">③ 4분할 영상</td>
+    <td>웹캠 2 + 로봇 OAK-D 2. 검출 시 테두리 경보</td>
+    <td>MJPEG 스트림 + 스냅샷의 검출 수</td><td>연속</td>
+  </tr>
+  <tr>
+    <td class="key">④ 로봇 상태</td>
+    <td>속도·배터리·위치·방위, 통신/위치추정/Nav2/경로 플래그</td>
+    <td>WebSocket 스냅샷</td><td>0.25초</td>
+  </tr>
+  <tr>
+    <td class="key">⑤ 출동 이력</td>
+    <td>누적 통계와 지난 임무 표</td>
+    <td><b>SQLite</b> (REST)</td><td>5초</td>
+  </tr>
+</table>
+
+<p>
+  ③ 영역은 <b>숫자키 1~4</b> 로 한 갈래만 크게 볼 수 있습니다. 같은 키나
+  <code>Esc</code> 로 4분할로 돌아옵니다. 4분할에서는 멀리 있는 검출 상자가
+  안 보이는데, 급할 때 마우스로 타일을 찾는 것보다 손이 먼저 가기 때문에
+  단축키를 먼저 뒀습니다.
+</p>
+
+<div class="note">
+  <b>사건이 없을 때도 ② 의 높이는 그대로입니다.</b> 배너가 접히면 사건이
+  터질 때마다 아래 영상이 통째로 밀려 내려가, 운영자가 보던 자리를 다시
+  찾아야 합니다.
+</div>
+
+<!-- ============================================================ -->
+<h2>2. 웹 페이지 구조</h2>
+
+<p>
+  단일 페이지입니다. 라우팅이 없습니다. 관제 화면은 한 장을 계속 띄워 두는
+  물건이고, 페이지를 옮겨 다니는 순간 놓치는 것이 생깁니다.
+</p>
+
+<table>
+  <tr><th>컴포넌트</th><th>파일</th><th>맡은 것</th></tr>
+  <tr><td><code>App</code></td><td><code>src/App.tsx</code></td><td>배치와 WebSocket 하나를 전체에 나눠 준다</td></tr>
+  <tr><td><code>TopBar</code></td><td><code>components/layout/</code></td><td>① 연결 상태와 시계</td></tr>
+  <tr><td><code>ActiveEvent</code> + <code>EtaPanel</code></td><td><code>components/mission/</code></td><td>② 경보 배너와 도착 예상</td></tr>
+  <tr><td><code>VideoWall</code> → <code>VideoTile</code> ×4</td><td><code>components/video/</code></td><td>③ 4분할, 확대, 검출 경보</td></tr>
+  <tr><td><code>RobotCard</code> ×2</td><td><code>components/robot/</code></td><td>④ 로봇 상태</td></tr>
+  <tr><td><code>MissionTable</code></td><td><code>components/mission/</code></td><td>⑤ 이력과 통계</td></tr>
+  <tr><td><code>useLiveSnapshot</code></td><td><code>hooks/</code></td><td>소켓 하나를 열고 전체가 그것을 본다</td></tr>
+</table>
+
+<h3>백엔드가 여는 창구</h3>
+<table>
+  <tr><th>경로</th><th>방식</th><th>내용</th><th>출처</th></tr>
+  <tr><td><code>/ws/live</code></td><td>WebSocket</td><td>로봇·사건·임무·영상 상태 한 장</td><td>메모리</td></tr>
+  <tr><td><code>/api/video/{id}</code></td><td>MJPEG</td><td>영상 한 갈래</td><td>메모리</td></tr>
+  <tr><td><code>/api/missions</code></td><td>GET</td><td>최근 임무 요약</td><td><b>SQLite</b></td></tr>
+  <tr><td><code>/api/missions/{id}</code></td><td>GET</td><td>그 임무의 상태 전이 전부</td><td><b>SQLite</b></td></tr>
+  <tr><td><code>/api/stats/response-time</code></td><td>GET</td><td>접수→도착 통계</td><td><b>SQLite</b></td></tr>
+  <tr><td><code>/api/stats/travel-time</code></td><td>GET</td><td>출동→도착 통계</td><td><b>SQLite</b></td></tr>
+  <tr><td><code>/api/stats/eta-accuracy</code></td><td>GET</td><td>예상 대 실제 오차</td><td><b>SQLite</b></td></tr>
+  <tr><td><code>/api/robots/{id}/track</code></td><td>GET</td><td>이동 궤적</td><td><b>SQLite</b></td></tr>
+  <tr><td><code>/api/health</code></td><td>GET</td><td>서버·ROS·영상 상태</td><td>메모리</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>3. 기동 → 빈 DB → 적재 → 화면 반영</h2>
+
+<p>
+  이 그림이 SysMon 파트의 핵심입니다. 서버가 뜨는 순간부터 화면에 숫자가
+  찍히기까지 무엇이 어떤 순서로 일어나는지, 그리고
+  <b>같은 입력이 왜 두 갈래로 갈라지는지</b>를 보여줍니다.
+</p>
+
+<figure>
+<svg viewBox="0 0 960 690" role="img"
+     aria-label="서버 기동에서 화면 반영까지의 흐름. 스키마 생성으로 빈 DB를 만든 뒤, 수신한 ROS 메시지가 메모리 경로와 SQLite 경로로 갈라져 각각 WebSocket과 REST로 화면에 닿는다.">
+  <defs>
+    <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+    <marker id="a2c" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--accent)"/>
+    </marker>
+  </defs>
+
+  <!-- 단계 1 -->
+  <rect x="330" y="16" width="300" height="46" rx="5"
+        fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="480" y="36" font-size="13" text-anchor="middle" fill="currentColor" font-weight="700">① 서버 기동</text>
+  <text x="480" y="53" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.7">python3 -m backend.main</text>
+  <line x1="480" y1="62" x2="480" y2="88" stroke="currentColor" stroke-width="1.5" marker-end="url(#a2)"/>
+
+  <!-- 단계 2 -->
+  <rect x="290" y="90" width="380" height="62" rx="5"
+        fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="480" y="110" font-size="13" text-anchor="middle" fill="currentColor" font-weight="700">② 스키마 실행 — 빈 DB 생성</text>
+  <text x="480" y="127" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.7">Repository.__init__ → schema.sql</text>
+  <text x="480" y="143" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.7">CREATE TABLE IF NOT EXISTS ×5 · WAL · foreign_keys</text>
+  <line x1="480" y1="152" x2="480" y2="178" stroke="currentColor" stroke-width="1.5" marker-end="url(#a2)"/>
+  <text x="492" y="170" font-size="10" fill="currentColor" opacity="0.65">표 5개, 행 0</text>
+
+  <!-- 단계 3 -->
+  <rect x="290" y="180" width="380" height="58" rx="5"
+        fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="480" y="200" font-size="13" text-anchor="middle" fill="currentColor" font-weight="700">③ lifespan startup</text>
+  <text x="480" y="217" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.7">hub.start() · RosBridge.start()</text>
+  <text x="480" y="231" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.7">실제 ROS 토픽 구독 시작</text>
+  <line x1="480" y1="238" x2="480" y2="264" stroke="currentColor" stroke-width="1.5" marker-end="url(#a2)"/>
+
+  <!-- 단계 4 -->
+  <rect x="250" y="266" width="460" height="58" rx="5"
+        fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="480" y="286" font-size="13" text-anchor="middle" fill="currentColor" font-weight="700">④ ROS 메시지 수신 → 도메인 객체</text>
+  <text x="480" y="303" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.7">RobotState · EmergencyEvent · MissionStatus · CompressedImage</text>
+  <text x="480" y="317" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.7">ros/converters.py — uint8 → 이름, Time → epoch</text>
+  <line x1="480" y1="324" x2="480" y2="348" stroke="currentColor" stroke-width="1.5" marker-end="url(#a2)"/>
+
+  <!-- 단계 5 : 분기점 -->
+  <rect x="330" y="350" width="300" height="46" rx="5"
+        fill="none" stroke="var(--accent)" stroke-width="2"/>
+  <text x="480" y="370" font-size="13" text-anchor="middle" fill="var(--accent)" font-weight="700">⑤ context.on_*</text>
+  <text x="480" y="387" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.75">여기서 두 갈래로 갈라진다</text>
+
+  <!-- 분기 선 -->
+  <path d="M400 396 L400 420 L215 420 L215 442" fill="none"
+        stroke="var(--accent)" stroke-width="2" marker-end="url(#a2c)"/>
+  <path d="M560 396 L560 420 L745 420 L745 442" fill="none"
+        stroke="var(--accent)" stroke-width="2" marker-end="url(#a2c)"/>
+
+  <!-- 왼쪽: 메모리 -->
+  <rect x="60" y="444" width="310" height="66" rx="5"
+        fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="1.5"/>
+  <text x="215" y="464" font-size="12" text-anchor="middle" fill="currentColor" font-weight="700">Ⓐ LiveState (메모리)</text>
+  <text x="215" y="481" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.7">지금 상태만. 로봇 위치는 10 Hz 로 온다</text>
+  <text x="215" y="496" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.7">6초 넘게 끊기면 network_ok=false 로 뒤집는다</text>
+  <line x1="215" y1="510" x2="215" y2="536" stroke="currentColor" stroke-width="1.5" marker-end="url(#a2)"/>
+  <text x="227" y="528" font-size="10" fill="currentColor" opacity="0.65">0.25초마다</text>
+
+  <rect x="60" y="538" width="310" height="46" rx="5"
+        fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="215" y="558" font-size="12" text-anchor="middle" fill="currentColor" font-weight="700">WebSocket /ws/live</text>
+  <text x="215" y="575" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.7">SystemSnapshot JSON</text>
+
+  <!-- 오른쪽: DB -->
+  <rect x="590" y="444" width="310" height="66" rx="5"
+        fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="1.5"/>
+  <text x="745" y="464" font-size="12" text-anchor="middle" fill="currentColor" font-weight="700">Ⓑ Repository → SQLite</text>
+  <text x="745" y="481" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.7">일어난 일만. 상태 전이는 덧붙이기만 한다</text>
+  <text x="745" y="496" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.7">로봇 표본은 1초에 한 번으로 솎는다</text>
+  <line x1="745" y1="510" x2="745" y2="536" stroke="currentColor" stroke-width="1.5" marker-end="url(#a2)"/>
+  <text x="757" y="528" font-size="10" fill="currentColor" opacity="0.65">5초마다 조회</text>
+
+  <rect x="590" y="538" width="310" height="46" rx="5"
+        fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="745" y="558" font-size="12" text-anchor="middle" fill="currentColor" font-weight="700">REST /api/missions · /api/stats/*</text>
+  <text x="745" y="575" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.7">되짚어 만든 요약</text>
+
+  <!-- 화면 -->
+  <path d="M215 584 L215 606 L400 606 L400 622" fill="none"
+        stroke="currentColor" stroke-width="1.5" marker-end="url(#a2)"/>
+  <path d="M745 584 L745 606 L560 606 L560 622" fill="none"
+        stroke="currentColor" stroke-width="1.5" marker-end="url(#a2)"/>
+
+  <rect x="290" y="624" width="380" height="50" rx="5"
+        fill="none" stroke="currentColor" stroke-width="2"/>
+  <text x="480" y="645" font-size="13" text-anchor="middle" fill="currentColor" font-weight="700">⑥ 웹 페이지 반영</text>
+  <text x="480" y="663" font-size="11" text-anchor="middle" fill="currentColor" opacity="0.75">①②③④ 는 Ⓐ 에서 · ⑤ 이력은 Ⓑ 에서</text>
+</svg>
+<figcaption>
+  ⑤ 가 이 설계의 갈림길이다. 같은 메시지가 <b>Ⓐ 메모리</b>와 <b>Ⓑ SQLite</b> 로
+  동시에 가고, 화면의 위쪽 네 영역과 아래쪽 이력이 서로 다른 경로로 채워진다.
+</figcaption>
+</figure>
+
+<h3>왜 갈랐나</h3>
+<p>
+  로봇 위치는 <b>10 Hz</b> 로 들어옵니다. 그때마다 DB 에 쓰고 다시 읽으면
+  디스크가 병목이 되고, 화면은 0.25초마다 갱신되어야 하는데 그 왕복을
+  기다리게 됩니다. 그래서 <b>지금 상태는 메모리에만</b> 두고 WebSocket 으로
+  바로 내보냅니다.
+</p>
+<p>
+  반대로 이력은 서버가 죽어도 남아야 하고, 사후에 "그때 왜 늦었나"를 되짚는
+  근거입니다. 그래서 <b>일어난 일만 DB 에</b> 남깁니다. 로봇 표본은
+  그대로 넣으면 로봇 2대에 하루 <span class="mono">172만 행</span>이라
+  1초에 한 번으로 솎습니다.
+</p>
+
+<div class="note">
+  <b>화면의 두 숫자가 서로 다른 경로로 옵니다.</b> 상단 배너의 경과 시간은
+  메모리에서, 하단 이력의 응답 시간은 DB 에서 옵니다. 같은 사건인데 경로가
+  다르므로, 둘이 어긋나 보이면 어느 쪽이 밀렸는지부터 봐야 합니다.
+</div>
+
+<h3>빈 DB 에서 시작해도 화면이 뜬다</h3>
+<p>
+  <code>CREATE TABLE IF NOT EXISTS</code> 라서 파일이 없으면 만들고 있으면
+  그대로 씁니다. 행이 0 이어도 통계는 <code>null</code> 로 나가고 화면은
+  "기록 없음"을 그립니다. ROS 데이터가 아직 수신되지 않은 상태에서도
+  서버와 화면 자체는 정상적으로 시작하고 연결 대기 상태를 표시합니다.
+</p>
+
+<!-- ============================================================ -->
+<h2>4. DB 테이블 구조</h2>
+
+<figure>
+<svg viewBox="0 0 960 560" role="img"
+     aria-label="다섯 개 표의 관계도. 배정만 신고에 외래키로 묶이고, 이력과 측정은 조인으로만 연결된다.">
+  <defs>
+    <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <!-- emergency_events -->
+  <rect x="330" y="20" width="300" height="150" rx="5"
+        fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="2"/>
+  <rect x="330" y="20" width="300" height="28" rx="5" fill="currentColor" fill-opacity="0.12"/>
+  <text x="344" y="39" font-size="13" fill="currentColor" font-weight="700">emergency_events</text>
+  <text x="620" y="39" font-size="10" text-anchor="end" fill="currentColor" opacity="0.6">신고 한 건</text>
+  <text x="344" y="66" font-size="11" fill="var(--accent)" font-weight="700">PK  event_id</text>
+  <text x="344" y="85" font-size="11" fill="currentColor" opacity="0.8">detected_at · called_at · updated_at</text>
+  <text x="344" y="103" font-size="11" fill="currentColor" opacity="0.8">map_x · map_y · frame_id</text>
+  <text x="344" y="121" font-size="11" fill="currentColor" opacity="0.8">status · confidence · consecutive_detections</text>
+  <text x="344" y="139" font-size="11" fill="currentColor" opacity="0.8">source_id · camera_id · zone_id</text>
+  <text x="344" y="159" font-size="10" fill="currentColor" opacity="0.55">status 는 uint8 이 아니라 이름 문자열</text>
+
+  <!-- mission_assignments -->
+  <rect x="40" y="230" width="300" height="126" rx="5"
+        fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="2"/>
+  <rect x="40" y="230" width="300" height="28" rx="5" fill="currentColor" fill-opacity="0.12"/>
+  <text x="54" y="249" font-size="13" fill="currentColor" font-weight="700">mission_assignments</text>
+  <text x="330" y="249" font-size="10" text-anchor="end" fill="currentColor" opacity="0.6">배정 한 판</text>
+  <text x="54" y="276" font-size="11" fill="var(--accent)" font-weight="700">PK  mission_id + assignment_version</text>
+  <text x="54" y="295" font-size="11" fill="var(--warn)" font-weight="700">FK  event_id</text>
+  <text x="54" y="314" font-size="11" fill="currentColor" opacity="0.8">robot_id · role</text>
+  <text x="54" y="332" font-size="11" fill="currentColor" opacity="0.8">target_x · target_y · assigned_at</text>
+  <text x="54" y="350" font-size="10" fill="currentColor" opacity="0.55">재할당하면 version 이 올라간 새 행</text>
+
+  <!-- mission_events -->
+  <rect x="620" y="230" width="300" height="126" rx="5"
+        fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="2"/>
+  <rect x="620" y="230" width="300" height="28" rx="5" fill="currentColor" fill-opacity="0.12"/>
+  <text x="634" y="249" font-size="13" fill="currentColor" font-weight="700">mission_events</text>
+  <text x="910" y="249" font-size="10" text-anchor="end" fill="currentColor" opacity="0.6">상태 전이</text>
+  <text x="634" y="276" font-size="11" fill="var(--accent)" font-weight="700">PK  id (AUTOINCREMENT)</text>
+  <text x="634" y="295" font-size="11" fill="currentColor" opacity="0.8">mission_id · event_id · robot_id</text>
+  <text x="634" y="314" font-size="11" fill="currentColor" opacity="0.8">assignment_version · state · stamp · reason</text>
+  <text x="634" y="336" font-size="10" fill="currentColor" opacity="0.55">덧붙이기만. UPDATE/DELETE 없음</text>
+  <text x="634" y="350" font-size="10" fill="currentColor" opacity="0.55">임무 요약은 여기서 매번 되짚는다</text>
+
+  <!-- robot_samples -->
+  <rect x="40" y="400" width="300" height="118" rx="5"
+        fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="2"/>
+  <rect x="40" y="400" width="300" height="28" rx="5" fill="currentColor" fill-opacity="0.12"/>
+  <text x="54" y="419" font-size="13" fill="currentColor" font-weight="700">robot_samples</text>
+  <text x="330" y="419" font-size="10" text-anchor="end" fill="currentColor" opacity="0.6">1초에 한 번</text>
+  <text x="54" y="446" font-size="11" fill="var(--accent)" font-weight="700">PK  id (AUTOINCREMENT)</text>
+  <text x="54" y="465" font-size="11" fill="currentColor" opacity="0.8">robot_id · stamp · map_x · map_y · yaw_deg</text>
+  <text x="54" y="483" font-size="11" fill="currentColor" opacity="0.8">speed_mps · battery_percentage</text>
+  <text x="54" y="501" font-size="11" fill="currentColor" opacity="0.8">availability · role · network_ok · nav2_ok …</text>
+
+  <!-- eta_records -->
+  <rect x="620" y="400" width="300" height="118" rx="5"
+        fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="2"/>
+  <rect x="620" y="400" width="300" height="28" rx="5" fill="currentColor" fill-opacity="0.12"/>
+  <text x="634" y="419" font-size="13" fill="currentColor" font-weight="700">eta_records</text>
+  <text x="910" y="419" font-size="10" text-anchor="end" fill="currentColor" opacity="0.6">예상 대 실제</text>
+  <text x="634" y="446" font-size="11" fill="var(--accent)" font-weight="700">PK  request_id + robot_id</text>
+  <text x="634" y="465" font-size="11" fill="currentColor" opacity="0.8">predicted_sec · actual_sec · error_sec</text>
+  <text x="634" y="483" font-size="11" fill="currentColor" opacity="0.8">status · stamp</text>
+  <text x="634" y="503" font-size="10" fill="currentColor" opacity="0.55">외래키 없음 — 측정은 그 자체로 값이 있다</text>
+
+  <!-- 관계선: assignments → events (FK, 실선) -->
+  <path d="M250 230 L250 200 L330 200 L330 130" fill="none"
+        stroke="var(--warn)" stroke-width="2.5" marker-end="url(#a3)"/>
+  <text x="196" y="194" font-size="11" fill="var(--warn)" font-weight="700">FOREIGN KEY</text>
+  <text x="182" y="208" font-size="10" fill="currentColor" opacity="0.7">신고 없는 배정은 막는다</text>
+
+  <!-- mission_events → emergency_events (조인, 점선) -->
+  <path d="M710 230 L710 200 L630 200 L630 130" fill="none"
+        stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a3)"/>
+  <text x="722" y="194" font-size="11" fill="currentColor" opacity="0.85" font-weight="700">LEFT JOIN (FK 없음)</text>
+  <text x="722" y="208" font-size="10" fill="currentColor" opacity="0.65">신고가 없어도 이력은 남는다</text>
+
+  <!-- eta_records ⇢ emergency_events (이름 규칙) -->
+  <path d="M770 400 L770 372 L940 372 L940 96 L634 96" fill="none"
+        stroke="currentColor" stroke-width="1.2" stroke-dasharray="3 4" opacity="0.6"/>
+  <text x="800" y="366" font-size="10" fill="currentColor" opacity="0.6">request_id = event_id (이름 규칙만 일치)</text>
+</svg>
+<figcaption>
+  표 다섯 개와 그 사이의 세 가지 연결. 굵은 실선만 DB 가 강제하는 외래키이고,
+  나머지 둘은 질의에서만 이어 붙인다.
+</figcaption>
+</figure>
+
+<h3>키를 표마다 다르게 잡은 이유</h3>
+<table>
+  <tr><th>표</th><th>기본키</th><th>왜</th></tr>
+  <tr>
+    <td><code>emergency_events</code></td><td><b>자연키</b> event_id</td>
+    <td>검출 노드가 만든 id. DB 가 새로 매기면 현장 로그와 관제 기록을 못 맞춘다</td>
+  </tr>
+  <tr>
+    <td><code>mission_assignments</code></td><td><b>복합키</b> mission_id + version</td>
+    <td>재할당은 새 임무가 아니라 <b>같은 임무의 다음 판</b>. 덮어쓰면 "robot1 이 먼저 갔다 실패했다"가 사라진다</td>
+  </tr>
+  <tr>
+    <td><code>mission_events</code></td><td><b>대리키</b> id</td>
+    <td>재할당하면 <code>en_route</code> 가 두 번, 복구하면 또 나온다. 자연키가 없다</td>
+  </tr>
+  <tr>
+    <td><code>robot_samples</code></td><td><b>대리키</b> id</td>
+    <td>표본에는 자연키가 없다</td>
+  </tr>
+  <tr>
+    <td><code>eta_records</code></td><td><b>복합키</b> request_id + robot_id</td>
+    <td>재할당되면 로봇마다 한 건씩 남는다</td>
+  </tr>
+</table>
+
+<h3>uint8 을 숫자 그대로 넣지 않는다</h3>
+<p>
+  DB 를 열어 <code>3</code> 만 있으면 그게 무슨 상태인지 코드를 봐야 하고,
+  상수가 중간에 추가돼 번호가 밀리면 <b>과거 기록의 뜻이 바뀝니다.</b>
+  그래서 이름 문자열로 넣습니다. 변환은
+  <code>domain/enums.py</code> 한 곳에서만 하고, 화면(TypeScript)도 같은
+  문자열을 쓰므로 오타는 컴파일 오류로 드러납니다.
+</p>
+
+<!-- ============================================================ -->
+<h2>5. 설계도와 코드 매칭</h2>
+
+<p class="sub">발표 때 디렉토리를 열어 놓고 이 표를 짚으면 됩니다.</p>
+
+<table>
+  <tr><th>설계도 블록</th><th>코드</th><th>맡은 것</th></tr>
+  <tr><td>② 스키마 · 빈 DB</td><td><code>store/schema.sql</code></td><td>표 5개, 인덱스 6개, WAL</td></tr>
+  <tr><td>② 연결 · ④ 적재</td><td><code>store/repository.py</code></td><td>SQL 전부. 이 파일 밖으로 안 나간다</td></tr>
+  <tr><td>③ 기동</td><td><code>main.py</code> · <code>context.py</code></td><td>lifespan 으로 시작·종료를 짝지어 둔다</td></tr>
+  <tr><td>④ 수신 · 변환</td><td><code>ros/bridge.py</code> · <code>ros/converters.py</code></td><td>rclpy 를 아는 유일한 곳</td></tr>
+  <tr><td>④ 인터페이스 이름</td><td><code>ros/topics.py</code></td><td>토픽 이름과 QoS. rclpy 없이도 import 된다</td></tr>
+  <tr><td>⑤ 갈림길</td><td><code>context.py: on_robot / on_event / on_mission / on_eta_record</code></td><td>메모리와 DB 로 동시에 보낸다</td></tr>
+  <tr><td>Ⓐ 메모리</td><td><code>stream/live_state.py</code> · <code>stream/frames.py</code></td><td>지금 상태. 오래된 표본은 통신 이상으로 뒤집는다</td></tr>
+  <tr><td>Ⓐ 송출</td><td><code>stream/hub.py</code> · <code>api/live.py</code></td><td>0.25초마다 방송</td></tr>
+  <tr><td>Ⓑ 조회</td><td><code>api/history.py</code></td><td>이력·통계 창구</td></tr>
+  <tr><td>③ 영상</td><td><code>api/video.py</code></td><td>MJPEG</td></tr>
+  <tr><td>①~⑤ 화면</td><td><code>frontend/src/components/</code></td><td>layout · video · robot · mission</td></tr>
+  <tr><td>타입 정의</td><td><code>domain/models.py</code> ↔ <code>frontend/src/types/telemetry.ts</code></td><td>1:1. 한쪽을 고치면 다른 쪽도 고친다</td></tr>
+</table>
+
+<div class="note">
+  <b><code>domain/</code> 은 ROS 도 HTTP 도 모릅니다.</b>
+  <code>aed_interfaces</code> 를 import 하는 곳은 <code>ros/</code> 뿐입니다.
+  그래서 도메인 계산은 ROS 실행 없이 단위 테스트할 수 있고, 리뷰할 때도
+  ROS 를 몰라도 읽힙니다. 이것이 이 구조의 유일한 주장입니다.
+</div>
+
+<!-- ============================================================ -->
+<h2>6. 아직 이어지지 않은 곳</h2>
+
+<p>
+  기능 통합 전이라 끊겨 있는 자리입니다. 관제 쪽은 두 경로를 모두 구독해
+  두어, 이어붙인 뒤에도 고칠 것이 없습니다.
+</p>
+
+<table>
+  <tr><th>자리</th><th>지금</th><th>막히는 것</th></tr>
+  <tr>
+    <td><code>location_mapper</code></td><td>29줄 뼈대</td>
+    <td><b>검출이 출동으로 안 이어짐.</b> <code>vision_detector</code> 는 카메라별 토픽에 내고 <code>mission_manager</code> 는 통합 토픽을 듣는다</td>
+  </tr>
+  <tr>
+    <td><code>robot_state_monitor</code></td><td>29줄 뼈대</td>
+    <td><code>robot_samples</code> 가 안 쌓이고 로봇 카드가 빈칸</td>
+  </tr>
+  <tr>
+    <td>배정 인터페이스</td><td><code>MissionAssignment</code> topic</td>
+    <td><code>DeliverAed</code> action 으로 교체 예정. DB 스키마는 안 바뀐다</td>
+  </tr>
+  <tr>
+    <td><code>crowd_level</code></td><td>메시지에는 있으나 DB 가 안 읽음</td>
+    <td>"왜 2대가 갔나"를 사후에 못 되짚음</td>
+  </tr>
+</table>
+
+<p class="sub" style="margin-top:36px">
+  인터페이스 사양 <code>docs/interfaces.md</code> ·
+  DB 대응표 <code>docs/db_interfaces.md</code> ·
+  키와 쿼리 <code>docs/db_queries.md</code> ·
+  실행 방법 <code>src/aed_hmi/README.md</code>
+</p>

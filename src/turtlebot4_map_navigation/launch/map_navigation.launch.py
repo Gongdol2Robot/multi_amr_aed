@@ -20,6 +20,9 @@ def generate_launch_description() -> LaunchDescription:
         'turtlebot4_navigation'
     )
     aed_bringup = get_package_share_directory('aed_bringup')
+    multi_robot_emergency = get_package_share_directory(
+        'multi_robot_emergency'
+    )
     nav2_bringup = get_package_share_directory('nav2_bringup')
     sensor_recovery = get_package_share_directory('sensor_recovery')
 
@@ -47,7 +50,7 @@ def generate_launch_description() -> LaunchDescription:
         [nav2_bringup, 'launch', 'rviz_launch.py']
     )
     rviz_config = PathJoinSubstitution(
-        [nav2_bringup, 'rviz', 'nav2_namespaced_view.rviz']
+        [multi_robot_emergency, 'rviz', 'nav2_crowd_view.rviz']
     )
     lidar_fallback_launch = PathJoinSubstitution(
         [sensor_recovery, 'launch', 'lidar_fallback.launch.py']
