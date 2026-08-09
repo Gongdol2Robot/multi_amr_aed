@@ -1,4 +1,4 @@
-"""Convert points between a fixed camera image and a ROS map."""
+"""고정 카메라 영상의 픽셀 좌표와 ROS map 좌표를 상호 변환한다."""
 
 import os
 from math import hypot
@@ -38,7 +38,7 @@ def _default_config_path(camera_id: str = None) -> str:
 
 
 class Homography:
-    """Transform floor-plane points between pixel and map coordinates."""
+    """바닥 평면상의 점을 픽셀 좌표와 map 좌표 사이에서 변환한다."""
 
     def __init__(self, matrix, correspondences=None, camera=None,
                  survey_area=None):

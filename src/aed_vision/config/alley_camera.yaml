@@ -25,6 +25,7 @@
     pose_min_torso_keypoints: 3
     iou: 0.5
     imgsz: 640
+    # 첫 GPU를 우선 사용하며, CUDA가 없거나 GPU 0이 없으면 CPU로 자동 전환한다.
     inference_device: "cuda:0"
     confirmation_window: 10
     confirmation_hits: 6

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -143,6 +144,7 @@ class InferencePipeline:
         pose_min_box_area: float,
         pose_min_torso_keypoints: int,
     ) -> None:
+        import torch
         from ultralytics import YOLO
 
         self.enable_crowd = enable_crowd
@@ -180,8 +182,36 @@ class InferencePipeline:
                 "helper_max_distance_ratio must be in (0, 1]"
             )
         self.options = {"iou": iou, "imgsz": imgsz, "verbose": False}
-        if device:
-            self.options["device"] = device
+
+        # YAML에서 cuda/cuda:N을 명시했더라도 CUDA 런타임이나 해당 번호의 GPU가
+        # 없으면 노드 시작을 실패시키지 않고 CPU 추론으로 전환한다. 빈 문자열은
+        # Ultralytics의 자동 장치 선택을 유지하며, cpu 등 다른 값도 그대로 넘긴다.
+        requested_device = device.strip()
+        if requested_device.lower().startswith("cuda"):
+            cuda_unavailable = not torch.cuda.is_available()
+            if not cuda_unavailable and ":" in requested_device:
+                try:
+                    # CUDA 자체가 사용 가능해도 cuda:1처럼 존재하지 않는 GPU를
+                    # 요청할 수 있으므로 실제 장치 개수까지 확인한다.
+                    cuda_index = int(requested_device.rsplit(":", 1)[1])
+                    cuda_unavailable = not (
+                        0 <= cuda_index < torch.cuda.device_count()
+                    )
+                except ValueError:
+                    # 잘못된 device 문자열은 Ultralytics가 명확한 오류로 보고한다.
+                    pass
+            if cuda_unavailable:
+                # warnings를 사용해 ROS 로그뿐 아니라 단독 실행/테스트에서도
+                # fallback 사실이 노출되도록 한다.
+                warnings.warn(
+                    f"Requested inference device {requested_device!r} is not "
+                    "available; falling back to CPU.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                requested_device = "cpu"
+        if requested_device:
+            self.options["device"] = requested_device
 
         # backend에 따라 두 모델 중 하나만 로드한다(메모리·연산량 절약).
         # mannequin_detect: 목각인형 파인튜닝 검출 모델.

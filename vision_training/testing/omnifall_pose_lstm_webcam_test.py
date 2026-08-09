@@ -12,12 +12,13 @@ import numpy as np
 import torch
 from torch import nn
 
-from pose_posture import PostureHistory, classify_posture
+from posture_utils import PostureHistory, classify_posture
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PACKAGE_ROOT = ROOT.parent
 DEFAULT_CLASSIFIER = ROOT / "omnifall_yolo11n_pose_lstm_best.pt"
-DEFAULT_POSE = ROOT / "models" / "yolo11n-pose.pt"
+DEFAULT_POSE = PACKAGE_ROOT / "src" / "aed_vision" / "models" / "yolo11n-pose.pt"
 DEFAULT_OUTPUT = ROOT / "runs" / "pose_lstm_webcam"
 COLORS = {
     "NORMAL": (0, 200, 0),
