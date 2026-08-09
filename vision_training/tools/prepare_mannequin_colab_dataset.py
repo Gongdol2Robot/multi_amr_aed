@@ -7,60 +7,23 @@ import argparse
 from collections import Counter
 import json
 from pathlib import Path
-import random
-import re
 import shutil
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE = (
-    ROOT / "training" / "dataset" / "final_proj-Folder- raw.coco"
+    ROOT / "training" / "dataset" / "mannequin_combined.coco"
 )
 DEFAULT_OUTPUT = ROOT / "training" / "mannequin_dataset.zip"
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
-SPLIT_RATIOS = {"train": 0.8, "val": 0.1, "test": 0.1}
-TIMESTAMP = re.compile(r"_(\d{8})_(\d{6})_")
+SOURCE_SPLITS = {"train": "train", "valid": "val", "val": "val", "test": "test"}
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
-
-
-def capture_group(file_name: str) -> str:
-    """인접 연속 프레임을 10초 묶음으로 만들어 split 누수를 줄인다."""
-    match = TIMESTAMP.search(file_name)
-    if match is None:
-        return file_name
-    date, hhmmss = match.groups()
-    return f"{date}_{hhmmss[:4]}_{int(hhmmss[4:]) // 10}"
-
-
-def assign_splits(images: list[dict], seed: int) -> dict[int, str]:
-    groups: dict[str, list[dict]] = {}
-    for image in images:
-        groups.setdefault(capture_group(image["file_name"]), []).append(image)
-    grouped = list(groups.values())
-    random.Random(seed).shuffle(grouped)
-    grouped.sort(key=len, reverse=True)
-    targets = {
-        split: len(images) * ratio for split, ratio in SPLIT_RATIOS.items()
-    }
-    assigned = {split: [] for split in SPLIT_RATIOS}
-    for group in grouped:
-        split = max(
-            SPLIT_RATIOS,
-            key=lambda name: targets[name] - len(assigned[name]),
-        )
-        assigned[split].extend(group)
-    return {
-        image["id"]: split
-        for split, split_images in assigned.items()
-        for image in split_images
-    }
 
 
 def yolo_line(annotation: dict, image: dict, class_id: int) -> str:
@@ -84,16 +47,28 @@ def main() -> int:
     args = parse_args()
     source = args.source.expanduser().resolve()
     output = args.output.expanduser().resolve()
-    annotation_files = sorted(source.glob("*/_annotations.coco.json"))
-    if len(annotation_files) != 1:
+    annotation_files = {
+        path.parent.name: path
+        for path in source.glob("*/_annotations.coco.json")
+        if path.parent.name in SOURCE_SPLITS
+    }
+    required = {"train", "valid", "test"}
+    if not required.issubset(annotation_files):
         raise SystemExit(
-            "현재 변환기는 COCO annotation JSON 하나를 기대합니다: "
-            f"{annotation_files}"
+            "COCO train/valid/test annotation JSON이 모두 필요합니다: "
+            f"{sorted(annotation_files)}"
         )
-    annotation_file = annotation_files[0]
-    image_dir = annotation_file.parent
-    data = json.loads(annotation_file.read_text(encoding="utf-8"))
-    categories = {item["name"]: item["id"] for item in data["categories"]}
+    split_data = {
+        SOURCE_SPLITS[name]: (
+            path.parent,
+            json.loads(path.read_text(encoding="utf-8")),
+        )
+        for name, path in annotation_files.items()
+    }
+    categories = {
+        item["name"]: item["id"]
+        for item in split_data["train"][1]["categories"]
+    }
     if "fallen_person" in categories:
         raise SystemExit(
             "fallen_person 카테고리가 남아 있습니다. 먼저 mannequin으로 "
@@ -109,42 +84,49 @@ def main() -> int:
         class_mapping[categories["helping_person"]] = 1
         names[1] = "helping_person"
 
-    images = data["images"]
-    images_by_id = {item["id"]: item for item in images}
-    split_by_id = assign_splits(images, args.seed)
-    annotations_by_image: dict[int, list[dict]] = {}
-    for annotation in data["annotations"]:
-        if annotation["category_id"] in class_mapping:
-            annotations_by_image.setdefault(
-                annotation["image_id"], []
-            ).append(annotation)
-
     work_dir = output.parent / f".{output.stem}_build"
     if work_dir.exists():
         shutil.rmtree(work_dir)
     dataset_dir = work_dir / "mannequin_dataset"
     counts = Counter()
-    for image in images:
-        source_image = image_dir / image["file_name"]
-        if not source_image.is_file():
-            raise FileNotFoundError(source_image)
-        if source_image.suffix.lower() not in IMAGE_EXTENSIONS:
-            raise ValueError(f"지원하지 않는 이미지 형식: {source_image}")
-        split = split_by_id[image["id"]]
-        destination_images = dataset_dir / "images" / split
-        destination_labels = dataset_dir / "labels" / split
-        destination_images.mkdir(parents=True, exist_ok=True)
-        destination_labels.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_image, destination_images / source_image.name)
-        lines = []
-        for annotation in annotations_by_image.get(image["id"], []):
-            class_id = class_mapping[annotation["category_id"]]
-            lines.append(yolo_line(annotation, image, class_id))
-            counts[f"class_{class_id}"] += 1
-        (destination_labels / f"{source_image.stem}.txt").write_text(
-            ("\n".join(lines) + "\n") if lines else "", encoding="utf-8"
-        )
-        counts[f"{split}_images"] += 1
+    for split in ("train", "val", "test"):
+        image_dir, data = split_data[split]
+        current_categories = {
+            item["name"]: item["id"] for item in data["categories"]
+        }
+        current_mapping = {
+            current_categories[name]: class_id
+            for name, class_id in (("mannequin", 0), ("helping_person", 1))
+            if name in current_categories
+        }
+        annotations_by_image: dict[int, list[dict]] = {}
+        for annotation in data["annotations"]:
+            if annotation["category_id"] in current_mapping:
+                annotations_by_image.setdefault(
+                    annotation["image_id"], []
+                ).append(annotation)
+        for image in data["images"]:
+            source_image = image_dir / image["file_name"]
+            if not source_image.is_file():
+                raise FileNotFoundError(source_image)
+            if source_image.suffix.lower() not in IMAGE_EXTENSIONS:
+                raise ValueError(f"지원하지 않는 이미지 형식: {source_image}")
+            destination_images = dataset_dir / "images" / split
+            destination_labels = dataset_dir / "labels" / split
+            destination_images.mkdir(parents=True, exist_ok=True)
+            destination_labels.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_image, destination_images / source_image.name)
+            lines = []
+            for annotation in annotations_by_image.get(image["id"], []):
+                class_id = current_mapping[annotation["category_id"]]
+                lines.append(yolo_line(annotation, image, class_id))
+                counts[f"class_{class_id}"] += 1
+            (destination_labels / f"{source_image.stem}.txt").write_text(
+                ("\n".join(lines) + "\n") if lines else "",
+                encoding="utf-8",
+            )
+            counts[f"{split}_images"] += 1
+            counts["positive_images" if lines else "empty_images"] += 1
 
     data_yaml = (
         "path: .\n"

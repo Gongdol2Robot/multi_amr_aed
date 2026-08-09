@@ -80,7 +80,9 @@ def classify_posture(
 
     if aspect_ratio >= 1.2 and torso_angle <= 40.0:
         return "FALLEN", metrics
-    if aspect_ratio >= 1.6:
+    # 목각인형에서는 사람용 Pose의 몸통 방향이 흔들리므로, 충분히 넓은
+    # 1단계 검출 bbox는 관절 방향과 관계없이 누운 자세로 본다.
+    if aspect_ratio >= 1.35:
         return "FALLEN", metrics
     if knees is not None:
         hip_to_knee_x = abs(knees[0] - hips[0])

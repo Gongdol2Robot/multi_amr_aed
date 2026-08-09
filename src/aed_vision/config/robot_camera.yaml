@@ -14,7 +14,7 @@
 
     # 기본은 실제 사람 Pose 판정이며 mannequin_detect 인자에서 rescue를 쓴다.
     detection_backend: person_pose
-    rescue_weights: package://aed_vision/models/rescue_yolo11n.pt
+    rescue_weights: package://aed_vision/models/rescue2_yolo11n.pt
     person_weights: package://aed_vision/models/coco_yolo11n.pt
     pose_weights: package://aed_vision/models/yolo11n-pose.pt
     rescue_conf: 0.25
@@ -29,8 +29,8 @@
     # 빈 값은 Ultralytics가 실행 환경에 맞춰 GPU 또는 CPU를 자동 선택하게 한다.
     inference_device: ""
 
-    confirmation_window: 10
-    confirmation_hits: 6
+    confirmation_window: 12
+    confirmation_hits: 4
     helper_confirmation_window: 6
     helper_confirmation_hits: 3
     # 조력자 하단 중심과 환자 중심 거리: 화면 대각선의 30% 이내.

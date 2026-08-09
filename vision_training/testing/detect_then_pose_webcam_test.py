@@ -25,8 +25,8 @@ PACKAGE_ROOT = ROOT.parent
 WORKSPACE_ROOT = PACKAGE_ROOT.parent
 DEFAULT_POSE = PACKAGE_ROOT / "src" / "aed_vision" / "models" / "yolo11n-pose.pt"
 DEFAULT_PERSON_DETECTOR = WORKSPACE_ROOT / "yolo_training" / "models" / "yolo11n.pt"
-DEFAULT_RESCUE_DETECTOR = (
-    PACKAGE_ROOT / "src" / "aed_vision" / "models" / "rescue_yolo11n.pt"
+DEFAULT_MANNEQUIN_DETECTOR = (
+    PACKAGE_ROOT / "src" / "aed_vision" / "models" / "rescue2_yolo11n.pt"
 )
 COLORS = {
     "STANDING": (0, 200, 0),
@@ -48,7 +48,7 @@ COCO_SKELETON = (
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--source", default="0",
+        "--source", default="33",
         help="카메라 번호/장치 또는 영상 파일 (기본값: 0). libcamera도 사용 가능",
     )
     parser.add_argument(
@@ -58,8 +58,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--camera-width", type=int, default=640)
     parser.add_argument("--camera-height", type=int, default=480)
     parser.add_argument(
-        "--target", choices=("person", "mannequin"), default="person",
-        help="person=COCO 사람 검출, mannequin=커스텀 fallen_person 검출",
+        "--target", choices=("person", "mannequin"), default="mannequin",
+        help="person=COCO 사람 검출, mannequin=커스텀 목각인형 검출",
     )
     parser.add_argument(
         "--detector-weights", type=Path, default=None,
@@ -70,7 +70,10 @@ def parse_args() -> argparse.Namespace:
         "--device", default="auto",
         help="auto, cpu 또는 CUDA 번호(예: 0). 기본값 auto",
     )
-    parser.add_argument("--det-conf", type=float, default=0.5)
+    parser.add_argument(
+        "--det-conf", type=float, default=0.20,
+        help="1단계 목각인형 검출 confidence 임계값 (기본값: 0.20)",
+    )
     parser.add_argument("--pose-conf", type=float, default=0.25)
     parser.add_argument("--keypoint-conf", type=float, default=0.3)
     parser.add_argument("--imgsz", type=int, default=640)
@@ -147,7 +150,7 @@ def resolve_weights(args: argparse.Namespace) -> tuple[Path, Path]:
         detector = (
             DEFAULT_PERSON_DETECTOR
             if args.target == "person"
-            else DEFAULT_RESCUE_DETECTOR
+            else DEFAULT_MANNEQUIN_DETECTOR
         )
     detector = detector.expanduser().resolve()
     pose = args.pose_weights.expanduser().resolve()
@@ -202,8 +205,10 @@ def main() -> int:
     if pose_model.task != "pose":
         raise SystemExit(f"Pose 모델이 아닙니다: task={pose_model.task}")
 
-    # COCO person과 커스텀 fallen_person 모두 class id 0이다.
-    target_class = 0
+    # 사람 모드는 person(class 0), 목각인형 모드는 mannequin(class 0)과
+    # RC카(class 1)를 함께 검출한다. Pose는 class 0에만 적용한다.
+    pose_target_class = 0
+    detector_classes = [0] if args.target == "person" else [0, 1]
     source = resolve_source(args.source)
     if source == "libcamera":
         capture = LibcameraCapture(
@@ -214,7 +219,8 @@ def main() -> int:
     if not capture.isOpened():
         raise SystemExit(f"입력을 열 수 없습니다: {args.source}")
 
-    history = PostureHistory(window=10, fallen_hits=6)
+    # 누운 자세는 연속된 몇 프레임만 확인되면 빠르게 고정한다.
+    history = PostureHistory(window=12, fallen_hits=4)
     previous: dict[int, str] = {}
     frame_index = 0
     window = f"Detect then Pose | {args.target}"
@@ -228,7 +234,10 @@ def main() -> int:
             f"입력: libcamera camera={args.camera} "
             f"{args.camera_width}x{args.camera_height} (relay 미사용)"
         )
-    print(f"대상: {args.target} (class={target_class}) | q/ESC: 종료")
+    print(
+        f"검출 대상: {args.target} classes={detector_classes} "
+        f"(Pose class={pose_target_class}) | q/ESC: 종료"
+    )
 
     # USB 웹캠은 장치를 연 직후 몇 번의 read가 실패할 수 있다.
     first_frame = None
@@ -263,12 +272,13 @@ def main() -> int:
             started = perf_counter()
             detection = detector.track(
                 frame, persist=True, tracker="bytetrack.yaml",
-                classes=[target_class], conf=args.det_conf,
+                classes=detector_classes, conf=args.det_conf,
                 imgsz=args.imgsz, device=device, verbose=False,
             )[0]
             canvas = frame.copy()
             detected = 0
             posed = 0
+            rc_cars = 0
 
             if detection.boxes is not None and len(detection.boxes) > 0:
                 boxes = detection.boxes.xyxy.cpu().numpy()
@@ -277,9 +287,28 @@ def main() -> int:
                 else:
                     ids = detection.boxes.id.int().cpu().tolist()
                 det_scores = detection.boxes.conf.cpu().numpy()
+                det_classes = detection.boxes.cls.int().cpu().tolist()
 
-                for det_box, track_id, det_score in zip(boxes, ids, det_scores):
+                for det_box, track_id, det_score, class_id in zip(
+                    boxes, ids, det_scores, det_classes
+                ):
                     detected += 1
+                    if args.target == "mannequin" and class_id == 1:
+                        rc_cars += 1
+                        rc_color = (255, 0, 255)
+                        cv2.rectangle(
+                            canvas, tuple(det_box[:2].astype(int)),
+                            tuple(det_box[2:].astype(int)), rc_color, 2,
+                        )
+                        cv2.putText(
+                            canvas,
+                            f"ID {track_id} helper_rc_car det={det_score:.2f}",
+                            (int(det_box[0]), max(int(det_box[1]) - 8, 24)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.52, rc_color, 2,
+                        )
+                        continue
+                    if class_id != pose_target_class:
+                        continue
                     crop, (offset_x, offset_y) = padded_crop(
                         frame, det_box, args.crop_padding
                     )
@@ -314,7 +343,9 @@ def main() -> int:
                     posed += 1
                     keypoints = np.column_stack((xy, scores))
                     raw, metrics = classify_posture(
-                        keypoints, pose_box, keypoint_conf=args.keypoint_conf
+                        # 사람용 Pose bbox는 목각인형에서 크게 흔들릴 수 있다.
+                        # 자세의 종횡비는 1단계 mannequin 검출 bbox를 사용한다.
+                        keypoints, det_box, keypoint_conf=args.keypoint_conf
                     )
                     posture = history.update(track_id, raw, frame_index)
                     if posture != previous.get(track_id):
@@ -361,7 +392,8 @@ def main() -> int:
             cv2.rectangle(canvas, (0, 0), (canvas.shape[1], 38), (0, 0, 0), -1)
             cv2.putText(
                 canvas,
-                f"detected={detected} pose={posed} | {elapsed:.1f} ms | frame={frame_index}",
+                f"detected={detected} rc_car={rc_cars} pose={posed} | "
+                f"{elapsed:.1f} ms | frame={frame_index}",
                 (10, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.58,
                 (255, 255, 0), 2,
             )

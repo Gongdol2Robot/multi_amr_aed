@@ -66,7 +66,9 @@ def classify_posture(
     # (2) 몸통 각도를 신뢰하기 애매해도 bbox가 아주 넓게 누운 경우(측면·가림 대비).
     if aspect_ratio >= 1.2 and torso_angle <= 40.0:
         return "FALLEN", metrics
-    if aspect_ratio >= 1.6:
+    # 목각인형에서는 사람용 Pose의 몸통 방향이 흔들릴 수 있으므로 충분히
+    # 넓은 1단계 검출 bbox는 관절 방향과 관계없이 누운 자세로 판정한다.
+    if aspect_ratio >= 1.35:
         return "FALLEN", metrics
     # 무릎이 엉덩이보다 수평 방향으로 더 벌어져 있으면(가로 거리 > 세로 거리*0.8)
     # 다리를 앞으로 뻗은 착석 자세로 본다.

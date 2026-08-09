@@ -14,7 +14,7 @@
     image_topic: /camera_alley/image_raw/compressed
     # 기본은 실제 사람 Pose 판정이며 mannequin_detect 인자에서 rescue를 쓴다.
     detection_backend: person_pose
-    rescue_weights: package://aed_vision/models/rescue_yolo11n.pt
+    rescue_weights: package://aed_vision/models/rescue2_yolo11n.pt
     person_weights: package://aed_vision/models/coco_yolo11n.pt
     pose_weights: package://aed_vision/models/yolo11n-pose.pt
     rescue_conf: 0.25
@@ -27,8 +27,8 @@
     imgsz: 640
     # 첫 GPU를 우선 사용하며, CUDA가 없거나 GPU 0이 없으면 CPU로 자동 전환한다.
     inference_device: "cuda:0"
-    confirmation_window: 10
-    confirmation_hits: 6
+    confirmation_window: 12
+    confirmation_hits: 4
     # 영상 우상단은 1번 터틀봇이 구조 현장으로 진입하는 골목 경로이다.
     # 이 영역의 인파가 임계값 이상이면 1번 터틀봇 경로가 막힌 상황으로 본다.
     # [left, top, right, bottom], 영상 크기에 대한 0.0~1.0 비율이다.

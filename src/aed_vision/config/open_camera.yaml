@@ -15,7 +15,7 @@
     # 기본은 실제 사람 Pose 판정이다. launch에서
     # launch에서 target:=mannequin을 주면 기존 목각인형 모델을 쓴다.
     detection_backend: person_pose
-    rescue_weights: package://aed_vision/models/rescue_yolo11n.pt
+    rescue_weights: package://aed_vision/models/rescue2_yolo11n.pt
     person_weights: ""
     pose_weights: package://aed_vision/models/yolo11n-pose.pt
     rescue_conf: 0.25
@@ -28,8 +28,8 @@
     imgsz: 640
     # 첫 GPU를 우선 사용하며, CUDA가 없거나 GPU 0이 없으면 CPU로 자동 전환한다.
     inference_device: "cuda:0"
-    confirmation_window: 10
-    confirmation_hits: 6
+    confirmation_window: 12
+    confirmation_hits: 4
     # open 모드에서는 혼잡도 관련 값이 사용되지 않는다.
     crowd_roi: [0.0, 0.0, 1.0, 1.0]
     crowded_person_threshold: 3
