@@ -479,10 +479,29 @@ class InferencePipeline:
 
     def render_debug(self, output: InferenceOutput, camera_id: str):
         if output.detection_backend == "mannequin_detect":
-            # 1차 목각인형/조력자 검출은 bbox만 표시하고 클래스명과
-            # confidence는 숨긴다. Pose를 통과한 자세 라벨과 골격은
-            # 아래에서 별도로 덮어 그린다.
+            # 1차 검출에서 mannequin은 bbox만 표시하고 helping_person만
+            # 이름을 표시한다. confidence는 둘 다 숨기며, Pose를 통과한
+            # 자세 라벨과 골격은 아래에서 별도로 덮어 그린다.
             image = output.rescue_result.plot(labels=False, conf=False)
+            rescue_boxes = getattr(output.rescue_result, "boxes", None)
+            if rescue_boxes is not None:
+                coordinates = rescue_boxes.xyxy.int().cpu().tolist()
+                class_ids = rescue_boxes.cls.int().cpu().tolist()
+                for (x1, y1, _x2, _y2), class_id in zip(
+                    coordinates, class_ids
+                ):
+                    if class_id != 1:
+                        continue
+                    cv2.putText(
+                        image,
+                        "helping_person",
+                        (x1, max(y1 - 8, 22)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.55,
+                        (0, 255, 0),
+                        2,
+                        cv2.LINE_AA,
+                    )
         else:
             image = output.rescue_result.orig_img.copy()
         # 두 backend 모두 Pose 자세·골격을 같은 방식으로 덧그린다.
