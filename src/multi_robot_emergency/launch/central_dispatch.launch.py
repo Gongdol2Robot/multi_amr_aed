@@ -98,7 +98,7 @@ def generate_launch_description() -> LaunchDescription:
                 choices=["true", "false"],
             ),
             DeclareLaunchArgument(
-                "patient_standoff_distance_m", default_value="0.15"
+                "patient_standoff_distance_m", default_value="0.60"
             ),
             DeclareLaunchArgument(
                 "return_after_helper_enabled",

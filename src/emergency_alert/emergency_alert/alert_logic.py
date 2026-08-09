@@ -35,6 +35,21 @@ _PROGRESS_RANK = {
 }
 
 
+def is_aed_delivery_mission(mission_id: str, robot_id: str) -> bool:
+    """Return whether a mission ID belongs to this robot's AED delivery.
+
+    Central dispatch uses ``<event>-aed-<robot_id>``.  Checking only an
+    ``-aed`` suffix silently rejected every real dispatch status because the
+    robot ID follows the role marker.
+    """
+    return bool(
+        mission_id
+        and robot_id
+        and "-aed-" in mission_id
+        and mission_id.endswith(f"-{robot_id}")
+    )
+
+
 @dataclass(frozen=True)
 class TonePattern:
     """한 번에 재생할 주파수 배열과 각 음의 최대 재생시간."""

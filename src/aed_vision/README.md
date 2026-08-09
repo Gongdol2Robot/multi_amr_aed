@@ -179,20 +179,19 @@ ros2 launch aed_vision camera_vision.launch.py \
 | `/<camera_id>/vision/heartbeat` | `aed_interfaces/Heartbeat` | 초당 노드 생존 신호 |
 | `/<camera_id>/vision/debug/compressed` | `sensor_msgs/CompressedImage` | bbox와 ROI가 표시된 JPEG |
 
-로봇 OAK-D 모드는 메인 RGB compressed가 아니라 작은 preview 원본 영상을
-구독합니다.
+로봇 OAK-D 모드는 로봇에서 이미 발행하는 JPEG 압축 영상을 구독합니다.
 
 ```text
-/robotN/oakd/rgb/preview/image_raw  (sensor_msgs/Image)
+/robotN/oakd/rgb/image_raw/compressed  (sensor_msgs/CompressedImage)
 ```
 
-`CvBridge`로 BGR 프레임으로 변환한 뒤 동일한 YOLO11n Pose 파이프라인에
-입력합니다. 고정 USB 웹캠의 `CompressedImage` 입력 방식은 그대로 유지됩니다.
+노트북에서 JPEG를 디코딩한 뒤 동일한 YOLO11n Pose 파이프라인에 입력합니다.
+라즈베리파이에는 모델이나 추가 추론 프로세스를 설치하지 않습니다.
 
 로봇의 조력자 후보는 환자와 같은 프레임에 있어야 하며, 조력자 bbox 하단
-중심과 쓰러진 환자 bbox 중심 사이 거리가 화면 대각선의 30% 이내여야 합니다.
+중심과 쓰러진 환자 bbox 중심 사이 거리가 화면 대각선의 40% 이내여야 합니다.
 이 값은 `helper_max_distance_ratio`로 조정할 수 있습니다. 거리 조건을 통과한
-후에도 최근 6개 처리 프레임 중 3개 이상에서 보여야 최종 확정됩니다.
+후에도 최근 4개 처리 프레임 중 2개 이상에서 보여야 최종 확정됩니다.
 
 `status` JSON 예시:
 

@@ -1,13 +1,13 @@
 /**/vision_detector:
   ros__parameters:
-    # TurtleBot4 OAK-D의 압축 영상 토픽을 구독하므로 카메라를 직접 열지 않는다.
+    # TurtleBot4 OAK-D가 이미 만드는 JPEG 토픽을 구독하므로 카메라를 직접
+    # 열거나 라즈베리파이에 추론을 설치하지 않는다.
     direct_camera: false
-    # TurtleBot CDR 경로로 들어오는 작은 preview sensor_msgs/Image를 사용한다.
-    image_is_compressed: false
+    # 두 로봇의 raw preview가 Nav2 scan/TF와 Wi-Fi를 경쟁하지 않게 한다.
+    image_is_compressed: true
     width: 640
     height: 480
     # 실제 발행률은 로봇 OAK-D의 rgb.i_fps=7.0 설정에서 제어한다.
-    # 구독 노드는 들어오는 7 FPS를 버리지 않고 모두 추론한다.
     fps: 7.0
     jpeg_quality: 85
     mode: robot
@@ -31,10 +31,12 @@
 
     confirmation_window: 12
     confirmation_hits: 4
-    helper_confirmation_window: 6
-    helper_confirmation_hits: 3
-    # 조력자 하단 중심과 환자 중심 거리: 화면 대각선의 30% 이내.
-    helper_max_distance_ratio: 0.30
+    # 통합 운용 시 1~2 FPS까지 떨어져도 회전 중 helper를 놓치지 않도록
+    # 짧은 창에서 두 번 확인한다.
+    helper_confirmation_window: 4
+    helper_confirmation_hits: 2
+    # 가까운 환자와 함께 보이는 helper의 자세 변화까지 허용한다.
+    helper_max_distance_ratio: 0.40
     crowd_roi: [0.0, 0.0, 1.0, 1.0]
     crowded_person_threshold: 3
     fallen_person_overlap_iou: 0.4

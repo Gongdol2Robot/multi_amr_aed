@@ -2,6 +2,9 @@
 
 import time
 from math import isfinite
+from pathlib import Path
+
+from ament_index_python.packages import get_package_share_directory
 
 from aed_interfaces.msg import MissionStatus
 import rclpy
@@ -12,6 +15,7 @@ from emergency_alert.alert_logic import (
     MissionAlertPolicy,
     MissionPhase,
     TonePattern,
+    is_aed_delivery_mission,
 )
 from emergency_alert.audio_output import AudioOutput
 
@@ -28,7 +32,10 @@ class MissionStatusAlert(Node):
         self.declare_parameter("audio_backend", "system")
         self.declare_parameter("audio_player", "auto")
         self.declare_parameter("audio_device", "")
-        self.declare_parameter("mission_id_suffix", "-aed")
+        self.declare_parameter("create3_audio_topic", "cmd_audio")
+        self.declare_parameter("create3_travel_alert", True)
+        self.declare_parameter("travel_voice_file", "")
+        self.declare_parameter("travel_voice_period", 8.0)
         self.declare_parameter("alarm_period", 0.8)
         self.declare_parameter("maximum_alarm_duration", 600.0)
         self.declare_parameter("travel_note_duration", 0.25)
@@ -44,10 +51,8 @@ class MissionStatusAlert(Node):
         self.robot_id = str(self.get_parameter("robot_id").value)
         if not self.robot_id:
             raise ValueError("robot_id parameter is required")
-        self.mission_id_suffix = str(
-            self.get_parameter("mission_id_suffix").value
-        )
         self.alarm_period = self._positive("alarm_period")
+        self.travel_voice_period = self._positive("travel_voice_period")
         self.maximum_alarm_duration = self._positive(
             "maximum_alarm_duration"
         )
@@ -71,15 +76,35 @@ class MissionStatusAlert(Node):
             )
 
         self.policy = MissionAlertPolicy(self.robot_id)
+        audio_backend = str(self.get_parameter("audio_backend").value)
         self.audio = AudioOutput(
             self,
             str(self.get_parameter("audio_topic").value),
-            str(self.get_parameter("audio_backend").value),
+            audio_backend,
             str(self.get_parameter("audio_player").value),
             str(self.get_parameter("audio_device").value),
         )
+        self.create3_audio = None
+        if (
+            bool(self.get_parameter("create3_travel_alert").value)
+            and audio_backend != "create3"
+        ):
+            self.create3_audio = AudioOutput(
+                self,
+                str(self.get_parameter("create3_audio_topic").value),
+                "create3",
+            )
+        configured_voice = str(
+            self.get_parameter("travel_voice_file").value
+        ).strip()
+        self.travel_voice_file = configured_voice or str(
+            Path(get_package_share_directory("emergency_alert"))
+            / "assets"
+            / "travel_notice_ko.wav"
+        )
         self.alarm_active = False
         self.alarm_started_at = None
+        self.last_voice_at = None
         self.create_subscription(
             MissionStatus,
             str(self.get_parameter("mission_status_topic").value),
@@ -90,6 +115,8 @@ class MissionStatusAlert(Node):
             self.alarm_period, self._alarm_tick
         )
         self.audio.stop()
+        if self.create3_audio is not None:
+            self.create3_audio.stop()
         self.get_logger().info(
             f"ready: robot={self.robot_id}, mode=status-only, "
             f"audio={self.audio.topic}"
@@ -104,10 +131,7 @@ class MissionStatusAlert(Node):
 
     def _on_status(self, message: MissionStatus) -> None:
         """MissionStatus를 중복 제거 정책에 통과시킨 뒤 오디오 명령을 실행한다."""
-        if (
-            self.mission_id_suffix
-            and not message.mission_id.endswith(self.mission_id_suffix)
-        ):
+        if not is_aed_delivery_mission(message.mission_id, self.robot_id):
             return
         command = self.policy.handle(
             robot_id=message.robot_id,
@@ -149,7 +173,7 @@ class MissionStatusAlert(Node):
         if command is AlertCommand.START_TRAVEL:
             self.alarm_active = True
             self.alarm_started_at = time.monotonic()
-            self.audio.play(self.travel_pattern)
+            self._play_travel_outputs(force_voice=True)
             self.get_logger().info(
                 f"travel alert started: event={message.event_id}, "
                 f"version={message.assignment_version}"
@@ -159,11 +183,15 @@ class MissionStatusAlert(Node):
         self.alarm_active = False
         self.alarm_started_at = None
         if command is AlertCommand.PLAY_ARRIVAL:
+            if self.create3_audio is not None:
+                self.create3_audio.play(self.arrival_pattern)
             self.audio.play(self.arrival_pattern)
             self.get_logger().info(
                 f"arrival alert: event={message.event_id}"
             )
         elif command is AlertCommand.PLAY_INTERRUPTED:
+            if self.create3_audio is not None:
+                self.create3_audio.play(self.interrupted_pattern)
             self.audio.play(self.interrupted_pattern)
             self.get_logger().warning(
                 f"interrupted alert: event={message.event_id}, "
@@ -180,15 +208,37 @@ class MissionStatusAlert(Node):
                 )
                 self._stop_alarm()
                 return
+            self._play_travel_outputs()
+
+    def _play_travel_outputs(self, *, force_voice: bool = False) -> None:
+        """Play the frequent Create 3 siren and periodic Bluetooth voice."""
+        now = time.monotonic()
+        if self.create3_audio is not None:
+            self.create3_audio.play(self.travel_pattern)
+        if self.create3_audio is None and self.audio.backend == "create3":
             self.audio.play(self.travel_pattern)
+            return
+        if (
+            force_voice
+            or self.last_voice_at is None
+            or now - self.last_voice_at >= self.travel_voice_period
+        ):
+            self.audio.play_file(
+                self.travel_voice_file,
+                fallback=self.travel_pattern,
+            )
+            self.last_voice_at = now
 
     def _stop_alarm(self) -> None:
         """반복 상태를 해제하고 Create3에 남은 오디오 큐를 비운다."""
         was_active = self.alarm_active
         self.alarm_active = False
         self.alarm_started_at = None
+        self.last_voice_at = None
         self.policy.mark_output_stopped()
         self.audio.stop()
+        if self.create3_audio is not None:
+            self.create3_audio.stop()
         if was_active:
             self.get_logger().info("travel alert stopped")
 

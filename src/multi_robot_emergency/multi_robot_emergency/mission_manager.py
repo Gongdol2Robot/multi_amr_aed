@@ -93,7 +93,8 @@ class EmergencyMissionManager(Node):
         self.declare_parameter("target_arrival_time_sec", 30.0)
         self.declare_parameter("dual_dispatch_trigger_ratio", 0.85)
         self.declare_parameter("patient_standoff_enabled", True)
-        self.declare_parameter("patient_standoff_distance_m", 0.15)
+        # OAK-D가 환자와 helper를 한 화면에 유지할 수 있는 최소 운용 거리.
+        self.declare_parameter("patient_standoff_distance_m", 0.60)
         self.declare_parameter("return_after_helper_enabled", True)
         self.declare_parameter("dual_robot_proximity_threshold_m", 0.40)
         self.declare_parameter("dual_robot_proximity_confirm_sec", 0.50)

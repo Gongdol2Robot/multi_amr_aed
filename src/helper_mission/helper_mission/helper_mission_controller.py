@@ -45,11 +45,14 @@ class HelperMissionController(Node):
         self.declare_parameter("audio_backend", "system")
         self.declare_parameter("audio_player", "auto")
         self.declare_parameter("audio_device", "")
+        self.declare_parameter("create3_audio_topic", "cmd_audio")
+        self.declare_parameter("create3_call_alert", True)
         self.declare_parameter("call_audio_file", "")
-        self.declare_parameter("rotation_speed_rps", 0.35)
+        self.declare_parameter("call_voice_period", 10.0)
+        self.declare_parameter("rotation_speed_rps", 0.12)
         self.declare_parameter("control_period", 0.1)
         self.declare_parameter("stop_command_repeats", 3)
-        self.declare_parameter("vision_stale_seconds", 1.0)
+        self.declare_parameter("vision_stale_seconds", 2.5)
         self.declare_parameter("vision_timeout_seconds", 300.0)
         # 0은 구조 인력이 올 때까지 시간 제한 없이 계속 탐색한다.
         self.declare_parameter("helper_wait_timeout", 0.0)
@@ -80,6 +83,7 @@ class HelperMissionController(Node):
         if self.wait_timeout < 0.0:
             raise ValueError("helper_wait_timeout must be zero or positive")
         self.buzzer_period = self._positive("buzzer_period")
+        self.call_voice_period = self._positive("call_voice_period")
         self.buzzer_duration = self._positive("buzzer_note_duration")
         self.guide_duration = self._positive("guide_note_duration")
         self.handoff_wait = float(
@@ -93,19 +97,30 @@ class HelperMissionController(Node):
         self.cmd_vel_publisher = self.create_publisher(
             Twist, str(self.get_parameter("cmd_vel_topic").value), 10
         )
+        audio_backend = str(self.get_parameter("audio_backend").value)
         self.audio = AudioOutput(
             self,
             str(self.get_parameter("audio_topic").value),
-            str(self.get_parameter("audio_backend").value),
+            audio_backend,
             str(self.get_parameter("audio_player").value),
             str(self.get_parameter("audio_device").value),
         )
+        self.create3_audio = None
+        if (
+            bool(self.get_parameter("create3_call_alert").value)
+            and audio_backend != "create3"
+        ):
+            self.create3_audio = AudioOutput(
+                self,
+                str(self.get_parameter("create3_audio_topic").value),
+                "create3",
+            )
         configured_call_audio = str(
             self.get_parameter("call_audio_file").value
         ).strip()
         self.call_audio_file = configured_call_audio or str(
             get_package_share_directory("emergency_alert")
-            + "/assets/cc0_warning_alarm.wav"
+            + "/assets/helper_request_ko.wav"
         )
         configured_handoff_audio = str(
             self.get_parameter("handoff_audio_file").value
@@ -192,7 +207,7 @@ class HelperMissionController(Node):
         result = GuideHelper.Result()
         started_at = time.monotonic()
         next_buzzer_at = 0.0
-        system_call_started = False
+        next_voice_at = 0.0
         try:
             self._publish_status(
                 MissionStatus.HELPER_REQUESTED,
@@ -255,12 +270,12 @@ class HelperMissionController(Node):
                     return result
 
                 self._publish_rotation()
-                if self.audio.backend == "system" and not system_call_started:
-                    self._publish_call_tone(loop=True)
-                    system_call_started = True
-                elif self.audio.backend != "system" and now >= next_buzzer_at:
-                    self._publish_call_tone(loop=False)
+                if now >= next_buzzer_at:
+                    self._publish_create3_call_tone()
                     next_buzzer_at = now + self.buzzer_period
+                if now >= next_voice_at:
+                    self._publish_call_voice()
+                    next_voice_at = now + self.call_voice_period
                 self._publish_feedback(
                     goal_handle,
                     "rotating and waiting for aed_vision helper confirmation",
@@ -313,18 +328,33 @@ class HelperMissionController(Node):
         for _ in range(self.stop_command_repeats):
             self.cmd_vel_publisher.publish(Twist())
 
-    def _publish_call_tone(self, loop: bool = False) -> None:
-        """블루투스 스피커로 CC0 구조 요청 경고음을 재생한다."""
+    def _publish_call_voice(self) -> None:
+        """블루투스 스피커로 구조 요청 한국어 안내를 재생한다."""
         self.audio.play_file(
             self.call_audio_file,
             TonePattern.from_values(
                 self.buzzer_frequencies, self.buzzer_duration
             ),
-            loop=loop,
         )
+
+    def _publish_create3_call_tone(self) -> None:
+        """사람을 찾는 동안 Create 3 본체에서 짧은 호출음을 낸다."""
+        pattern = TonePattern.from_values(
+            self.buzzer_frequencies, self.buzzer_duration
+        )
+        if self.create3_audio is not None:
+            self.create3_audio.play(pattern)
+        elif self.audio.backend == "create3":
+            self.audio.play(pattern)
 
     def _publish_guide_tone(self) -> None:
         """조력자 확인·인계·복귀 안내 TTS를 한 번 재생한다."""
+        if self.create3_audio is not None:
+            self.create3_audio.play(
+                TonePattern.from_values(
+                    self.guide_frequencies, self.guide_duration
+                )
+            )
         self.audio.play_file(
             self.handoff_audio_file,
             TonePattern.from_values(
@@ -332,16 +362,11 @@ class HelperMissionController(Node):
             ),
         )
 
-    def _publish_audio(
-        self, label: str, frequencies: tuple[int, ...], duration: float
-    ) -> None:
-        """Bluetooth/default system speaker로 호출 또는 안내음을 재생한다."""
-        del label
-        self.audio.play(TonePattern.from_values(frequencies, duration))
-
     def _stop_audio(self) -> None:
         """호출음 큐를 비워 구조 인력 감지 즉시 반복음을 중지한다."""
         self.audio.stop()
+        if self.create3_audio is not None:
+            self.create3_audio.stop()
 
     def _publish_feedback(self, goal_handle, detail: str) -> None:
         """회전 탐색 단계를 coordinator에 Action feedback으로 전달한다."""

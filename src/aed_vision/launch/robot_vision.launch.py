@@ -41,13 +41,12 @@ def _create_robot_vision(context):
                 {
                     "camera_id": robot_id,
                     "zone_id": f"{robot_id}_view",
-                    # TurtleBot CDR 경로에 이미 들어오는 작은 preview를 재사용한다.
-                    # 메인 compressed 토픽을 새로 원격 구독하면 로봇 WiFi 큐가
-                    # 밀리므로, 추론 입력은 preview Image로 유지한다.
+                    # 로봇이 이미 발행하는 JPEG를 사용해 raw preview가 Nav2의
+                    # scan/TF와 Wi-Fi 대역폭을 경쟁하지 않게 한다.
                     "image_topic": (
-                        f"/{robot_id}/oakd/rgb/preview/image_raw"
+                        f"/{robot_id}/oakd/rgb/image_raw/compressed"
                     ),
-                    "image_is_compressed": False,
+                    "image_is_compressed": True,
                     "frame_id": f"{robot_id}/oakd_rgb_camera_optical_frame",
                     "detection_backend": detection_backend,
                     "person_conf": person_conf,
@@ -77,7 +76,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("person_conf", default_value="0.5"),
             DeclareLaunchArgument("rescue_conf", default_value="0.25"),
             DeclareLaunchArgument(
-                "helper_max_distance_ratio", default_value="0.30"
+                "helper_max_distance_ratio", default_value="0.40"
             ),
             OpaqueFunction(function=_create_robot_vision),
         ]
