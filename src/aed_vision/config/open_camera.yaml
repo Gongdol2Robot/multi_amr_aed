@@ -31,7 +31,6 @@
     confirmation_hits: 4
     # open 모드에서는 혼잡도 관련 값이 사용되지 않는다.
     crowd_roi: [0.0, 0.0, 1.0, 1.0]
-    crowded_person_threshold: 3
     fallen_person_overlap_iou: 0.4
     location_frame_id: map
     # 고정 카메라가 담당하는 구조 지점의 실제 map 좌표로 변경한다.

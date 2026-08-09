@@ -12,6 +12,7 @@ TORSO_INDEXES = (LEFT_SHOULDER, RIGHT_SHOULDER, LEFT_HIP, RIGHT_HIP)
 
 
 def _center(keypoints, first: int, second: int, threshold: float):
+    """관절 한 쌍에서 신뢰도 기준을 통과한 점들의 중심 좌표를 계산한다."""
     # 좌우 한 쌍(예: 양 어깨) 중 confidence가 threshold 이상인 점만 평균한다.
     # 한쪽이 가려져도(예: 옆으로 누움) 보이는 한 점만으로 중심을 낼 수 있게
     # 최소 1개만 있으면 계산하고, 둘 다 안 보이면 None을 반환한다.

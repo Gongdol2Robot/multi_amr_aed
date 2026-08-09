@@ -88,7 +88,7 @@ class LiveState:
     def put_event(self, event: EmergencyEventSnapshot) -> None:
         with self._lock:
             # 어느 카메라가 무엇을 보고 있는지는 이벤트가 알려준다.
-            # EmergencyEvent 가 camera_id 와 consecutive_detections 를
+            # EmergencyEvent 가 camera_id 와 시간 창 confirmation hit 수를
             # 싣고 있어서, 검출 표시를 위해 별도 토픽을 만들 필요가 없다.
             if event.camera_id:
                 self._detections[event.camera_id] = (

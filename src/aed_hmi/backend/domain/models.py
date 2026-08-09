@@ -86,6 +86,7 @@ class EmergencyEventSnapshot:
     source_id: str
     camera_id: str
     zone_id: str
+    crowd_level: int = 255
 
 
 @dataclass(frozen=True)

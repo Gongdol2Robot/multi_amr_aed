@@ -10,7 +10,9 @@ import time
 
 from action_msgs.msg import GoalStatus
 from aed_interfaces.msg import (
+    CrowdLevel,
     EmergencyEvent,
+    Heartbeat,
     MissionAssignment,
     MissionStatus,
     RobotState,
@@ -111,6 +113,16 @@ class EmergencyMissionManager(Node):
         self.declare_parameter(
             "crowd_level_topic", "/camera_alley/vision/crowd_level"
         )
+        self.declare_parameter(
+            "vision_heartbeat_topics",
+            [
+                "/camera_open/vision/heartbeat",
+                "/camera_alley/vision/heartbeat",
+                "/robot1/vision/heartbeat",
+                "/robot2/vision/heartbeat",
+            ],
+        )
+        self.declare_parameter("vision_heartbeat_timeout_sec", 3.0)
         self.declare_parameter(
             "crowd_level_names", ["CLEAR", "BUSY", "CROWDED", "BLOCKED"]
         )
@@ -383,6 +395,22 @@ class EmergencyMissionManager(Node):
             ),
         )
         self.raw_crowd_level = "UNKNOWN"
+        self.vision_heartbeat_timeout = float(
+            self.get_parameter("vision_heartbeat_timeout_sec").value
+        )
+        if self.vision_heartbeat_timeout <= 0.0:
+            raise ValueError("vision_heartbeat_timeout_sec must be positive")
+        heartbeat_topics = [
+            str(topic)
+            for topic in self.get_parameter("vision_heartbeat_topics").value
+        ]
+        heartbeat_started_at = time.monotonic()
+        self.vision_heartbeat_received = {
+            f"aed_vision:{topic.strip('/').split('/')[0]}": (
+                heartbeat_started_at
+            )
+            for topic in heartbeat_topics
+        }
         if self.docked_start_offset < 0.0:
             raise ValueError("docked_start_offset_m must be non-negative")
 
@@ -502,10 +530,22 @@ class EmergencyMissionManager(Node):
             10,
         )
         self.crowd_level_subscription = self.create_subscription(
-            String,
+            CrowdLevel,
             str(self.get_parameter("crowd_level_topic").value),
             self._on_raw_crowd_level,
             10,
+        )
+        self.vision_heartbeat_subscriptions = [
+            self.create_subscription(
+                Heartbeat,
+                str(topic),
+                self._on_vision_heartbeat,
+                10,
+            )
+            for topic in heartbeat_topics
+        ]
+        self.vision_heartbeat_timer = self.create_timer(
+            1.0, self._check_vision_heartbeats
         )
         # Robot1이 꺼진 Robot2 단독 시험에서도 keepout mask를 만들 수
         # 있도록 두 map_server 중 먼저 보이는 공용 지도를 사용한다.
@@ -733,10 +773,11 @@ class EmergencyMissionManager(Node):
         """Keep the count for diagnostics; vision owns classification."""
         self.crowd_filter.update_person_count(int(message.data))
 
-    def _on_raw_crowd_level(self, message: String) -> None:
+    def _on_raw_crowd_level(self, message: CrowdLevel) -> None:
         """Consume the final crowd decision made by the vision node."""
         previous = self.crowd_filter.snapshot(time.monotonic())
-        self.raw_crowd_level = message.data.strip() or "UNKNOWN"
+        self.raw_crowd_level = str(int(message.level))
+        self.crowd_filter.update_person_count(int(message.person_count))
         snapshot = self.crowd_filter.update_level(
             self.raw_crowd_level, time.monotonic()
         )
@@ -850,6 +891,22 @@ class EmergencyMissionManager(Node):
                 )
                 return
         self._calculate_and_assign(request)
+
+    def _on_vision_heartbeat(self, message: Heartbeat) -> None:
+        """비전 노드별 마지막 생존 신호 수신 시각을 기록한다."""
+        self.vision_heartbeat_received[message.sender_id] = time.monotonic()
+
+    def _check_vision_heartbeats(self) -> None:
+        """실행 후 수신된 비전 노드가 멈추면 주기적으로 경고한다."""
+        now = time.monotonic()
+        for sender_id, received_at in self.vision_heartbeat_received.items():
+            age = now - received_at
+            if age > self.vision_heartbeat_timeout:
+                self.get_logger().warning(
+                    f"Vision heartbeat stale: sender={sender_id}, "
+                    f"age={age:.1f}s",
+                    throttle_duration_sec=5.0,
+                )
 
     def _on_emergency_event(self, message: EmergencyEvent) -> None:
         """Start one mission on a YOLO confirmation edge only."""

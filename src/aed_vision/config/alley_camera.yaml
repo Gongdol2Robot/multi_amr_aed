@@ -33,8 +33,7 @@
     # 이 영역의 인파가 임계값 이상이면 1번 터틀봇 경로가 막힌 상황으로 본다.
     # [left, top, right, bottom], 영상 크기에 대한 0.0~1.0 비율이다.
     crowd_roi: [0.375, 0.0, 1.0, 0.5]
-    # fallen_person과 겹치는 검출을 제외한 실제 사람이 2명 이상이면 혼잡이다.
-    crowded_person_threshold: 2
+    # 유효 사람 수를 0~3 혼잡 등급으로 사용하며, 3명 이상은 통행 불가이다.
     # 쓰러진 대상을 COCO person이 다시 검출했을 때 인파 수에서 제외한다.
     fallen_person_overlap_iou: 0.4
     location_frame_id: map

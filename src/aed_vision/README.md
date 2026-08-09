@@ -31,7 +31,7 @@
 - 선택 `mannequin_detect` backend는 기존 파인튜닝 YOLO11n 검출을 그대로 사용
 - 최근 10프레임 중 6프레임 이상 검출될 때 응급상황 확정
 - 확정/해제 전환 시 `aed_interfaces/EmergencyEvent` 발행
-- 검출 bbox 중심점을 카메라별 호모그래피로 map 좌표 변환
+- 검출 bbox 하단 중심점을 카메라별 호모그래피로 map 좌표 변환
 - `alley` 모드에서는 COCO YOLO11n으로 ROI 내부 `person` 수 계산
 - COCO가 쓰러진 대상을 person으로 중복 검출하면 bbox IoU를 이용해 인파에서 제외
 - 상태 JSON, 혼잡도, 사람 수, heartbeat, JPEG 디버그 영상 발행
@@ -81,7 +81,7 @@ source install/setup.bash
 세 모델은 패키지의 `models/`에 포함되고 빌드할 때 ROS share 폴더에 함께
 설치됩니다.
 
-- `models/rescue_yolo11n.pt`: 파인튜닝 구조 검출 모델
+- `models/rescue2_yolo11n.pt`: 파인튜닝 구조 검출 모델
 - `models/coco_yolo11n.pt`: COCO person 검출 모델
 - `models/yolo11n-pose.pt`: 실제 사람 17관절 Pose 모델
 
@@ -89,7 +89,7 @@ YAML은 절대 경로 대신 다음 ROS 패키지 URI를 사용하므로 노트�
 수정할 필요가 없습니다.
 
 ```text
-package://aed_vision/models/rescue_yolo11n.pt
+package://aed_vision/models/rescue2_yolo11n.pt
 package://aed_vision/models/coco_yolo11n.pt
 package://aed_vision/models/yolo11n-pose.pt
 ```
@@ -161,7 +161,6 @@ ros2 launch aed_vision camera_vision.launch.py \
 - `homography_camera_id`: 카메라별 측량 설정 ID (`cam1` 또는 `cam2`)
 - `homography_margin_m`: 측량 영역 경계에서 허용할 좌표 여유
 - `crowd_roi`: 골목 영상에서 AMR이 통과해야 하는 영역
-- `crowded_person_threshold`: `CROWDED`로 판단할 최소 사람 수
 - `show_window`: 해당 노트북에 OpenCV 결과 창을 표시할지 여부
 
 ## 토픽
@@ -173,8 +172,9 @@ ros2 launch aed_vision camera_vision.launch.py \
 | `/<camera_id>/image_raw/compressed` | `sensor_msgs/CompressedImage` | 로컬 USB 웹캠 JPEG |
 | `/<camera_id>/vision/emergency_event` | `aed_interfaces/EmergencyEvent` | 확정 또는 해제된 구조 이벤트 |
 | `/<camera_id>/vision/status` | `std_msgs/String` | 전체 검출 상태 JSON |
-| `/<camera_id>/vision/crowd_level` | `std_msgs/String` | `NOT_APPLICABLE`, `0`, `1`, `2`, `3` (3은 3명 이상) |
+| `/<camera_id>/vision/crowd_level` | `aed_interfaces/CrowdLevel` | 0~3 혼잡 등급과 사람 수·통행 가능 여부 |
 | `/<camera_id>/vision/person_count` | `std_msgs/UInt32` | 골목 ROI 내 유효 person 수 |
+| `/<camera_id>/vision/detection_summary` | `aed_interfaces/DetectionSummary` | 프레임별 구조화된 검출 요약 |
 | `/<camera_id>/vision/fallen_location` | `geometry_msgs/PointStamped` | 호모그래피로 계산한 구조 대상 map 좌표 |
 | `/<camera_id>/vision/heartbeat` | `aed_interfaces/Heartbeat` | 초당 노드 생존 신호 |
 | `/<camera_id>/vision/debug/compressed` | `sensor_msgs/CompressedImage` | bbox와 ROI가 표시된 JPEG |
@@ -242,7 +242,7 @@ person이 0명이면 시간 패널티가 없고, 1명이면 10%, 2명이면 20%�
 ## 검출 위치 좌표
 
 각 카메라는 `homography_cam1.yaml` 또는 `homography_cam2.yaml`의 현장 측량
-행렬을 사용합니다. 가장 confidence가 높은 `fallen_person` bbox의 중심점을
+행렬을 사용합니다. 가장 confidence가 높은 `fallen_person` bbox의 하단 중심점을
 `map` 좌표로 변환하여 `EmergencyEvent.location`에 넣습니다.
 
 입력 영상 해상도가 측량 당시의 640×480과 다르면 픽셀 좌표를 측량 해상도로

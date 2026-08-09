@@ -254,6 +254,7 @@ class RosBridge:
         message.source_id = "operator"
         message.camera_id = ""
         message.zone_id = zone_id
+        message.crowd_level = 255
         self._event_publisher.publish(message)
 
         LOGGER.info("운영자 신고 발행: %s (%.2f, %.2f)", event_id, x, y)

@@ -22,6 +22,7 @@ setup(
         ),
     ],
     install_requires=["setuptools"],
+    extras_require={"test": ["pytest"]},
     zip_safe=True,
     maintainer="multi_amr_aed team",
     maintainer_email="team@example.com",
@@ -29,8 +30,10 @@ setup(
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
-            "helper_mission_controller = helper_mission.helper_mission_controller:main",
-            "helper_mission_coordinator = helper_mission.helper_mission_coordinator:main",
+            "helper_mission_controller = "
+            "helper_mission.helper_mission_controller:main",
+            "helper_mission_coordinator = "
+            "helper_mission.helper_mission_coordinator:main",
         ],
     },
 )

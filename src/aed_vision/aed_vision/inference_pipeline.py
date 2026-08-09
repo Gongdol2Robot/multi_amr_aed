@@ -40,6 +40,7 @@ POSE_SKELETON = (
 
 
 def _model_path(value: str, description: str) -> Path:
+    """ROS 패키지 URI나 일반 경로를 검증된 모델 파일 절대경로로 바꾼다."""
     # "package://<pkg>/<relative>" 형식이면 ROS 패키지의 설치 경로(share
     # 디렉터리) 기준으로 절대경로를 만든다. 이렇게 하면 YAML에 노트북마다
     # 다른 절대경로를 적지 않아도 된다(README의 이유와 동일).
@@ -65,6 +66,7 @@ def _model_path(value: str, description: str) -> Path:
 
 
 def _names(model) -> list[str]:
+    """Ultralytics 모델의 클래스 이름을 class ID 순서의 문자열 목록으로 만든다."""
     # Ultralytics 모델의 클래스 이름은 버전/모델에 따라 dict 또는 list로 온다.
     # dict일 때는 정수 키 순서(class id 순)로 정렬해 리스트로 통일한다.
     names = model.names
@@ -135,7 +137,6 @@ class InferencePipeline:
         imgsz: int,
         device: str,
         crowd_roi: list[float],
-        crowded_threshold: int,
         overlap_threshold: float,
         helper_max_distance_ratio: float,
         pose_keypoint_conf: float,
@@ -143,6 +144,7 @@ class InferencePipeline:
         pose_min_box_area: float,
         pose_min_torso_keypoints: int,
     ) -> None:
+        """추론 설정을 검증하고 선택한 backend에 필요한 YOLO 모델을 로드한다."""
         import torch
         from ultralytics import YOLO
 
@@ -171,9 +173,6 @@ class InferencePipeline:
                 "pose_min_torso_keypoints must be between 1 and 4"
             )
         self.crowd_roi = crowd_roi
-        # 하위 호환을 위해 파라미터는 받지만 혼잡 등급은 이제 사람 수 1/2/3을
-        # 직접 사용한다.
-        self.crowded_threshold = crowded_threshold
         self.overlap_threshold = overlap_threshold
         self.helper_max_distance_ratio = helper_max_distance_ratio
         if not 0.0 < self.helper_max_distance_ratio <= 1.0:
@@ -385,40 +384,36 @@ class InferencePipeline:
             )
         return fallen, evidence
 
-    def predict(self, frame) -> InferenceOutput:
-        started = perf_counter()
-        pose_evidence: list[PoseEvidence] = []
-        # 1단계: 쓰러짐(fallen) 검출. backend에 따라 소스가 다르다.
+    def _detect_rescue_targets(self, frame):
+        """선택한 backend로 환자·조력자 후보와 자세 근거를 검출한다."""
         if self.detection_backend == "mannequin_detect":
-            # class 0 mannequin을 검출한 뒤 crop Pose로 자세를 판정한다.
-            # class 1은 실제 RC카(helper) 검출 결과로 사용한다.
             rescue_result = self.rescue_model.predict(
                 frame, conf=self.rescue_conf, **self.options
             )[0]
-            fallen, pose_evidence = self._mannequin_pose_detections(
+            fallen, evidence = self._mannequin_pose_detections(
                 frame, rescue_result
             )
             helpers = _boxes(rescue_result, 1)
-            pose_people: list[Box] = []
-        else:
-            # Pose 모델은 helper를 구분하지 않으므로 helpers는 빈 채로 시작하고,
-            # 필요하면(detect_people_as_helpers) 아래에서 people로 채운다.
-            rescue_result = self.pose_model.predict(
-                frame, conf=self.person_conf, **self.options
-            )[0]
-            pose_people, fallen, pose_evidence = self._pose_detections(
-                rescue_result, frame.shape
-            )
-            helpers = []
+            return rescue_result, [], fallen, helpers, evidence
+
+        rescue_result = self.pose_model.predict(
+            frame, conf=self.person_conf, **self.options
+        )[0]
+        people, fallen, evidence = self._pose_detections(
+            rescue_result, frame.shape
+        )
+        return rescue_result, people, fallen, [], evidence
+
+    def _detect_people(self, frame, pose_people, fallen, helpers):
+        """사람 모델 또는 Pose 결과로 인원수·혼잡도·조력자를 계산한다."""
         person_result = None
         person_count = 0
         crowd_level = None
         time_multiplier = None
         crowd_traversable = True
+        height, width = frame.shape[:2]
+        frame_size = (width, height)
 
-        # 2단계: 인원수/혼잡도 계산. 혼잡도를 사용하는 골목 모드는 반드시
-        # COCO person 결과를 사용한다. ROI 밖 사람과 쓰러진 환자 bbox와 겹치는
-        # 검출은 filter_nonfallen_people에서 제외한다.
         if self.person_model is not None:
             person_result = self.person_model.predict(
                 frame,
@@ -426,11 +421,10 @@ class InferencePipeline:
                 classes=[self.person_class_id],
                 **self.options,
             )[0]
-            height, width = frame.shape[:2]
             people = filter_nonfallen_people(
                 _boxes(person_result, self.person_class_id),
                 fallen,
-                (width, height),
+                frame_size,
                 self.crowd_roi,
                 self.overlap_threshold,
             )
@@ -441,26 +435,54 @@ class InferencePipeline:
                 crowd_level = classify_crowd(person_count)
                 time_multiplier = crowd_time_multiplier(person_count)
                 crowd_traversable = time_multiplier is not None
-        elif self.detection_backend == "person_pose" and self.detect_people_as_helpers:
-            # 혼잡도 없이 Pose를 쓰는 로봇 모드는 별도 COCO 호출을 하지 않고,
-            # 관절 품질 필터를 통과한 사람 bbox를 helper 후보로 재사용한다.
-            height, width = frame.shape[:2]
+        elif (
+            self.detection_backend == "person_pose"
+            and self.detect_people_as_helpers
+        ):
             people = filter_nonfallen_people(
                 pose_people,
                 fallen,
-                (width, height),
+                frame_size,
                 self.crowd_roi,
                 self.overlap_threshold,
             )
             person_count = len(people)
             helpers = people
 
-        height, width = frame.shape[:2]
         helpers = filter_helpers_near_fallen(
             helpers,
             fallen,
-            (width, height),
+            frame_size,
             self.helper_max_distance_ratio,
+        )
+        return (
+            person_result,
+            helpers,
+            person_count,
+            crowd_level,
+            time_multiplier,
+            crowd_traversable,
+        )
+
+    def predict(self, frame) -> InferenceOutput:
+        """한 프레임에서 자세·구조·조력자·혼잡도를 추론하고 결과를 묶어 반환한다."""
+        started = perf_counter()
+        (
+            rescue_result,
+            pose_people,
+            fallen,
+            helpers,
+            pose_evidence,
+        ) = self._detect_rescue_targets(frame)
+        (
+            person_result,
+            helpers,
+            person_count,
+            crowd_level,
+            time_multiplier,
+            crowd_traversable,
+        ) = self._detect_people(
+            frame, pose_people, fallen, helpers
         )
 
         return InferenceOutput(
@@ -478,6 +500,7 @@ class InferencePipeline:
         )
 
     def render_debug(self, output: InferenceOutput, camera_id: str):
+        """추론 결과의 bbox·골격·ROI·상태 정보를 입력 영상 위에 그린다."""
         if output.detection_backend == "mannequin_detect":
             # 1차 검출에서 mannequin은 bbox만 표시하고 helping_person만
             # 이름을 표시한다. confidence는 둘 다 숨기며, Pose를 통과한

@@ -38,7 +38,6 @@
     # 가까운 환자와 함께 보이는 helper의 자세 변화까지 허용한다.
     helper_max_distance_ratio: 0.40
     crowd_roi: [0.0, 0.0, 1.0, 1.0]
-    crowded_person_threshold: 3
     fallen_person_overlap_iou: 0.4
 
     location_frame_id: map

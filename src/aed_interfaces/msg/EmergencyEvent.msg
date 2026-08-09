@@ -8,6 +8,7 @@ string event_id
 builtin_interfaces/Time detected_at
 geometry_msgs/PointStamped location
 float32 confidence
+# 하위 호환 이름. 실제 값은 최근 시간 창 안의 confirmation hit 수다.
 uint32 consecutive_detections
 uint8 status
 string source_id

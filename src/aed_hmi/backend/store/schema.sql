@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS emergency_events (
     source_id               TEXT NOT NULL DEFAULT '',
     camera_id               TEXT NOT NULL DEFAULT '',
     zone_id                 TEXT NOT NULL DEFAULT '',
+    crowd_level             INTEGER NOT NULL DEFAULT 255,
     -- 신고 접수 시각. 웹캠 검출이면 detected_at 과 같고,
     -- 119 연계면 그쪽에서 준 시각이 들어온다.
     called_at               REAL NOT NULL,

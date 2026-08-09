@@ -201,7 +201,7 @@ ros2 topic echo /emergency/eta/result
 ## Camera2 혼잡도 연동
 
 중앙 노드는 사람 수로 혼잡 여부를 다시 판정하지 않습니다. 비전 팀이 발행한
-`/camera_alley/vision/crowd_level`(`std_msgs/msg/String`)을 최종 판정으로
+`/camera_alley/vision/crowd_level`(`aed_interfaces/msg/CrowdLevel`)을 최종 판정으로
 구독합니다. `/camera_alley/vision/person_count`(`std_msgs/msg/UInt32`)은
 로그와 상태 확인에만 사용합니다.
 

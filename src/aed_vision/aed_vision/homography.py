@@ -7,7 +7,29 @@ import numpy as np
 import yaml
 
 
+def _project(matrix: np.ndarray, first: float, second: float):
+    """3x3 행렬로 2D 점을 투영하고 동차좌표를 평면 좌표로 바꾼다."""
+    point = matrix @ np.array([first, second, 1.0])
+    return float(point[0] / point[2]), float(point[1] / point[2])
+
+
+def _distance_to_segment(point, start, end) -> float:
+    """2D 점에서 선분까지의 최단 거리를 계산한다."""
+    dx, dy = end[0] - start[0], end[1] - start[1]
+    length_squared = dx * dx + dy * dy
+    if length_squared == 0.0:
+        return hypot(point[0] - start[0], point[1] - start[1])
+    ratio = (
+        (point[0] - start[0]) * dx + (point[1] - start[1]) * dy
+    ) / length_squared
+    ratio = max(0.0, min(1.0, ratio))
+    nearest_x = start[0] + ratio * dx
+    nearest_y = start[1] + ratio * dy
+    return hypot(point[0] - nearest_x, point[1] - nearest_y)
+
+
 def _config_dir() -> str:
+    """설치 환경 또는 소스 트리에서 호모그래피 설정 디렉터리를 찾는다."""
     try:
         from ament_index_python.packages import get_package_share_directory
 
@@ -42,6 +64,7 @@ class Homography:
 
     def __init__(self, matrix, correspondences=None, camera=None,
                  survey_area=None):
+        """변환 행렬과 측량 메타데이터를 저장하고 역행렬을 미리 계산한다."""
         self.matrix = np.asarray(matrix, dtype=np.float64).reshape(3, 3)
         self.inverse = np.linalg.inv(self.matrix)
         self.correspondences = correspondences or []
@@ -62,24 +85,24 @@ class Homography:
         )
 
     def pixel_to_map(self, u: float, v: float):
+        """영상 픽셀 좌표를 바닥 평면의 ROS map 좌표로 변환한다."""
         # 동차좌표(homogeneous coordinate)로 변환 후 3x3 호모그래피 행렬을 곱한다.
         # 결과의 z(point[2])로 나눠 다시 2D로 투영(perspective divide)해야
         # 원근 왜곡이 반영된 실제 map 좌표가 나온다.
-        point = self.matrix @ np.array([u, v, 1.0])
-        return float(point[0] / point[2]), float(point[1] / point[2])
+        return _project(self.matrix, u, v)
 
     def map_to_pixel(self, x: float, y: float):
+        """ROS map 좌표를 호모그래피 측량 영상의 픽셀 좌표로 역변환한다."""
         # pixel_to_map의 역변환. 역행렬(self.inverse)을 미리 구해뒀으므로
         # 매 호출마다 다시 invert하지 않는다.
-        point = self.inverse @ np.array([x, y, 1.0])
-        return float(point[0] / point[2]), float(point[1] / point[2])
+        return _project(self.inverse, x, y)
 
     def box_to_map(
         self, x1: float, y1: float, x2: float, y2: float,
         image_size=None,
     ):
-        """검출 박스 중심점을 측량 해상도에 맞춰 map 좌표로 바꾼다."""
-        u, v = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+        """검출 박스의 바닥 접점을 측량 해상도에 맞춰 map 좌표로 바꾼다."""
+        u, v = (x1 + x2) / 2.0, y2
         # 호모그래피 행렬은 측량 당시의 해상도(self.camera width/height) 기준으로
         # 만들어졌다. 실제 입력 해상도(image_size)가 다르면 비율로 스케일링해
         # 같은 물리적 지점이 같은 픽셀 좌표를 가리키도록 맞춘다.
@@ -98,6 +121,7 @@ class Homography:
     def inside_survey_area(
         self, x: float, y: float, margin: float = 0.0
     ) -> bool:
+        """map 좌표가 측량 다각형 내부 또는 허용 여유 거리 안인지 판정한다."""
         polygon = self.survey_polygon()
         if len(polygon) < 3:
             # 다각형을 정의할 점이 부족하면(측량 미비) 항상 안쪽으로 간주해
@@ -121,21 +145,7 @@ class Homography:
         # 구해 거리(hypot)를 계산한다.
         for index, start in enumerate(polygon):
             end = polygon[(index + 1) % len(polygon)]
-            dx, dy = end[0] - start[0], end[1] - start[1]
-            length_squared = dx * dx + dy * dy
-            # 점을 변 위로 투영한 비율(0=start, 1=end)을 구하고 [0,1]로 clamp해
-            # "변의 연장선"이 아니라 "변 위의" 최근접점만 나오게 한다.
-            ratio = 0.0 if length_squared == 0.0 else max(
-                0.0,
-                min(
-                    1.0,
-                    ((x - start[0]) * dx + (y - start[1]) * dy)
-                    / length_squared,
-                ),
-            )
-            nearest_x = start[0] + ratio * dx
-            nearest_y = start[1] + ratio * dy
-            if hypot(x - nearest_x, y - nearest_y) <= margin:
+            if _distance_to_segment((x, y), start, end) <= margin:
                 return True
         return False
 
