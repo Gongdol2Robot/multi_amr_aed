@@ -23,6 +23,11 @@
     pose_min_keypoints: 5
     pose_min_box_area: 0.005
     pose_min_torso_keypoints: 2
+    # validation에서 고정한 bbox 가로/세로 임계값. 후보는 12프레임 중
+    # 4회 이상 관측될 때만 최종 응급상황으로 확정된다.
+    mannequin_bbox_fallback: true
+    mannequin_fallen_aspect_threshold: 1.03
+    posture_classifier_weights: package://aed_vision/models/mannequin_posture_svm.xml
     iou: 0.5
     imgsz: 640
     # 첫 GPU를 우선 사용하며, CUDA가 없거나 GPU 0이 없으면 CPU로 자동 전환한다.

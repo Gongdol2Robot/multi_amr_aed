@@ -11,6 +11,7 @@ from aed_vision.detection_logic import (
     intersection_over_union,
     point_inside_normalized_roi,
     update_presence_confirmation,
+    is_fallen_bbox_candidate,
 )
 
 
@@ -23,6 +24,16 @@ def test_temporal_confirmation_uses_recent_window() -> None:
     assert confirmation.update(True) is True
     assert confirmation.hit_count == 3
     assert confirmation.update(False) is False
+
+
+def test_horizontal_bbox_is_kept_as_fallen_candidate() -> None:
+    assert is_fallen_bbox_candidate(Box(0, 0, 103, 100), 1.03)
+    assert not is_fallen_bbox_candidate(Box(0, 0, 102, 100), 1.03)
+
+
+def test_bbox_fallback_rejects_invalid_threshold() -> None:
+    with pytest.raises(ValueError, match="aspect_threshold"):
+        is_fallen_bbox_candidate(Box(0, 0, 100, 100), 0.0)
 
 
 @pytest.mark.parametrize("window,hits", [(0, 1), (2, 0), (2, 3)])

@@ -17,8 +17,10 @@ from .detection_logic import (
     crowd_time_multiplier,
     filter_helpers_near_fallen,
     filter_nonfallen_people,
+    is_fallen_bbox_candidate,
 )
 from .pose_posture import TORSO_INDEXES, classify_posture
+from .posture_classifier import PostureClassifier
 
 
 RESCUE_CLASS_NAMES = ["mannequin", "helping_person"]
@@ -143,6 +145,9 @@ class InferencePipeline:
         pose_min_keypoints: int,
         pose_min_box_area: float,
         pose_min_torso_keypoints: int,
+        mannequin_bbox_fallback: bool = True,
+        mannequin_fallen_aspect_threshold: float = 1.03,
+        posture_classifier_weights: str = "",
     ) -> None:
         """추론 설정을 검증하고 선택한 backend에 필요한 YOLO 모델을 로드한다."""
         import torch
@@ -162,6 +167,11 @@ class InferencePipeline:
         self.pose_min_keypoints = pose_min_keypoints
         self.pose_min_box_area = pose_min_box_area
         self.pose_min_torso_keypoints = pose_min_torso_keypoints
+        self.mannequin_bbox_fallback = mannequin_bbox_fallback
+        self.mannequin_fallen_aspect_threshold = (
+            mannequin_fallen_aspect_threshold
+        )
+        self.posture_classifier = None
         if not 0.0 <= self.pose_keypoint_conf <= 1.0:
             raise ValueError("pose_keypoint_conf must be between 0 and 1")
         if not 1 <= self.pose_min_keypoints <= 17:
@@ -171,6 +181,10 @@ class InferencePipeline:
         if not 1 <= self.pose_min_torso_keypoints <= len(TORSO_INDEXES):
             raise ValueError(
                 "pose_min_torso_keypoints must be between 1 and 4"
+            )
+        if self.mannequin_fallen_aspect_threshold <= 0.0:
+            raise ValueError(
+                "mannequin_fallen_aspect_threshold must be positive"
             )
         self.crowd_roi = crowd_roi
         self.overlap_threshold = overlap_threshold
@@ -225,6 +239,13 @@ class InferencePipeline:
                 raise RuntimeError(
                     f"Rescue classes must be {RESCUE_CLASS_NAMES}, "
                     f"got {rescue_names}"
+                )
+            if posture_classifier_weights.strip():
+                self.posture_classifier = PostureClassifier(
+                    _model_path(
+                        posture_classifier_weights,
+                        "mannequin posture classifier",
+                    )
                 )
         self.pose_model = YOLO(
             str(_model_path(pose_weights, "person pose weights"))
@@ -328,14 +349,52 @@ class InferencePipeline:
             x1, y1, x2, y2 = (float(value) for value in xyxy)
             width = max(x2 - x1, 1.0)
             height = max(y2 - y1, 1.0)
+            box = Box(x1, y1, x2, y2, confidence=float(box_conf))
+            box_area = width * height
+            if box_area / max(frame_area, 1.0) < self.pose_min_box_area:
+                continue
+            bbox_fallen = (
+                self.mannequin_bbox_fallback
+                and is_fallen_bbox_candidate(
+                    box, self.mannequin_fallen_aspect_threshold
+                )
+            )
+
+            fallback_fallen = bbox_fallen
+
+            def keep_bbox_fallback() -> None:
+                """Pose가 없거나 불량해도 가로형 bbox를 후보로 남긴다."""
+                if not fallback_fallen:
+                    return
+                fallen.append(box)
+                evidence.append(
+                    PoseEvidence(
+                        box=box,
+                        keypoints=np.zeros((17, 3), dtype=float),
+                        posture="FALLEN",
+                        aspect_ratio=box.aspect_ratio,
+                        torso_angle_deg=-1.0,
+                        visible_keypoints=0,
+                    )
+                )
+
             pad_x, pad_y = width * 0.35, height * 0.35
             left = max(0, int(x1 - pad_x))
             top = max(0, int(y1 - pad_y))
             right = min(frame_width, int(x2 + pad_x))
             bottom = min(frame_height, int(y2 + pad_y))
             if right <= left or bottom <= top:
+                keep_bbox_fallback()
                 continue
             crop = frame[top:bottom, left:right]
+            classifier_fallen = (
+                self.posture_classifier.predict_fallen(crop)
+                if self.posture_classifier is not None else None
+            )
+            fallback_fallen = (
+                classifier_fallen
+                if classifier_fallen is not None else bbox_fallen
+            )
             pose_result = self.pose_model.predict(
                 crop, conf=self.rescue_conf, **self.options
             )[0]
@@ -345,6 +404,7 @@ class InferencePipeline:
                 or pose_result.keypoints is None
                 or pose_result.keypoints.conf is None
             ):
+                keep_bbox_fallback()
                 continue
             pose_index = int(
                 np.argmax(pose_result.boxes.conf.cpu().numpy())
@@ -357,19 +417,25 @@ class InferencePipeline:
             xy[:, 1] += top
             visible = confidence >= self.pose_keypoint_conf
             torso_visible = int(visible[list(TORSO_INDEXES)].sum())
-            box_area = width * height
             if (
-                box_area / max(frame_area, 1.0) < self.pose_min_box_area
-                or int(visible.sum()) < self.pose_min_keypoints
+                int(visible.sum()) < self.pose_min_keypoints
                 or torso_visible < self.pose_min_torso_keypoints
             ):
+                keep_bbox_fallback()
                 continue
             keypoints = np.column_stack((xy, confidence))
             # Pose bbox가 아닌 1단계 mannequin bbox로 종횡비를 계산한다.
             posture, metrics = classify_posture(
                 keypoints, xyxy, keypoint_conf=self.pose_keypoint_conf
             )
-            box = Box(x1, y1, x2, y2, confidence=float(box_conf))
+            # 사람용 Pose가 목각인형 관절을 세로로 잘못 찍더라도 detector
+            # bbox가 명확히 가로형이면 안전 우선으로 낙상 후보를 유지한다.
+            if classifier_fallen is not None:
+                # 전용 crop 분류기가 연결되면 사람용 Pose의 잘못된 FALLEN
+                # 결과로 정상 판정을 뒤집지 않는다. Pose는 골격 시각화 근거다.
+                posture = "FALLEN" if classifier_fallen else "STANDING"
+            elif bbox_fallen:
+                posture = "FALLEN"
             if posture == "FALLEN":
                 fallen.append(box)
             evidence.append(

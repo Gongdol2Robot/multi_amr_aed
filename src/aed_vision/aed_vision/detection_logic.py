@@ -37,6 +37,20 @@ class Box:
         """사람이 바닥과 닿는 지점을 근사하는 bbox 하단 중심을 반환한다."""
         return ((self.x1 + self.x2) / 2.0, self.y2)
 
+    @property
+    def aspect_ratio(self) -> float:
+        """bbox의 가로/세로 비율을 0으로 나누지 않고 반환한다."""
+        width = max(0.0, self.x2 - self.x1)
+        height = max(1.0, self.y2 - self.y1)
+        return width / height
+
+
+def is_fallen_bbox_candidate(box: Box, aspect_threshold: float) -> bool:
+    """가로로 긴 mannequin bbox를 Pose 실패 시 낙상 후보로 유지한다."""
+    if aspect_threshold <= 0.0:
+        raise ValueError("aspect_threshold must be positive")
+    return box.aspect_ratio >= aspect_threshold
+
 
 class TemporalConfirmation:
     """최근 프레임의 다수결로 순간적인 오검출을 응급상황과 분리한다.

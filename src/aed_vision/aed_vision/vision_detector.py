@@ -56,6 +56,9 @@ PARAMETER_DEFAULTS = (
     ("pose_min_keypoints", 8),
     ("pose_min_box_area", 0.02),
     ("pose_min_torso_keypoints", 3),
+    ("mannequin_bbox_fallback", True),
+    ("mannequin_fallen_aspect_threshold", 1.03),
+    ("posture_classifier_weights", ""),
     ("detect_people_as_helpers", False),
     ("iou", 0.5),
     ("imgsz", 640),
@@ -264,6 +267,15 @@ class VisionDetector(Node):
             pose_min_box_area=float(self._param("pose_min_box_area")),
             pose_min_torso_keypoints=int(
                 self._param("pose_min_torso_keypoints")
+            ),
+            mannequin_bbox_fallback=bool(
+                self._param("mannequin_bbox_fallback")
+            ),
+            mannequin_fallen_aspect_threshold=float(
+                self._param("mannequin_fallen_aspect_threshold")
+            ),
+            posture_classifier_weights=str(
+                self._param("posture_classifier_weights")
             ),
         )
 

@@ -23,6 +23,11 @@
     pose_min_keypoints: 5
     pose_min_box_area: 0.005
     pose_min_torso_keypoints: 2
+    # Pose가 목각인형 관절을 만들지 못해도 가로형 detector bbox는 낙상
+    # 후보로 유지하고, 아래 confirmation_window에서 시간 누적 확정한다.
+    mannequin_bbox_fallback: true
+    mannequin_fallen_aspect_threshold: 1.03
+    posture_classifier_weights: package://aed_vision/models/mannequin_posture_svm.xml
     iou: 0.5
     imgsz: 640
     # 첫 GPU를 우선 사용하며, CUDA가 없거나 GPU 0이 없으면 CPU로 자동 전환한다.

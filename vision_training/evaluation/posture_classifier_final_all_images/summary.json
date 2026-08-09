@@ -1,0 +1,39 @@
+{
+  "dataset": "/tmp/pose_eval.jeOHIz/mannequin_dataset",
+  "test_images": 91,
+  "gt_mannequin": 91,
+  "matched_detection": 90,
+  "detection_recall_iou_0_5": 0.989010989010989,
+  "pose_generated": 68,
+  "pose_generation_rate_on_detected": 0.7555555555555555,
+  "quality_pass_kp_ge_6": 68,
+  "quality_pass_rate_on_pose": 1.0,
+  "posture_distribution": {
+    "STANDING": 49,
+    "SITTING": 8,
+    "FALLEN": 11,
+    "UNKNOWN": 0
+  },
+  "bbox_pose_cascade_fallen": 48,
+  "classifier_fallen": 48,
+  "weak_fallen_recall": 0.9019607843137255,
+  "weak_normal_specificity": 0.95,
+  "mean_det_ms_per_image": 42.124168120858236,
+  "mean_pose_ms_per_image": 40.84721670325642,
+  "mean_pipeline_ms_per_image": 84.54542764847356,
+  "pipeline_fps": 11.827960752151387,
+  "settings": {
+    "device": "cpu",
+    "imgsz": 640,
+    "det_conf": 0.2,
+    "pose_conf": 0.25,
+    "keypoint_conf": 0.3,
+    "iou": 0.5,
+    "bbox_fallback_threshold": 1.03,
+    "posture_classifier": "src/aed_vision/models/mannequin_posture_svm.xml",
+    "crop_padding": 0.35,
+    "seed": 42,
+    "sample_count": 91
+  },
+  "limitation": "Detection 라벨만 있으므로 Pose keypoint mAP 및 자세 분류 정확도는 산출하지 않음"
+}

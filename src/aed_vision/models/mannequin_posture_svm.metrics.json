@@ -1,0 +1,33 @@
+{
+  "train_samples_with_augmentation": 2876,
+  "class_counts": [
+    128,
+    2748
+  ],
+  "c": 2.0,
+  "gamma": 0.0005669,
+  "val": {
+    "tp": 60,
+    "fn": 9,
+    "fp": 1,
+    "tn": 21,
+    "fallen_recall": 0.8695652173913043,
+    "normal_specificity": 0.9545454545454546,
+    "fallen_precision": 0.9836065573770492,
+    "fallen_f1": 0.923076923076923,
+    "balanced_accuracy": 0.9120553359683794
+  },
+  "val_samples": 91,
+  "test": {
+    "tp": 45,
+    "fn": 6,
+    "fp": 0,
+    "tn": 40,
+    "fallen_recall": 0.8823529411764706,
+    "normal_specificity": 1.0,
+    "fallen_precision": 1.0,
+    "fallen_f1": 0.9375,
+    "balanced_accuracy": 0.9411764705882353
+  },
+  "test_samples": 91
+}
