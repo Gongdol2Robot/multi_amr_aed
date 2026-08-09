@@ -30,31 +30,43 @@ class FrameBuffer:
         self.label = label
         self.kind = kind
         self._lock = threading.Lock()
+        self._condition = threading.Condition(self._lock)
         self._jpeg: Optional[bytes] = None
+        self._version = 0
         self._arrivals: deque[float] = deque(maxlen=FPS_WINDOW)
         self._detections = 0
-        # 대기 중인 MJPEG 응답들을 깨우는 신호
-        self._updated = threading.Event()
 
     def put(self, jpeg: bytes, detections: int = 0) -> None:
-        with self._lock:
+        with self._condition:
             self._jpeg = jpeg
+            self._version += 1
             self._arrivals.append(time.time())
             self._detections = detections
-        self._updated.set()
-        self._updated.clear()
+            # 여러 브라우저가 같은 타일을 보고 있어도 새 프레임 한 장으로
+            # 대기 중인 모든 MJPEG 응답을 깨운다.
+            self._condition.notify_all()
 
     def latest(self) -> Optional[bytes]:
         with self._lock:
             return self._jpeg
 
-    def wait_for_next(self, timeout: float = 1.0) -> Optional[bytes]:
-        """새 프레임이 올 때까지 기다린다. 없으면 마지막 것을 준다.
+    def wait_for_next(
+        self, version: int, timeout: float = 1.0
+    ) -> tuple[int, Optional[bytes]]:
+        """구독자가 본 버전 이후의 새 프레임만 반환한다.
 
-        폴링으로 돌리면 프레임 속도와 무관하게 CPU 를 태운다.
+        타임아웃마다 마지막 JPEG를 다시 보내면 카메라가 끊긴 동안에도
+        브라우저 수만큼 중복 트래픽이 생긴다. 새 프레임이 없으면 JPEG 대신
+        ``None``을 반환해 연결만 유지한다.
         """
-        self._updated.wait(timeout=timeout)
-        return self.latest()
+        with self._condition:
+            self._condition.wait_for(
+                lambda: self._version != version,
+                timeout=timeout,
+            )
+            if self._version == version:
+                return version, None
+            return self._version, self._jpeg
 
     def health(self) -> StreamHealth:
         with self._lock:

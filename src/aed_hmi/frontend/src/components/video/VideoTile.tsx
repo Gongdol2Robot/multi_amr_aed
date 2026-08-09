@@ -9,7 +9,7 @@
  *    확인되면 주소에 시각을 붙여 강제로 다시 연결한다.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { videoUrl } from '../../api/http';
 import type { StreamHealth } from '../../types/telemetry';
@@ -23,15 +23,27 @@ interface Props {
   onToggle: () => void;
 }
 
+const RETRY_INITIAL_MS = 4000;
+const RETRY_MAX_MS = 30000;
+
 export function VideoTile({ health, seat, focused, onToggle }: Props) {
   const [reloadKey, setReloadKey] = useState(0);
+  const retryDelay = useRef(RETRY_INITIAL_MS);
 
   useEffect(() => {
-    if (health.online) return;
-    // 끊긴 동안 주기적으로 다시 붙는다. 서버가 살아나면 저절로 복구된다.
-    const timer = window.setInterval(() => setReloadKey((n) => n + 1), 4000);
-    return () => window.clearInterval(timer);
-  }, [health.online]);
+    if (health.online) {
+      retryDelay.current = RETRY_INITIAL_MS;
+      return;
+    }
+    // 장시간 끊긴 카메라를 4초마다 계속 두드리지 않는다. 처음에는 빠르게
+    // 복구하고, 실패가 이어지면 최대 30초까지 간격을 늘린다.
+    const delay = retryDelay.current;
+    const timer = window.setTimeout(() => {
+      retryDelay.current = Math.min(delay * 2, RETRY_MAX_MS);
+      setReloadKey((n) => n + 1);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [health.online, reloadKey]);
 
   const source = `${videoUrl(health.stream_id)}?k=${reloadKey}`;
   const tone = health.online ? 'ok' : 'danger';

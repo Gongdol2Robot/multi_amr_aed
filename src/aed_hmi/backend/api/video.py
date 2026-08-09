@@ -31,14 +31,15 @@ async def video_stream(stream_id: str, request: Request):
         )
 
     async def frames():
+        version = 0
         while True:
             if await request.is_disconnected():
                 break
             # threading.Event.wait()를 이벤트 루프에서 직접 부르면 영상 타일
             # 하나가 최대 1초 동안 다른 영상과 API 응답까지 전부 막는다.
             # ROS 콜백과 함께 쓰는 blocking buffer는 worker thread에서 기다린다.
-            jpeg = await asyncio.to_thread(
-                buffer.wait_for_next, IDLE_TIMEOUT_S
+            version, jpeg = await asyncio.to_thread(
+                buffer.wait_for_next, version, IDLE_TIMEOUT_S
             )
             if jpeg is None:
                 continue
