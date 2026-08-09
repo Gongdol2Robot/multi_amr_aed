@@ -375,6 +375,10 @@ class VisionDetector(Node):
         self, frame: np.ndarray, source: CompressedImage | Image
     ) -> None:
         """디코딩된 한 프레임의 구조·혼잡 검출과 결과 발행을 수행한다."""
+        # 핵심 흐름:
+        # BGR 프레임 -> 모델 추론 -> 낙상 시간 확정 -> map 위치 계산
+        # -> 프레임별 상태 발행 -> 필요할 때 디버그 영상 발행.
+        # 이 함수는 각 세부 계산을 직접 하지 않고 전담 모듈을 조율한다.
         # 이전 프레임 추론이 아직 안 끝났으면 이번 프레임은 버린다.
         # 카메라 타이머/구독 콜백이 추론 속도보다 빠를 때 콜백이 쌓이는 것을 막는다
         # (콜백 큐잉 대신 여기서 직접 최신 프레임 우선 정책을 구현).
@@ -388,11 +392,18 @@ class VisionDetector(Node):
                     "starting YOLO warm-up/inference"
                 )
                 self.first_frame_logged = True
+            # 1) 한 프레임의 낙상 후보, 조력자, 사람 수와 혼잡도를 계산한다.
+            # 아직 이 결과는 단일 프레임의 후보이며 응급상황 확정은 아니다.
             result = self.pipeline.predict(frame)
+
             # 이번 프레임 단독 검출 여부(result.fallen)를 시간 창에 넣어
             # 순간 오검출을 걸러낸 "확정" 여부를 얻는다.
             confirmed = self.confirmation.update(bool(result.fallen))
+
+            # 3) 현재 프레임에서 가장 신뢰도 높은 낙상 후보의 위치를 구한다.
+            # 고정 카메라는 호모그래피, 미설정 카메라는 YAML 대표 좌표를 쓴다.
             target_location = self._target_location(result.fallen, frame.shape)
+
             # 측량 영역 밖(extrapolated)도 발행 대상에 포함— "configured"
             # (호모그래피 자체가 없는 경우)만 제외한다.
             if target_location[2].startswith("homography"):
@@ -405,6 +416,9 @@ class VisionDetector(Node):
                     f"First inference complete: {result.inference_ms:.1f} ms; "
                     f"show_window={self.show_window}"
                 )
+
+            # 4) 프레임별 요약은 항상 발행하고, 응급 이벤트는 확정 상태가
+            # 바뀐 순간에만 발행한다(False->True 또는 True->False).
             self._publish_outputs(
                 source,
                 result.fallen,
@@ -432,6 +446,9 @@ class VisionDetector(Node):
         self, fallen: list[Box], frame_shape
     ) -> tuple[float, float, str]:
         """가장 확실한 쓰러진 사람의 bbox 하단 중심을 map 좌표로 변환한다."""
+        # 반환값의 세 번째 항목은 좌표의 출처다.
+        # configured: YAML 대표 좌표, homography: 측량 내부 변환,
+        # homography_extrapolated: 측량 영역 밖으로 외삽한 변환.
         fallback = (self.location_x, self.location_y)
         if self.homography is None or not fallen:
             return fallback[0], fallback[1], "configured"
@@ -489,6 +506,9 @@ class VisionDetector(Node):
         status는 매 처리 프레임 발행하지만 EmergencyEvent는 False→True일 때
         CONFIRMED, True→False일 때 CANCELED를 한 번만 발행한다.
         """
+        # 이 함수의 출력은 두 종류다.
+        # 1) 관측값: person/helper/crowd/status/summary를 매 프레임 발행
+        # 2) 사건값: CONFIRMED/CANCELED를 상태 전환 때 한 번만 발행
         self.person_count_pub.publish(UInt32(data=person_count))
         helper_count = len(helpers)
         helper_confirmed = update_presence_confirmation(

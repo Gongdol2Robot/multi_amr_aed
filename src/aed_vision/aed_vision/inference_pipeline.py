@@ -334,25 +334,42 @@ class InferencePipeline:
         return people, fallen, evidence
 
     def _mannequin_pose_detections(self, frame, detection_result):
-        """mannequin bbox crop에 Pose를 적용해 자세를 판정한다."""
+        """mannequin bbox마다 SVM과 Pose를 적용해 낙상 후보를 반환한다.
+
+        1단계 rescue detector의 mannequin bbox를 받아 너무 작은 검출을 제거하고,
+        bbox 주변 crop에 전용 HOG+SVM과 사람용 Pose를 실행한다. 최종 자세는
+        SVM, bbox fallback, Pose 순으로 보완하며 여기서 만든 ``fallen``은 아직
+        프레임 단위 후보다. 시간 누적 응급 확정은 VisionDetector가 담당한다.
+        """
+        # 최종 낙상 후보 bbox와, 자세 판정 근거(관절·각도 등)를 따로 모은다.
         fallen: list[Box] = []
         evidence: list[PoseEvidence] = []
+        # 1단계 detector가 아무 객체도 찾지 못했다면 판정할 대상도 없다.
         if detection_result.boxes is None:
             return fallen, evidence
 
+        # rescue 모델의 class 0은 mannequin, class 1은 helping_person이다.
+        # 여기서는 자세를 판정해야 하는 mannequin(class 0)만 선택한다.
         selected = detection_result.boxes[detection_result.boxes.cls == 0]
         frame_height, frame_width = frame.shape[:2]
+        # bbox가 화면에서 차지하는 비율을 계산하기 위한 전체 프레임 면적이다.
         frame_area = float(frame_height * frame_width)
         for xyxy, box_conf in zip(
             selected.xyxy.cpu().numpy(), selected.conf.cpu().numpy()
         ):
+            # GPU tensor를 원본 영상 기준 픽셀 좌표와 Python 실수로 변환한다.
             x1, y1, x2, y2 = (float(value) for value in xyxy)
+            # 잘못된 0 크기 bbox가 나와도 0으로 나누지 않도록 최소 1픽셀로 둔다.
             width = max(x2 - x1, 1.0)
             height = max(y2 - y1, 1.0)
             box = Box(x1, y1, x2, y2, confidence=float(box_conf))
             box_area = width * height
+            # 화면에서 너무 작은 mannequin은 Pose 관절 신뢰도가 낮으므로 버린다.
             if box_area / max(frame_area, 1.0) < self.pose_min_box_area:
                 continue
+            # 사람용 Pose가 목각인형에서 실패할 수 있으므로, 설정이 켜져 있고
+            # detector bbox의 가로/세로 비율이 임계값 이상이면 낙상 예비 후보로
+            # 기록한다. 이것은 아직 시간 누적을 거친 최종 응급 확정이 아니다.
             bbox_fallen = (
                 self.mannequin_bbox_fallback
                 and is_fallen_bbox_candidate(
@@ -360,12 +377,18 @@ class InferencePipeline:
                 )
             )
 
+            # 뒤에서 전용 HOG+SVM 결과가 나오면 이 값을 덮어쓴다. Pose가 없거나
+            # 품질 필터를 통과하지 못할 때 keep_bbox_fallback()이 사용할 값이다.
             fallback_fallen = bbox_fallen
 
             def keep_bbox_fallback() -> None:
-                """Pose가 없거나 불량해도 가로형 bbox를 후보로 남긴다."""
+                """Pose 실패 시 SVM 또는 bbox 판정이 참인 후보를 보존한다."""
+                # fallback까지 정상으로 판단했다면 이 mannequin은 버린다.
                 if not fallback_fallen:
                     return
+                # 검출 bbox는 낙상 후보로 유지하되 실제 관절은 없으므로 17개
+                # keypoint를 모두 confidence=0으로 채워 디버그 렌더러가 안전하게
+                # 같은 PoseEvidence 형식을 처리할 수 있도록 한다.
                 fallen.append(box)
                 evidence.append(
                     PoseEvidence(
@@ -378,26 +401,39 @@ class InferencePipeline:
                     )
                 )
 
+            # detector bbox만 자르면 팔·다리 끝이 잘릴 수 있으므로 네 방향으로
+            # bbox 크기의 35%만큼 여유를 준다. 좌표는 프레임 경계를 넘지 않게
+            # clamp한다.
             pad_x, pad_y = width * 0.35, height * 0.35
             left = max(0, int(x1 - pad_x))
             top = max(0, int(y1 - pad_y))
             right = min(frame_width, int(x2 + pad_x))
             bottom = min(frame_height, int(y2 + pad_y))
+            # clamp 후에도 폭이나 높이가 없는 비정상 crop이면 Pose를 실행하지
+            # 않고 앞에서 계산한 fallback 결과만 사용한다.
             if right <= left or bottom <= top:
                 keep_bbox_fallback()
                 continue
             crop = frame[top:bottom, left:right]
+            # 목각인형 전용 HOG+SVM이 연결돼 있으면 crop의 FALLEN 여부를 먼저
+            # 판정한다. 모델이 없을 때의 None은 "정상"이 아니라 "판정 없음"이다.
             classifier_fallen = (
                 self.posture_classifier.predict_fallen(crop)
                 if self.posture_classifier is not None else None
             )
+            # SVM 결과가 있으면 bbox 비율보다 우선한다. 따라서 SVM의 정상 판정은
+            # 단순히 가로로 긴 bbox가 낙상으로 남는 것도 막을 수 있다.
             fallback_fallen = (
                 classifier_fallen
                 if classifier_fallen is not None else bbox_fallen
             )
+            # Pose는 전체 프레임이 아니라 확장 crop에만 실행한다. 작은 mannequin을
+            # 모델 입력에서 크게 보이게 하고 주변 사람의 관절과 섞이는 것을 줄인다.
             pose_result = self.pose_model.predict(
                 crop, conf=self.rescue_conf, **self.options
             )[0]
+            # bbox, keypoint 또는 관절 confidence 중 하나라도 없으면 자세 각도를
+            # 계산할 수 없으므로 SVM/bbox fallback으로 종료한다.
             if (
                 pose_result.boxes is None
                 or len(pose_result.boxes) == 0
@@ -406,6 +442,8 @@ class InferencePipeline:
             ):
                 keep_bbox_fallback()
                 continue
+            # 한 crop에서 여러 Pose가 나올 수 있으므로 bbox confidence가 가장 높은
+            # 한 사람만 현재 mannequin의 관절로 선택한다.
             pose_index = int(
                 np.argmax(pose_result.boxes.conf.cpu().numpy())
             )
@@ -413,16 +451,24 @@ class InferencePipeline:
             confidence = (
                 pose_result.keypoints.conf[pose_index].cpu().numpy()
             )
+            # Pose 좌표는 crop의 왼쪽 위가 (0, 0)인 지역 좌표다. detector bbox와
+            # 디버그 영상에 함께 쓰기 위해 원본 프레임 좌표로 되돌린다.
             xy[:, 0] += left
             xy[:, 1] += top
+            # 관절별 confidence가 기준 이상인 점만 보이는 관절로 센다.
+            # 몸통 관절은 양쪽 어깨와 양쪽 엉덩이 네 점이다.
             visible = confidence >= self.pose_keypoint_conf
             torso_visible = int(visible[list(TORSO_INDEXES)].sum())
+            # 전체 관절 또는 몸통 관절이 부족하면 Pose 자세를 신뢰하지 않고
+            # SVM/bbox fallback을 사용한다.
             if (
                 int(visible.sum()) < self.pose_min_keypoints
                 or torso_visible < self.pose_min_torso_keypoints
             ):
                 keep_bbox_fallback()
                 continue
+            # 각 관절을 [x, y, confidence] 한 행으로 묶어 자세 판정기와
+            # 디버그 렌더러가 공통으로 사용할 수 있게 한다.
             keypoints = np.column_stack((xy, confidence))
             # Pose bbox가 아닌 1단계 mannequin bbox로 종횡비를 계산한다.
             posture, metrics = classify_posture(
@@ -435,9 +481,14 @@ class InferencePipeline:
                 # 결과로 정상 판정을 뒤집지 않는다. Pose는 골격 시각화 근거다.
                 posture = "FALLEN" if classifier_fallen else "STANDING"
             elif bbox_fallen:
+                # 전용 SVM이 없을 때만 가로형 detector bbox가 Pose 결과를
+                # FALLEN으로 보완한다.
                 posture = "FALLEN"
+            # 최종 자세가 FALLEN인 bbox만 시간 누적 판정의 입력으로 보낸다.
             if posture == "FALLEN":
                 fallen.append(box)
+            # 낙상 여부와 관계없이 품질을 통과한 Pose 근거는 모두 남긴다.
+            # status JSON과 디버그 영상에서 STANDING/SITTING/UNKNOWN도 확인 가능하다.
             evidence.append(
                 PoseEvidence(
                     box=box,
@@ -448,10 +499,14 @@ class InferencePipeline:
                     visible_keypoints=int(visible.sum()),
                 )
             )
+        # 모든 mannequin을 처리한 뒤 낙상 후보와 자세 근거를 함께 반환한다.
         return fallen, evidence
 
     def _detect_rescue_targets(self, frame):
         """선택한 backend로 환자·조력자 후보와 자세 근거를 검출한다."""
+        # backend는 카메라 종류가 아니라 "낙상 후보를 만드는 방법"이다.
+        # mannequin_detect: 전용 detector -> mannequin crop 자세 판정
+        # person_pose: 전체 영상 Pose -> 관절 기반 실제 사람 자세 판정
         if self.detection_backend == "mannequin_detect":
             rescue_result = self.rescue_model.predict(
                 frame, conf=self.rescue_conf, **self.options
@@ -472,6 +527,9 @@ class InferencePipeline:
 
     def _detect_people(self, frame, pose_people, fallen, helpers):
         """사람 모델 또는 Pose 결과로 인원수·혼잡도·조력자를 계산한다."""
+        # 구조 대상 검출과 주변 사람 계산은 목적이 다르다.
+        # 골목에서는 관절이 잘 안 보이는 먼 사람도 세기 위해 별도 COCO person
+        # 모델을 쓰고, ROI 밖 사람과 fallen bbox에 중복된 사람을 제외한다.
         person_result = None
         person_count = 0
         crowd_level = None
@@ -532,6 +590,8 @@ class InferencePipeline:
 
     def predict(self, frame) -> InferenceOutput:
         """한 프레임에서 자세·구조·조력자·혼잡도를 추론하고 결과를 묶어 반환한다."""
+        # 1단계는 "누가 환자인가", 2단계는 "주변에 누가 있고 길이 막혔는가"를
+        # 계산한다. 시간 누적 확정과 ROS 발행은 상위 VisionDetector의 책임이다.
         started = perf_counter()
         (
             rescue_result,

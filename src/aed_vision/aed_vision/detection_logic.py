@@ -75,6 +75,8 @@ class TemporalConfirmation:
 
     def update(self, detected: bool) -> bool:
         """현재 프레임 결과를 창에 추가하고 응급상황 확정 여부를 반환한다."""
+        # 중요: 연속 검출 횟수가 아니다. 최근 N프레임 안의 True 개수가
+        # required_hits 이상인지 보는 다수결이므로 잠깐의 가림을 허용한다.
         # deque(maxlen=window_size)라 창이 가득 차면 append 시 가장 오래된
         # 프레임이 자동으로 밀려난다 — 별도 pop 없이 슬라이딩 윈도우가 된다.
         self._history.append(bool(detected))

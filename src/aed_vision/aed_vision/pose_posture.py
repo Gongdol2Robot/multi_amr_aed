@@ -39,6 +39,8 @@ def classify_posture(
     몸통이 수평이고 bbox가 가로로 길면 FALLEN, 엉덩이에서 무릎 방향이
     수평에 가까우면 SITTING, 그 외에는 STANDING으로 판정한다.
     """
+    # 판정 우선순위는 FALLEN -> SITTING -> STANDING이다. 관절이 부족해
+    # 확실히 분류할 수 없을 때는 정상으로 단정하지 않고 UNKNOWN을 반환한다.
     x1, y1, x2, y2 = (float(value) for value in box)
     width = max(x2 - x1, 1.0)
     height = max(y2 - y1, 1.0)
