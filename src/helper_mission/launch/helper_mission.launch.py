@@ -1,5 +1,6 @@
 """중앙 coordinator와 로봇별 현장 회전 탐색 서버를 실행한다."""
 
+from emergency_alert.robot_ids import parse_audio_devices
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
@@ -29,11 +30,15 @@ def _launch_nodes(context):
         ),
         "audio_backend": LaunchConfiguration("audio_backend").perform(context),
         "audio_player": LaunchConfiguration("audio_player").perform(context),
-        "audio_device": LaunchConfiguration("audio_device").perform(context),
         "handoff_wait_seconds": float(
             LaunchConfiguration("handoff_wait_seconds").perform(context)
         ),
     }
+    # audio_devices가 비면 모든 로봇이 기존 audio_device 하나를 그대로 쓴다.
+    shared_audio_device = LaunchConfiguration("audio_device").perform(context)
+    audio_devices = parse_audio_devices(
+        LaunchConfiguration("audio_devices").perform(context), robot_ids
+    )
     nodes = [
         Node(
             package="helper_mission",
@@ -50,7 +55,15 @@ def _launch_nodes(context):
             namespace=robot_id,
             name="helper_mission_controller",
             output="screen",
-            parameters=[{"robot_id": robot_id}, controller_parameters],
+            parameters=[
+                controller_parameters,
+                {
+                    "robot_id": robot_id,
+                    "audio_device": (
+                        audio_devices[robot_id] or shared_audio_device
+                    ),
+                },
+            ],
         )
         for robot_id in robot_ids
     )
@@ -66,6 +79,14 @@ def generate_launch_description():
             DeclareLaunchArgument("audio_backend", default_value="system"),
             DeclareLaunchArgument("audio_player", default_value="auto"),
             DeclareLaunchArgument("audio_device", default_value=""),
+            DeclareLaunchArgument(
+                "audio_devices",
+                default_value="",
+                description=(
+                    "Comma-separated output device per robot in robot_ids "
+                    "order. Overrides audio_device when set."
+                ),
+            ),
             DeclareLaunchArgument("handoff_wait_seconds", default_value="5.0"),
             # 0은 구조 인력이 감지될 때까지 무제한으로 회전·호출한다.
             DeclareLaunchArgument("helper_wait_timeout", default_value="0.0"),

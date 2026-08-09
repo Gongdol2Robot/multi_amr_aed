@@ -176,6 +176,12 @@ manager() {
 }
 
 # 중앙 노트북 통합 런타임. 기존 central 인자 순서를 그대로 유지한다.
+#
+# 로봇마다 블루투스 스피커를 따로 붙였다면 sink 이름을 robot1,robot2 순서로
+# AED_AUDIO_DEVICES 에 넣어 둔다. 스피커가 없는 팀원 환경에서 없는 장치를
+# 강제하지 않도록 기본값은 비워 두며, 그 경우 OS 기본 출력으로 재생한다.
+#   export AED_AUDIO_DEVICES="bluez_sink.<robot1_MAC>.a2dp_sink,bluez_sink.<robot2_MAC>.a2dp_sink"
+#   pactl list short sinks | grep bluez   # sink 이름 확인
 central() {
   local dispatch=${1:-false}
   local target_time=${2:-30.0}
@@ -186,7 +192,8 @@ central() {
     dispatch_enabled:="$dispatch" \
     target_arrival_time_sec:="$target_time" \
     dual_dispatch_trigger_ratio:="$trigger_ratio" \
-    dual_dispatch_enabled:="$dual_dispatch"
+    dual_dispatch_enabled:="$dual_dispatch" \
+    audio_devices:="${AED_AUDIO_DEVICES:-}"
 }
 
 executor() {

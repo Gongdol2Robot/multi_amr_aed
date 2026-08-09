@@ -116,6 +116,14 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument("planner_id", default_value="GridBased"),
             DeclareLaunchArgument(
+                "audio_devices",
+                default_value="",
+                description=(
+                    "helper_mission이 로봇별로 쓸 오디오 출력 장치. "
+                    "robot1,robot2 순서의 쉼표 목록이며 비우면 OS 기본 출력."
+                ),
+            ),
+            DeclareLaunchArgument(
                 "start_helper_mission",
                 default_value="true",
                 choices=["true", "false"],
@@ -327,6 +335,7 @@ def generate_launch_description() -> LaunchDescription:
                 ),
                 launch_arguments={
                     "robot_ids": "robot1,robot2",
+                    "audio_devices": LaunchConfiguration("audio_devices"),
                 }.items(),
             ),
             IncludeLaunchDescription(
