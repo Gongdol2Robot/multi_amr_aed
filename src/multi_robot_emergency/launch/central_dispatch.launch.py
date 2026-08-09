@@ -134,11 +134,6 @@ def generate_launch_description() -> LaunchDescription:
                 choices=["true", "false"],
             ),
             DeclareLaunchArgument(
-                "robot_vision_target",
-                default_value="person",
-                choices=["person", "mannequin"],
-            ),
-            DeclareLaunchArgument(
                 "automatic_request",
                 default_value="false",
                 choices=["true", "false"],
@@ -351,7 +346,6 @@ def generate_launch_description() -> LaunchDescription:
                 ),
                 launch_arguments={
                     "robot_id": "robot1",
-                    "target": LaunchConfiguration("robot_vision_target"),
                 }.items(),
             ),
             IncludeLaunchDescription(
@@ -367,7 +361,6 @@ def generate_launch_description() -> LaunchDescription:
                 ),
                 launch_arguments={
                     "robot_id": "robot2",
-                    "target": LaunchConfiguration("robot_vision_target"),
                 }.items(),
             ),
         ]

@@ -110,9 +110,6 @@ def generate_launch_description() -> LaunchDescription:
                 "dual_dispatch_enabled"
             ),
             "start_robot_vision": start_robot_vision,
-            "robot_vision_target": LaunchConfiguration(
-                "robot_vision_target"
-            ),
             "start_helper_mission": start_helper_mission,
             "audio_devices": LaunchConfiguration("audio_devices"),
         },
@@ -200,10 +197,6 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "start_robot_vision", default_value="true",
                 choices=("true", "false"),
-            ),
-            DeclareLaunchArgument(
-                "robot_vision_target", default_value="person",
-                choices=("person", "mannequin"),
             ),
             DeclareLaunchArgument(
                 "start_helper_mission", default_value="true",
