@@ -166,7 +166,8 @@ ros2 launch multi_robot_emergency central_dispatch.launch.py \
 ```bash
 echo 'source ~/rokey_ws/multi_amr_aed/tools/aliases.sh' >> ~/.bashrc
 source ~/.bashrc
-aedenv
+aed       # 워크스페이스로 이동하고 ROS 2 및 빌드 환경 source
+aedenv    # TurtleBot 4 discovery 환경까지 추가로 적용할 때
 ```
 
 ## Build

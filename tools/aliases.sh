@@ -5,6 +5,18 @@
 
 export AED_WS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+aed() {
+  cd "$AED_WS" || return 1
+  source /opt/ros/humble/setup.bash || return 1
+
+  if [ -f "$AED_WS/install/setup.bash" ]; then
+    source "$AED_WS/install/setup.bash"
+  else
+    echo "AED 워크스페이스로 이동했습니다. install/setup.bash가 없어 ROS 2 기본 환경만 적용했습니다."
+    echo "먼저 aedbuild를 실행하세요."
+  fi
+}
+
 aedenv() {
   source /etc/turtlebot4_discovery/setup.bash
   export ROS_SUPER_CLIENT=True

@@ -329,7 +329,7 @@ class InferencePipeline:
             x1, y1, x2, y2 = (float(value) for value in xyxy)
             width = max(x2 - x1, 1.0)
             height = max(y2 - y1, 1.0)
-            pad_x, pad_y = width * 0.15, height * 0.15
+            pad_x, pad_y = width * 0.35, height * 0.35
             left = max(0, int(x1 - pad_x))
             top = max(0, int(y1 - pad_y))
             right = min(frame_width, int(x2 + pad_x))
