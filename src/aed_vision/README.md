@@ -144,21 +144,6 @@ ros2 launch aed_vision camera_vision.launch.py \
 쓰러진 사람과 helper 검출에 COCO person 기반 인파 감지를 추가합니다. 실행한
 노트북에는 구조 bbox, person bbox와 혼잡 ROI가 합쳐진 결과 창이 표시됩니다.
 
-이미지만 중앙 컴퓨터로 보낼 때(YOLO 추론 없음):
-
-```bash
-ros2 run aed_vision webcam_publisher
-```
-
-기본적으로 `/dev/video2`를 640x480, 15 FPS로 읽어
-`/camera_alley/image_raw/compressed`에 JPEG로 발행합니다. 장치나 토픽을 바꾸려면:
-
-```bash
-ros2 run aed_vision webcam_publisher --ros-args \
-  -p device:=/dev/video2 \
-  -p image_topic:=/camera_alley/image_raw/compressed
-```
-
 실행 전 각 YAML에서 다음 값을 현장에 맞게 수정합니다.
 
 - `camera_device`: USB 웹캠 장치 경로. 기본값 `auto`는

@@ -178,11 +178,6 @@ mapnav() {
     namespace:="robot$n" rviz:=true
 }
 
-vision() {
-  local dev=${1:-0}
-  ros2 run aed_vision webcam_publisher --ros-args -p device:="$dev"
-}
-
 manager() {
   ros2 run mission_manager mission_manager
 }
