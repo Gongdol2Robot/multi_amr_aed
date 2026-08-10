@@ -135,7 +135,7 @@ def generate_launch_description() -> LaunchDescription:
             OpaqueFunction(function=_acquire_runtime_lock),
             DeclareLaunchArgument(
                 "dispatch_enabled",
-                default_value="false",
+                default_value="true",
                 choices=("true", "false"),
                 description="실제 로봇에 출동 목표를 전송할지 여부",
             ),

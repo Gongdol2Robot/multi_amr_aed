@@ -19,6 +19,7 @@
   <exec_depend>aed_vision</exec_depend>
   <exec_depend>emergency_alert</exec_depend>
   <exec_depend>multi_robot_emergency</exec_depend>
+  <exec_depend>sensor_recovery</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

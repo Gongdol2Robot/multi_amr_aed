@@ -57,6 +57,15 @@ def test_proximity_keeps_both_robots_when_separated() -> None:
     ) is None
 
 
+def test_wider_proximity_threshold_returns_before_robots_meet() -> None:
+    assert proximity_retreat_candidate(
+        {"robot1": (0.0, 0.0), "robot2": (0.75, 0.0)},
+        (2.0, 0.0),
+        primary_robot="robot2",
+        threshold=0.8,
+    ) == "robot1"
+
+
 def test_proximity_tie_returns_non_primary_robot() -> None:
     assert proximity_retreat_candidate(
         {"robot1": (-0.1, 0.0), "robot2": (0.1, 0.0)},

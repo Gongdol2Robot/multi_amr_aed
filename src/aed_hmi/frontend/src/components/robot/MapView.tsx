@@ -88,7 +88,12 @@ export function MapView({ robots, missions, crowdZone }: Props) {
   }
   if (!meta) return null;
 
-  const target = missions.find((mission) => mission.target.x || mission.target.y);
+  const target = missions.find(
+    (mission) => (
+      mission.role === 'aed_delivery'
+      && (mission.target.x || mission.target.y)
+    ),
+  );
 
   const onPick = async (event: React.MouseEvent<HTMLDivElement>) => {
     if (!meta) return;

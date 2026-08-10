@@ -162,7 +162,8 @@ nav() {
     echo "Nav2 시작 중단: loc $n -> initpose $n 순서로 복구하세요."
     return 1
   fi
-  ros2 launch turtlebot4_navigation nav2.launch.py namespace:=/robot$n \
+  ros2 launch aed_bringup nav_with_fallback.launch.py \
+    robot_name:="robot$n" \
     params_file:="$AED_WS/src/aed_bringup/config/nav2_aed.yaml"
 }
 
@@ -174,8 +175,15 @@ rv() {
 mapnav() {
   local n=${1:-1}
   aedenv
-  ros2 launch turtlebot4_map_navigation map_navigation.launch.py \
-    namespace:="robot$n" rviz:=true
+  ros2 launch turtlebot4_map_navigation robot_runtime.launch.py \
+    robot_name:="robot$n" rviz:=true
+}
+
+fallback() {
+  local n=${1:-1}
+  aedenv
+  ros2 launch sensor_recovery lidar_fallback.launch.py \
+    robot_name:="robot$n"
 }
 
 manager() {
@@ -190,7 +198,7 @@ manager() {
 #   export AED_AUDIO_DEVICES="bluez_sink.<robot1_MAC>.a2dp_sink,bluez_sink.<robot2_MAC>.a2dp_sink"
 #   pactl list short sinks | grep bluez   # sink 이름 확인
 central() {
-  local dispatch=${1:-false}
+  local dispatch=${1:-true}
   local target_time=${2:-30.0}
   local trigger_ratio=${3:-0.85}
   local dual_dispatch=${4:-true}
@@ -239,7 +247,9 @@ bagrec() {
     --compression-mode file --compression-format zstd \
     /robot$n/oakd/rgb/image_raw/compressed /robot$n/scan /robot$n/odom \
     /robot$n/tf /robot$n/tf_static /robot$n/mission_assignment \
-    /robot$n/mission_status /aed/emergency_event /aed/robot_state
+    /robot$n/lidar_state /robot$n/fallback_state \
+    /robot$n/recovery_ready /robot$n/fallback_debug/path \
+    /aed/mission_status /aed/emergency_event /aed/robot_state
 }
 
 alias detect='vision'

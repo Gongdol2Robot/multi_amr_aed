@@ -19,6 +19,12 @@
 두 로봇은 동일한 파일을 사용하고 namespace만 `/robot1`, `/robot2`로
 분리합니다.
 
+`mapnav 1`, `mapnav 2`는 이제 각 로봇의 map navigation과
+`sensor_recovery` LiDAR watchdog/fallback을 같은 launch에서 실행합니다.
+기존처럼 localization과 Nav2를 나눠 실행할 때도 `nav 1`, `nav 2`가 Nav2와
+fallback을 함께 시작합니다. 이미 Nav2가 실행 중인 진단 상황에서는
+`fallback 1`처럼 recovery만 별도로 실행할 수 있지만 중복 실행하면 안 됩니다.
+
 ## Central dispatch
 
 각 로봇 PC에서 Nav2를 따로 실행한 뒤 중앙 PC에서 경로비용 계산과 미션 배정을

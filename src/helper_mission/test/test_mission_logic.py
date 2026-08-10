@@ -8,6 +8,7 @@ from helper_mission.mission_logic import (
     arrival_dispatch_allowed,
     dispatch_response_is_current,
     helper_confirmation_is_fresh,
+    is_aed_delivery_arrival,
     vision_stream_timed_out,
 )
 
@@ -77,6 +78,28 @@ def test_duplicate_arrival_does_not_create_another_dispatch():
         handled_events={"event-1"},
         pending_events=set(),
         active_events=set(),
+    )
+
+
+def test_only_aed_delivery_arrival_starts_helper_scan():
+    """재할당 복귀 ARRIVED는 무시하고 실제 환자 도착만 인정한다."""
+    assert is_aed_delivery_arrival(
+        "event-1-aed-robot1", "robot1"
+    )
+    assert is_aed_delivery_arrival(
+        "event-1-live-aed-robot2", "robot2"
+    )
+    assert not is_aed_delivery_arrival(
+        "event-1-live-return-robot1", "robot1"
+    )
+    assert not is_aed_delivery_arrival(
+        "event-1-helper-return-robot2", "robot2"
+    )
+    assert not is_aed_delivery_arrival(
+        "event-1-return-robot1", "robot1"
+    )
+    assert not is_aed_delivery_arrival(
+        "event-1-live-aed-robot2", "robot1"
     )
 
 

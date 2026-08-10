@@ -8,6 +8,7 @@
 import type {
   EmergencyEventSnapshot,
   MissionSummary,
+  RobotSnapshot,
 } from '../../types/telemetry';
 import { clockText, eventDisplay, missionDisplay } from '../common/status';
 import { Badge } from '../common/Indicators';
@@ -16,10 +17,11 @@ import { EtaBadge, EtaPanel } from './EtaPanel';
 interface Props {
   event: EmergencyEventSnapshot | null;
   missions: MissionSummary[];
+  robots: RobotSnapshot[];
   now: number;
 }
 
-export function ActiveEvent({ event, missions, now }: Props) {
+export function ActiveEvent({ event, missions, robots, now }: Props) {
   if (!event) {
     return (
       <section className="alert alert--idle">
@@ -29,9 +31,52 @@ export function ActiveEvent({ event, missions, now }: Props) {
     );
   }
 
-  const status = eventDisplay(event.status);
-  // 신고 시각부터 지금까지. 운영자가 가장 자주 보는 숫자라 크게 둔다.
-  const elapsed = Math.max(now / 1000 - event.detected_at, 0);
+  const relevantMissions = missions.filter(
+    (mission) => (
+      mission.event_id === event.event_id && mission.role === 'aed_delivery'
+    ),
+  );
+  const movingMissions = relevantMissions.filter((mission) => {
+    if (mission.final_state !== 'en_route' || mission.dispatched_at === null) {
+      return false;
+    }
+    const robot = robots.find((item) => item.robot_id === mission.robot_id);
+    return (
+      robot !== undefined
+      && !robot.is_docked
+      && robot.role === 'aed_delivery'
+      && robot.network_ok
+      && robot.nav2_ok
+      && !robot.emergency_stop
+    );
+  });
+  const startedMissions = relevantMissions.filter(
+    (mission) => mission.dispatched_at !== null,
+  );
+  const firstDispatch = startedMissions.reduce<number | null>(
+    (earliest, mission) => (
+      earliest === null || (mission.dispatched_at ?? Infinity) < earliest
+        ? mission.dispatched_at
+        : earliest
+    ),
+    null,
+  );
+  const elapsed = firstDispatch === null
+    ? null
+    : Math.max(now / 1000 - firstDispatch, 0);
+  const failureMission = relevantMissions.find((mission) => (
+    mission.final_state === 'navigation_error'
+    || mission.final_state === 'network_lost'
+    || mission.final_state === 'blocked'
+    || mission.final_state === 'recovery_wait'
+  ));
+  const status = movingMissions.length > 0
+    ? { label: '출동', tone: 'info' as const }
+    : failureMission
+      ? missionDisplay(failureMission.final_state)
+      : relevantMissions.length > 0
+        ? { label: '출동 준비', tone: 'warn' as const }
+        : eventDisplay(event.status);
 
   return (
     <section className="alert alert--active">
@@ -60,14 +105,18 @@ export function ActiveEvent({ event, missions, now }: Props) {
       </div>
 
       <div className="alert__center">
-        <div className="alert__label">경과</div>
-        <div className="alert__elapsed mono">{elapsed.toFixed(0)}초</div>
+        <div className="alert__label">
+          {elapsed === null ? '출동 상태' : '출동 경과'}
+        </div>
+        <div className="alert__elapsed mono">
+          {elapsed === null ? '대기' : `${elapsed.toFixed(0)}초`}
+        </div>
         <div className="alert__label">
           접수 {clockText(event.detected_at)}
         </div>
       </div>
 
-      <EtaPanel missions={missions} now={now} />
+      <EtaPanel missions={movingMissions} now={now} />
 
       <div className="alert__right">
         <div className="alert__label">목표 좌표</div>
@@ -75,11 +124,32 @@ export function ActiveEvent({ event, missions, now }: Props) {
           {event.location.x.toFixed(2)}, {event.location.y.toFixed(2)}
         </div>
         <div className="alert__missions">
-          {missions.length === 0 ? (
+          {relevantMissions.length === 0 ? (
             <span className="alert__label">배정 대기</span>
           ) : (
-            missions.map((mission) => {
-              const display = missionDisplay(mission.final_state);
+            relevantMissions.map((mission) => {
+              const actuallyMoving = movingMissions.some(
+                (item) => item.mission_id === mission.mission_id,
+              );
+              const robot = robots.find(
+                (item) => item.robot_id === mission.robot_id,
+              );
+              let display = missionDisplay(mission.final_state);
+              if (mission.final_state === 'en_route' && !actuallyMoving) {
+                if (!robot) {
+                  display = { label: '상태 미수신', tone: 'danger' };
+                } else if (robot.is_docked) {
+                  display = { label: '출동 대기', tone: 'warn' };
+                } else if (!robot.network_ok) {
+                  display = { label: '통신 두절', tone: 'danger' };
+                } else if (!robot.nav2_ok) {
+                  display = { label: '주행 오류', tone: 'danger' };
+                } else if (robot.emergency_stop) {
+                  display = { label: '비상 정지', tone: 'danger' };
+                } else {
+                  display = { label: '상태 확인', tone: 'warn' };
+                }
+              }
               return (
                 <span key={mission.mission_id} className="alert__mission">
                   <Badge tone={display.tone}>{display.label}</Badge>
@@ -89,7 +159,7 @@ export function ActiveEvent({ event, missions, now }: Props) {
                       재할당 {mission.reassignment_count}
                     </span>
                   )}
-                  <EtaBadge mission={mission} now={now} />
+                  {actuallyMoving && <EtaBadge mission={mission} now={now} />}
                 </span>
               );
             })

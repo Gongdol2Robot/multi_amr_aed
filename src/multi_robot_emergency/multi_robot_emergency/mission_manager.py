@@ -95,10 +95,11 @@ class EmergencyMissionManager(Node):
         self.declare_parameter("target_arrival_time_sec", 30.0)
         self.declare_parameter("dual_dispatch_trigger_ratio", 0.85)
         self.declare_parameter("patient_standoff_enabled", True)
-        # OAK-D가 환자와 helper를 한 화면에 유지할 수 있는 최소 운용 거리.
-        self.declare_parameter("patient_standoff_distance_m", 0.60)
+        # Nav2 XY 허용 오차(0.15m)를 감안해 환자와 최소 0.50m를 확보한다.
+        self.declare_parameter("patient_standoff_distance_m", 0.65)
         self.declare_parameter("return_after_helper_enabled", True)
-        self.declare_parameter("dual_robot_proximity_threshold_m", 0.40)
+        # TurtleBot 두 대가 서로의 local costmap을 막기 전에 한 대를 뺀다.
+        self.declare_parameter("dual_robot_proximity_threshold_m", 0.80)
         self.declare_parameter("dual_robot_proximity_confirm_sec", 0.50)
         self.declare_parameter("dual_robot_proximity_grace_sec", 2.0)
         self.declare_parameter("nominal_linear_speed_mps", 0.20)
@@ -523,6 +524,28 @@ class EmergencyMissionManager(Node):
             self._on_mission_status,
             20,
         )
+        self.fallback_state_subscriptions = [
+            self.create_subscription(
+                String,
+                f"/{robot_id}/fallback_state",
+                lambda message, rid=robot_id: self._on_fallback_state(
+                    rid, message
+                ),
+                latched_qos,
+            )
+            for robot_id in self.robot_ids
+        ]
+        self.lidar_state_subscriptions = [
+            self.create_subscription(
+                String,
+                f"/{robot_id}/lidar_state",
+                lambda message, rid=robot_id: self._on_lidar_state(
+                    rid, message
+                ),
+                latched_qos,
+            )
+            for robot_id in self.robot_ids
+        ]
         self.crowd_person_count_subscription = self.create_subscription(
             UInt32,
             str(self.get_parameter("crowd_person_count_topic").value),
@@ -658,6 +681,13 @@ class EmergencyMissionManager(Node):
         self.return_failed_robots: set[str] = set()
         self.returning_robots: set[str] = set()
         self.awaiting_helper_robots: set[str] = set()
+        self.fallback_states: dict[str, str] = {
+            robot_id: "UNKNOWN" for robot_id in self.robot_ids
+        }
+        self.lidar_states: dict[str, str] = {
+            robot_id: "UNKNOWN" for robot_id in self.robot_ids
+        }
+        self.recovery_robots: set[str] = set()
         self.dual_dispatch_active = False
         self.dual_dispatch_started_at: float | None = None
         self.proximity_close_since: float | None = None
@@ -848,6 +878,17 @@ class EmergencyMissionManager(Node):
         self.return_failed_robots.clear()
         self.returning_robots.clear()
         self.awaiting_helper_robots.clear()
+        self.recovery_robots = {
+            robot_id
+            for robot_id in self.robot_ids
+            if self.fallback_states.get(robot_id) in {
+                "STARTING",
+                "ACTIVE",
+                "BLOCKED",
+                "RECOVERING",
+            }
+            or self.lidar_states.get(robot_id) in {"FAULT", "RECOVERING"}
+        }
         self.dual_dispatch_active = False
         self.dual_dispatch_started_at = None
         self.proximity_close_since = None
@@ -1008,6 +1049,12 @@ class EmergencyMissionManager(Node):
         self.plan_failures.clear()
         self.planning_targets.clear()
         for robot_id in self.robot_ids:
+            lidar_state = self.lidar_states.get(robot_id, "UNKNOWN")
+            if lidar_state in {"FAULT", "RECOVERING"}:
+                self.plan_failures[robot_id] = (
+                    f"LiDAR unavailable ({lidar_state})"
+                )
+                continue
             try:
                 self.planning_targets[robot_id] = (
                     self._make_standoff_target(robot_id, target)
@@ -1427,6 +1474,7 @@ class EmergencyMissionManager(Node):
             )
             return
         if status.status == MissionStatus.EN_ROUTE:
+            self.recovery_robots.discard(status.robot_id)
             self.navigation_started_at.setdefault(
                 status.robot_id, time.monotonic()
             )
@@ -1437,7 +1485,32 @@ class EmergencyMissionManager(Node):
             )
             self._publish_status(state, f"{status.robot_id} is moving")
             return
+        if status.status == MissionStatus.RECOVERY_WAIT:
+            self.recovery_robots.add(status.robot_id)
+            state = (
+                "RETURN_RECOVERY_WAIT"
+                if status.robot_id in self.returning_robots
+                else "RECOVERY_WAIT"
+            )
+            self._publish_status(
+                state,
+                status.reason or f"{status.robot_id} LiDAR fallback active",
+            )
+            return
+        if status.status == MissionStatus.RECOVERY_RESUMED:
+            self.recovery_robots.discard(status.robot_id)
+            state = (
+                "RETURNING"
+                if status.robot_id in self.returning_robots
+                else "NAVIGATING"
+            )
+            self._publish_status(
+                state,
+                status.reason or f"{status.robot_id} resumed Nav2",
+            )
+            return
         if status.status in (MissionStatus.ARRIVED, MissionStatus.COMPLETED):
+            self.recovery_robots.discard(status.robot_id)
             if status.robot_id in self.returning_robots:
                 self.returning_robots.discard(status.robot_id)
                 self.navigation_started_at.pop(status.robot_id, None)
@@ -1475,7 +1548,44 @@ class EmergencyMissionManager(Node):
         }:
             return
 
+        if (
+            status.status == MissionStatus.CANCELED
+            and status.robot_id in self.recovery_robots
+        ):
+            self.get_logger().info(
+                f"Ignoring Nav2 CANCELED from {status.robot_id}: "
+                "LiDAR fallback owns motion"
+            )
+            return
+        self.recovery_robots.discard(status.robot_id)
         self._handle_navigation_failure(status.robot_id, status.reason)
+
+    def _on_fallback_state(self, robot_id: str, message: String) -> None:
+        """Track cmd_vel ownership before Nav2 cancellation reaches us."""
+        state = message.data.strip().upper()
+        self.fallback_states[robot_id] = state
+        if state in {"STARTING", "ACTIVE", "BLOCKED", "RECOVERING"}:
+            self.recovery_robots.add(robot_id)
+        elif state in {"IDLE", "RESUMED", "SUCCEEDED", "FAILED"}:
+            if self.lidar_states.get(robot_id) not in {
+                "FAULT",
+                "RECOVERING",
+            }:
+                self.recovery_robots.discard(robot_id)
+
+    def _on_lidar_state(self, robot_id: str, message: String) -> None:
+        """Prevent dispatch and cancellation races while LiDAR is faulty."""
+        state = message.data.strip().upper()
+        self.lidar_states[robot_id] = state
+        if state in {"FAULT", "RECOVERING"}:
+            self.recovery_robots.add(robot_id)
+        elif state == "ALIVE" and self.fallback_states.get(robot_id) not in {
+            "STARTING",
+            "ACTIVE",
+            "BLOCKED",
+            "RECOVERING",
+        }:
+            self.recovery_robots.discard(robot_id)
 
     def _return_after_helper_handoff(self, status: MissionStatus) -> None:
         """Send the arrived AED robot back after helper handoff completes."""
@@ -1637,6 +1747,7 @@ class EmergencyMissionManager(Node):
             or not self.navigation_active
             or self.planning_active
             or self.dual_dispatch_active
+            or bool(self.recovery_robots)
             or self.live_reassignment_done
             or now < self.live_replan_next_at
         ):
@@ -1840,7 +1951,11 @@ class EmergencyMissionManager(Node):
         self.live_replan_active = False
         now = time.monotonic()
         self.live_replan_next_at = now + self.live_replan_interval
-        if not self.navigation_active or self.dual_dispatch_active:
+        if (
+            not self.navigation_active
+            or self.dual_dispatch_active
+            or self.recovery_robots
+        ):
             return
         active = [
             robot_id
@@ -1931,6 +2046,7 @@ class EmergencyMissionManager(Node):
             not self.navigation_active
             or not self.dual_dispatch_active
             or self.proximity_return_triggered
+            or bool(self.recovery_robots)
             or self.dual_dispatch_started_at is None
             or now - self.dual_dispatch_started_at
             < self.dual_robot_proximity_grace

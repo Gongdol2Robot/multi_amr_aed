@@ -10,6 +10,7 @@ from rclpy.node import Node
 from helper_mission.mission_logic import (
     arrival_dispatch_allowed,
     dispatch_response_is_current,
+    is_aed_delivery_arrival,
 )
 
 
@@ -129,6 +130,17 @@ class HelperMissionCoordinator(Node):
     def _on_status(self, status: MissionStatus) -> None:
         """AED 정상 도착을 기록하고 도착한 동일 로봇에 탐색 임무를 준비한다."""
         if status.status != MissionStatus.ARRIVED or not status.event_id:
+            return
+        if not is_aed_delivery_arrival(
+            status.mission_id, status.robot_id
+        ):
+            # live-return/helper-return/dual-return도 Nav2 성공 시 ARRIVED를
+            # 발행한다. 이 상태로 helper scan을 시작하면 실제 환자 도착
+            # 로봇이 아닌 복귀 로봇이 회전하게 된다.
+            self.get_logger().info(
+                "Ignoring non-delivery arrival: "
+                f"mission={status.mission_id}, robot={status.robot_id}"
+            )
             return
         if status.robot_id not in self.action_clients:
             self.get_logger().warning(

@@ -50,6 +50,7 @@ export default function App() {
       <ActiveEvent
         event={snapshot?.active_event ?? null}
         missions={missions}
+        robots={robots}
         now={now}
       />
 

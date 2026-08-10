@@ -350,11 +350,9 @@
 .tile__image {
   width: 100%;
   height: 100%;
-  /* contain 이면 원본 비율을 지키느라 좌우가 검게 남는다. 4분할에서 그
-     검은 띠가 화면의 3할을 먹었다. cover 로 채우면 가장자리가 조금
-     잘리는 대신 타일이 그림으로 꽉 찬다. 관제 화면에서 가운데가 아니라
-     가장자리가 잘리는 것은 판단에 지장이 없다. */
-  object-fit: cover;
+  /* 카메라 원본 종횡비와 시야를 보존한다. 타일 비율이 다르면 검은 여백이
+     생기지만 낙상자나 장애물이 가장자리에 있어도 잘려 나가지 않는다. */
+  object-fit: contain;
   display: block;
 }
 
@@ -902,9 +900,9 @@
   position: absolute;
   width: 14px;
   height: 14px;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
+  transform: translate(-50%, -50%) rotate(45deg);
   border: 2px solid var(--danger);
+  background: rgba(255, 77, 94, 0.25);
   box-shadow: 0 0 0 4px rgba(255, 77, 94, 0.25);
   animation: detect-blink 1.2s ease-in-out infinite;
 }

@@ -135,6 +135,7 @@ class MissionSummary:
     final_state: MissionState
     assignment_version: int
     reassignment_count: int
+    role: RobotRole = RobotRole.NONE
     failure_reasons: list[str] = field(default_factory=list)
 
     # 진행 중인 임무에만 채워진다. 끝난 임무는 실제 도착 시각이 있으므로

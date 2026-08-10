@@ -60,6 +60,8 @@ export type FallbackState =
   | 'STARTING'
   | 'ACTIVE'
   | 'BLOCKED'
+  | 'RECOVERING'
+  | 'RESUMED'
   | 'SUCCEEDED'
   | 'FAILED';
 
@@ -141,6 +143,7 @@ export interface MissionSummary {
   final_state: MissionState;
   assignment_version: number;
   reassignment_count: number;
+  role: RobotRole;
   failure_reasons: string[];
   /** 신고에서 AED 도착까지. 도착 못 했으면 null. */
   response_seconds: number | null;

@@ -16,6 +16,7 @@ from ..domain.enums import (
     TERMINAL_MISSION_STATES,
     EventStatus,
     MissionState,
+    RobotRole,
 )
 from ..domain.models import (
     CrowdZoneSnapshot,
@@ -49,8 +50,15 @@ class LiveState:
         self._events: dict[str, EmergencyEventSnapshot] = {}
         # mission_id -> 그 임무에서 마지막으로 본 상태 전이
         self._missions: dict[str, MissionEvent] = {}
+        # 재할당이나 복귀 전환으로 더 이상 현재 상태가 아닌 임무들. ROS에서
+        # 늦은 cancel 결과가 생략돼도 활성 배너를 붙잡지 못하게 한다.
+        self._superseded_missions: set[str] = set()
         # mission_id -> (신고 시각, 목표 좌표). 요약을 만들 때 쓴다.
         self._mission_meta: dict[str, tuple[float, Point2D]] = {}
+        self._mission_roles: dict[str, RobotRole] = {}
+        # Nav2가 목표를 수락했고 RobotState가 실제 dock 이탈을 보고한 최초
+        # 시각. 목표 수락만으로 시작하면 dock 위에서도 배너 시간이 흐른다.
+        self._mission_dispatched_at: dict[str, float] = {}
         # 배정 순간 중앙제어가 계산한 ETA. 이후 실시간 계산과 달리 고정한다.
         self._mission_initial_eta: dict[str, float] = {}
         # 중앙제어가 보낸 (남은 초, 수신 시각). HMI는 별도 계산하지 않는다.
@@ -70,6 +78,30 @@ class LiveState:
     def put_robot(self, robot: RobotSnapshot) -> None:
         with self._lock:
             self._robots[robot.robot_id] = robot
+            self._mark_dispatch_started(robot)
+
+    def _mark_dispatch_started(self, robot: RobotSnapshot) -> None:
+        """Record physical dispatch once Nav2 and dock state agree.
+
+        Caller must hold ``self._lock``. Backend receive time is intentional:
+        robot clocks need not be perfectly synchronized with the HMI clock.
+        """
+        if (
+            robot.is_docked
+            or robot.role != RobotRole.AED_DELIVERY
+            or not robot.network_ok
+            or not robot.nav2_ok
+            or robot.emergency_stop
+        ):
+            return
+        for mission in self._missions.values():
+            if (
+                mission.robot_id == robot.robot_id
+                and mission.state == MissionState.EN_ROUTE
+            ):
+                self._mission_dispatched_at.setdefault(
+                    mission.mission_id, time.time()
+                )
 
     def put_lidar_state(self, robot_id: str, state: str) -> None:
         normalized = state.strip().upper()
@@ -112,7 +144,20 @@ class LiveState:
                     self._event = None
                 return
             self._events[event.event_id] = event
-            self._event = event
+            # 중앙 manager는 임무 중 새 요청을 무시한다. 이미 활성 임무가
+            # 있으면 그 임무와 무관한 새 카메라 이벤트가 배너를 빼앗지 못하게
+            # 한다. 해당 이벤트의 MissionStatus가 오면 put_mission이 전환한다.
+            active_event_ids = {
+                item.event_id
+                for item in self._missions.values()
+                if item.state not in TERMINAL_MISSION_STATES
+                and item.mission_id not in self._superseded_missions
+                and self._mission_roles.get(
+                    item.mission_id, RobotRole.AED_DELIVERY
+                ) == RobotRole.AED_DELIVERY
+            }
+            if not active_event_ids or event.event_id in active_event_ids:
+                self._event = event
 
     def put_person_count(self, camera_id: str, count: int) -> None:
         """vision_detector 가 매 프레임 내는 사람 수.
@@ -138,19 +183,84 @@ class LiveState:
 
     def put_mission(self, mission: MissionEvent) -> None:
         with self._lock:
+            previous = self._missions.get(mission.mission_id)
+            if (
+                previous is not None
+                and mission.state == MissionState.ASSIGNED
+                and mission.assignment_version
+                <= previous.assignment_version
+            ):
+                return
+            if previous is not None and (
+                mission.assignment_version < previous.assignment_version
+                or (
+                    mission.assignment_version == previous.assignment_version
+                    and previous.state != MissionState.ASSIGNED
+                    and mission.stamp < previous.stamp
+                )
+            ):
+                return
+            if mission.state == MissionState.ASSIGNED:
+                self._superseded_missions.discard(mission.mission_id)
+                failure_states = {
+                    MissionState.BLOCKED,
+                    MissionState.NETWORK_LOST,
+                    MissionState.NAVIGATION_ERROR,
+                    MissionState.RECOVERY_WAIT,
+                }
+                for current in self._missions.values():
+                    if (
+                        current.mission_id != mission.mission_id
+                        and current.event_id == mission.event_id
+                        and current.assignment_version
+                        < mission.assignment_version
+                        and (
+                            current.robot_id == mission.robot_id
+                            or current.state in failure_states
+                        )
+                    ):
+                        self._superseded_missions.add(current.mission_id)
             self._missions[mission.mission_id] = mission
+            if mission.state == MissionState.EN_ROUTE:
+                robot = self._robots.get(mission.robot_id)
+                if robot is not None:
+                    self._mark_dispatch_started(robot)
             if mission.mission_id not in self._mission_meta:
                 self._mission_meta[mission.mission_id] = (
                     mission.stamp, Point2D(0.0, 0.0)
                 )
             if mission.state not in TERMINAL_MISSION_STATES:
                 event = self._events.get(mission.event_id)
-                if event is not None:
+                role = self._mission_roles.get(mission.mission_id)
+                if event is not None and role in (
+                    None, RobotRole.AED_DELIVERY
+                ):
+                    self._event = event
+                elif (
+                    role is not None
+                    and role != RobotRole.AED_DELIVERY
+                    and self._event is not None
+                    and self._event.event_id == mission.event_id
+                    and not self._has_active_mission(mission.event_id)
+                ):
+                    self._event = None
+                return
+
+            # 주행 오류는 응급 상황의 종료가 아니다. 재할당을 기다리거나
+            # 대체 로봇이 없다는 실패 상태를 배너에 계속 보여야 한다.
+            if mission.state == MissionState.NAVIGATION_ERROR:
+                event = self._events.get(mission.event_id)
+                if (
+                    event is not None
+                    and self._mission_roles.get(
+                        mission.mission_id, RobotRole.AED_DELIVERY
+                    ) == RobotRole.AED_DELIVERY
+                ):
                     self._event = event
                 return
 
             # 운영자 좌표 신고는 별도 RESOLVED 이벤트를 발행하지 않는다.
-            # 마지막 관련 임무의 ARRIVED/CANCELED/오류 상태를 종료 신호로 쓴다.
+            # 도착/완료/취소를 관련 임무의 종료 신호로 쓴다.
             if (
                 self._event
                 and self._event.event_id == mission.event_id
@@ -166,16 +276,22 @@ class LiveState:
         return any(
             item.event_id == event_id
             and item.state not in TERMINAL_MISSION_STATES
+            and item.mission_id not in self._superseded_missions
+            and self._mission_roles.get(
+                item.mission_id, RobotRole.AED_DELIVERY
+            ) == RobotRole.AED_DELIVERY
             for item in self._missions.values()
         )
 
     def set_mission_target(
         self, mission_id: str, called_at: float, target: Point2D,
-        *, initial_eta_seconds: float | None = None,
+        *, role: RobotRole = RobotRole.NONE,
+        initial_eta_seconds: float | None = None,
         current_eta_seconds: float | None = None,
     ) -> None:
         with self._lock:
             self._mission_meta[mission_id] = (called_at, target)
+            self._mission_roles[mission_id] = role
             if initial_eta_seconds is not None:
                 self._mission_initial_eta[mission_id] = initial_eta_seconds
             if current_eta_seconds is not None:
@@ -208,12 +324,36 @@ class LiveState:
                     self._robots.values(), key=lambda item: item.robot_id
                 )
             ]
-            active = [
-                self._summarize(mission, now)
+            active_missions = [
+                mission
                 for mission in self._missions.values()
                 if mission.state not in TERMINAL_MISSION_STATES
+                and mission.mission_id not in self._superseded_missions
             ]
             event = self._event
+            visible_missions = list(active_missions)
+            # 대체 임무가 아직 없다면 마지막 주행 오류를 숨기지 않는다.
+            if event is not None and not any(
+                item.event_id == event.event_id for item in active_missions
+            ):
+                failures = [
+                    item
+                    for item in self._missions.values()
+                    if item.event_id == event.event_id
+                    and item.state == MissionState.NAVIGATION_ERROR
+                    and item.mission_id not in self._superseded_missions
+                    and self._mission_roles.get(
+                        item.mission_id, RobotRole.AED_DELIVERY
+                    ) == RobotRole.AED_DELIVERY
+                ]
+                if failures:
+                    visible_missions.append(
+                        max(failures, key=lambda item: item.stamp)
+                    )
+            active = [
+                self._summarize(mission, now)
+                for mission in visible_missions
+            ]
             crowd_zone = self._crowd_zone
         return SystemSnapshot(
             stamp=now,
@@ -277,10 +417,15 @@ class LiveState:
             robot_id=mission.robot_id,
             target=target,
             called_at=called_at,
-            dispatched_at=None,
+            dispatched_at=self._mission_dispatched_at.get(
+                mission.mission_id
+            ),
             arrived_at=None,
             final_state=mission.state,
             assignment_version=mission.assignment_version,
             reassignment_count=max(mission.assignment_version - 1, 0),
+            role=self._mission_roles.get(
+                mission.mission_id, RobotRole.NONE
+            ),
             failure_reasons=[mission.reason] if mission.reason else [],
         )

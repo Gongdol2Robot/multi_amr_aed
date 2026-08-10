@@ -98,7 +98,7 @@ def generate_launch_description() -> LaunchDescription:
                 choices=["true", "false"],
             ),
             DeclareLaunchArgument(
-                "patient_standoff_distance_m", default_value="0.60"
+                "patient_standoff_distance_m", default_value="0.65"
             ),
             DeclareLaunchArgument(
                 "return_after_helper_enabled",
@@ -106,7 +106,7 @@ def generate_launch_description() -> LaunchDescription:
                 choices=["true", "false"],
             ),
             DeclareLaunchArgument(
-                "dual_robot_proximity_threshold_m", default_value="0.40"
+                "dual_robot_proximity_threshold_m", default_value="0.80"
             ),
             DeclareLaunchArgument(
                 "dual_robot_proximity_confirm_sec", default_value="0.50"

@@ -3,6 +3,20 @@
 from math import isfinite
 
 
+def is_aed_delivery_arrival(mission_id: str, robot_id: str) -> bool:
+    """AED 전달 목표의 도착인지 mission manager의 ID 규칙으로 판별한다.
+
+    복귀 목표도 Nav2 관점에서는 ARRIVED로 끝나므로 status 값만 확인하면
+    복귀한 로봇이 환자 현장에 도착한 것으로 오인된다. 최초 배정(`aed`)과
+    실시간 재배정(`live-aed`)은 모두 ``-aed-<robot_id>``로 끝난다.
+    """
+    mission_id = str(mission_id).strip()
+    robot_id = str(robot_id).strip()
+    return bool(mission_id and robot_id) and mission_id.endswith(
+        f"-aed-{robot_id}"
+    )
+
+
 def arrival_dispatch_allowed(
     event_id: str,
     *,

@@ -16,6 +16,7 @@ from emergency_alert.alert_logic import (
     MissionPhase,
     TonePattern,
     is_aed_delivery_mission,
+    is_return_mission,
 )
 from emergency_alert.audio_output import AudioOutput
 
@@ -131,6 +132,13 @@ class MissionStatusAlert(Node):
 
     def _on_status(self, message: MissionStatus) -> None:
         """MissionStatus를 중복 제거 정책에 통과시킨 뒤 오디오 명령을 실행한다."""
+        if is_return_mission(message.mission_id, self.robot_id):
+            # Live ETA 재할당과 dual dispatch 패자 복귀는 기존 AED 전달
+            # MissionStatus의 terminal 상태를 따로 발행하지 않고 새 return
+            # assignment로 교체한다. return 상태를 무시하면 출동 경보가
+            # maximum_alarm_duration까지 계속 재생된다.
+            self._stop_alarm()
+            return
         if not is_aed_delivery_mission(message.mission_id, self.robot_id):
             return
         command = self.policy.handle(

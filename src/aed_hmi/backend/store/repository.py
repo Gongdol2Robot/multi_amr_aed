@@ -13,7 +13,7 @@ import threading
 import time
 from typing import Optional
 
-from ..domain.enums import MissionState, mission_state_from_name
+from ..domain.enums import MissionState, RobotRole, mission_state_from_name
 from ..domain.models import (
     EmergencyEventSnapshot,
     MissionEvent,
@@ -241,7 +241,7 @@ class Repository:
             ).fetchone()
             target = self._connection().execute(
                 """
-                SELECT target_x, target_y FROM mission_assignments
+                SELECT target_x, target_y, role FROM mission_assignments
                 WHERE mission_id = ?
                 ORDER BY assignment_version DESC LIMIT 1
                 """,
@@ -296,6 +296,10 @@ class Repository:
                 ),
                 assignment_version=row["assignment_version"] or 0,
                 reassignment_count=max(row["reassignments"] or 0, 0),
+                role=(
+                    RobotRole(target["role"])
+                    if target else RobotRole.NONE
+                ),
                 failure_reasons=reasons,
                 predicted_eta_seconds=(
                     eta["predicted_sec"] if eta else None
