@@ -1,8 +1,8 @@
 # aed_vision
 
-고정 USB 웹캠 영상에서 쓰러진 구조 대상과 구조 보조자(`helper`)를 검출하고,
-골목 카메라에서는 실제 사람 수를 이용해 통로 혼잡도까지 판단하는 ROS 2
-패키지입니다.
+고정 USB 웹캠과 TurtleBot4 OAK-D 영상에서 쓰러진 구조 대상과 구조
+보조자(`helper`)를 검출하고, 골목 카메라에서는 실제 사람 수를 이용해 통로
+혼잡도까지 판단하는 ROS 2 패키지입니다.
 
 담당: 김지훈(호모그래피·위치 검증), 이현민(구조 대상·사람 검출 및 통합)
 
@@ -13,13 +13,15 @@
 
 | 카메라 | 모드 | 기본 검출 | 선택 검출 | 혼잡도 |
 |---|---|---|---|---|
-| `camera_open` | `open` | 실제 사람 Pose | 목각인형 파인튜닝 | `NOT_APPLICABLE` |
-| `camera_alley` | `alley` | 실제 사람 Pose | 목각인형 파인튜닝 | `CLEAR`/`CROWDED` |
+| `camera_open` | `open` | 목각인형 파인튜닝 | 실제 사람 Pose | `NOT_APPLICABLE` |
+| `camera_alley` | `alley` | 목각인형 파인튜닝 | 실제 사람 Pose | `CLEAR`~`BLOCKED` |
+| `robot1`, `robot2` | `robot` | 목각인형·조력자 파인튜닝 | 실제 사람 Pose | `NOT_APPLICABLE` |
 
-- `open`: 탁 트인 장소에서 `fallen_person`과 `helper`만 검출합니다.
+- `open`: 탁 트인 장소에서 쓰러진 목각인형과 조력자를 검출합니다.
 - `alley`: 좁은 통로에서 구조 검출과 ROI 내부 실제 사람 수를 함께 계산합니다.
-- 학습 가중치 내부 클래스명은 `helper_rc_car`지만 디버그 bbox와 상태 JSON에는
-  역할 중심 이름인 `helper`를 사용합니다.
+- `robot`: OAK-D 영상을 받아 환자 가까이에 있는 조력자를 확인합니다.
+- 현재 배포된 구조 모델의 클래스명은 `mannequin`, `helping_person`이며 노드
+  시작 시 이 순서가 맞는지 검사합니다.
 
 ## 노드
 
@@ -27,9 +29,11 @@
 
 - 각 노트북의 USB 웹캠을 직접 읽어 같은 프로세스에서 즉시 추론
 - 읽은 원본 영상은 모니터링용 JPEG 압축 토픽으로도 발행
-- 기본 `person_pose` backend는 YOLO11n-Pose의 실제 사람 관절과 bbox로 자세 판정
-- 선택 `mannequin_detect` backend는 기존 파인튜닝 YOLO11n 검출을 그대로 사용
-- 최근 10프레임 중 6프레임 이상 검출될 때 응급상황 확정
+- 기본 `mannequin_detect` backend는 파인튜닝 YOLO로 목각인형을 찾고,
+  HOG+SVM으로 최종 자세를 판정하며 Pose는 골격 시각화에 사용. SVM이
+  설정되지 않은 경우에만 Pose와 bbox 비율로 낙상 판정을 보완
+- 선택 `person_pose` backend는 YOLO11n-Pose의 실제 사람 관절과 bbox로 자세 판정
+- 최근 12프레임 중 4프레임 이상 검출될 때 응급상황 확정
 - 확정/해제 전환 시 `aed_interfaces/EmergencyEvent` 발행
 - 검출 bbox 하단 중심점을 카메라별 호모그래피로 map 좌표 변환
 - `alley` 모드에서는 COCO YOLO11n으로 ROI 내부 `person` 수 계산
@@ -49,14 +53,15 @@
 1차 YOLO 검출에서는 재현율(recall)을 우선해 후보를 넓게 받도록 설정했습니다.
 
 낮은 임계값에서 발생할 수 있는 순간적인 오검출을 곧바로 응급상황으로 처리하지는
-않습니다. 각 프레임에서 confidence가 `0.25` 이상인 `fallen_person`을 후보로 받고,
-최근 10프레임 중 6프레임 이상에서 후보가 검출될 때만 응급상황을 확정합니다.
-이 6프레임은 연속일 필요가 없습니다.
+않습니다. 각 프레임에서 confidence가 `0.25` 이상인 `mannequin`을 먼저 찾고
+자세 판정을 통과한 대상만 낙상 후보로 받습니다. 최근 12프레임 중 4프레임
+이상에서 후보가 검출될 때만 응급상황을 확정하며, 이 4프레임은 연속일 필요가
+없습니다.
 
 ```text
 YOLO confidence >= 0.25
         ↓ 후보 검출 — recall 우선
-최근 10프레임 중 6프레임 이상 검출
+최근 12프레임 중 4프레임 이상 검출
         ↓ 시간적 검증 — 순간 오검출 억제
 EmergencyEvent.CONFIRMED
 ```
@@ -78,12 +83,13 @@ colcon build --packages-select aed_interfaces aed_vision
 source install/setup.bash
 ```
 
-세 모델은 패키지의 `models/`에 포함되고 빌드할 때 ROS share 폴더에 함께
+네 모델 파일은 패키지의 `models/`에 포함되고 빌드할 때 ROS share 폴더에 함께
 설치됩니다.
 
 - `models/rescue2_yolo11n.pt`: 파인튜닝 구조 검출 모델
 - `models/coco_yolo11n.pt`: COCO person 검출 모델
 - `models/yolo11n-pose.pt`: 실제 사람 17관절 Pose 모델
+- `models/mannequin_posture_svm.xml`: 목각인형 crop의 낙상 자세 분류 모델
 
 YAML은 절대 경로 대신 다음 ROS 패키지 URI를 사용하므로 노트북마다 경로를
 수정할 필요가 없습니다.
@@ -92,6 +98,7 @@ YAML은 절대 경로 대신 다음 ROS 패키지 URI를 사용하므로 노트�
 package://aed_vision/models/rescue2_yolo11n.pt
 package://aed_vision/models/coco_yolo11n.pt
 package://aed_vision/models/yolo11n-pose.pt
+package://aed_vision/models/mannequin_posture_svm.xml
 ```
 
 ## 실행
@@ -124,8 +131,9 @@ person_conf: 0.55
 
 - `person_pose`: 실제 사람의 bbox·17관절을 검출하고 종횡비와 몸통 각도로
   `STANDING`, `SITTING`, `FALLEN` 판정
-- `mannequin_detect`(기본): `rescue2_yolo11n.pt`의 목각인형 기반
-  `mannequin`, `helping_person` 검출
+- `mannequin_detect`(기본): `rescue2_yolo11n.pt`로 `mannequin`과
+  `helping_person`을 검출하고, mannequin crop은 HOG+SVM으로 자세를 우선
+  판정합니다. SVM을 설정하지 않은 경우 Pose와 bbox 비율이 fallback입니다.
 
 좁은 골목 노트북:
 
@@ -151,6 +159,8 @@ ros2 launch aed_vision camera_vision.launch.py \
 - `person_conf`, `pose_keypoint_conf`, `pose_min_keypoints`,
   `pose_min_box_area`: Pose 사람·관절 품질 필터
 - `rescue_conf`: 구조 대상 YOLO의 1차 후보 confidence 임계값. 기본값은 `0.25`
+- `confirmation_window`, `confirmation_hits`: 낙상 확정 시간 창. 현재 기본값은
+  최근 12프레임 중 4회
 - `location_x`, `location_y`: 해당 고정 카메라 구조 지점의 map 좌표
 - `homography_camera_id`: 카메라별 측량 설정 ID (`cam1` 또는 `cam2`)
 - `homography_margin_m`: 측량 영역 경계에서 허용할 좌표 여유
@@ -196,18 +206,21 @@ ros2 launch aed_vision camera_vision.launch.py \
   "camera_id": "camera_alley",
   "zone_id": "alley_zone",
   "mode": "alley",
-  "detection_backend": "person_pose",
+  "detection_backend": "mannequin_detect",
   "fallen_detected": true,
   "fallen_confirmed": true,
   "fallen_count": 1,
   "fallen_max_confidence": 0.91,
   "posture": "FALLEN",
   "pose_aspect_ratio": 1.91,
-  "pose_torso_angle_deg": 19.4,
-  "pose_visible_keypoints": 14,
+  "pose_torso_angle_deg": -1.0,
+  "pose_visible_keypoints": 0,
   "helper_count": 0,
+  "helper_confirmed": false,
+  "helper_confirmation_hits": 0,
   "person_count": 3,
   "crowd_level": 3,
+  "crowd_observed_level": 3,
   "crowd_time_multiplier": null,
   "crowd_traversable": false,
   "confirmation_hits": 7,
@@ -224,7 +237,8 @@ ros2 launch aed_vision camera_vision.launch.py \
 조정해야 합니다.
 
 혼잡 등급은 쓰러진 대상 외의 실제 사람 수를 사용합니다. 파인튜닝
-모델의 `fallen_person` bbox와 COCO YOLO11n의 `person` bbox가 겹치면 동일한
+모델이 최종 낙상으로 판정한 `mannequin` bbox와 COCO YOLO11n의 `person`
+bbox가 겹치면 동일한
 쓰러진 대상으로 판단해 사람 수에서 제외합니다. 제외 후 우상단 ROI에 남은
 person이 0명이면 시간 패널티가 없고, 1명이면 10%, 2명이면 20%를 더합니다.
 3명 이상은 모두 3등급이며 이동 불가로 판단합니다. `status` JSON의
@@ -238,7 +252,7 @@ person이 0명이면 시간 패널티가 없고, 1명이면 10%, 2명이면 20%�
 ## 검출 위치 좌표
 
 각 카메라는 `homography_cam1.yaml` 또는 `homography_cam2.yaml`의 현장 측량
-행렬을 사용합니다. 가장 confidence가 높은 `fallen_person` bbox의 하단 중심점을
+행렬을 사용합니다. 가장 confidence가 높은 낙상 후보 bbox의 하단 중심점을
 `map` 좌표로 변환하여 `EmergencyEvent.location`에 넣습니다.
 
 입력 영상 해상도가 측량 당시의 640×480과 다르면 픽셀 좌표를 측량 해상도로
@@ -288,10 +302,11 @@ ros2 run rqt_image_view rqt_image_view \
 테스트 결과 토픽은 `/robot2_test/vision/*`로 분리되어 운영 결과와 충돌하지
 않습니다.
 
-`robot` 모드는 파인튜닝 모델의 `fallen_person`과 COCO 모델의 `person`을 함께
-검출합니다. 두 bbox가 겹치는 person은 환자로 보고 제외하며, 남은 person을
-구조 인력 후보로 사용합니다. 최근 6프레임 중 3프레임 이상 후보가 있으면
-다음 로봇 namespace 토픽이 `true`가 됩니다.
+현재 `robot` 프로필은 파인튜닝 구조 모델의 `mannequin`과
+`helping_person`을 함께 검출합니다. `helping_person`의 bbox 하단 중심이 같은
+프레임의 낙상 환자 bbox 중심에서 화면 대각선 길이의 30% 이내일 때만 구조
+인력 후보로 남깁니다. 최근 6프레임 중 3프레임 이상 후보가 있고 현재
+프레임에도 후보가 있으면 다음 로봇 namespace 토픽이 `true`가 됩니다.
 
 ```bash
 ros2 topic echo /robot1/vision/helper_count
