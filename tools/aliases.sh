@@ -96,6 +96,18 @@ loc() {
     namespace:=/robot$n map:="$map"
 }
 
+# Polygon 왕복 수색 + 검출 접근. namespaced TF 토픽 리매핑을 항상 포함한다.
+searchdetect() {
+  local n=${1:-1}
+  shift 2>/dev/null || true
+  aedenv
+  ros2 run robot_missions search_and_detect --ros-args \
+    -r __ns:=/robot$n \
+    -r /tf:=/robot$n/tf \
+    -r /tf_static:=/robot$n/tf_static \
+    "$@"
+}
+
 # 두 로봇이 지도는 공유하지만 Dock 위치가 달라 초기 위치는 각자 다르다.
 # 좌표는 src/aed_bringup/config/dock_poses.yaml 에서 읽는다.
 #   initpose 2            robot2 의 Dock 위치를 발행

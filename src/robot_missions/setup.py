@@ -23,7 +23,7 @@ setup(
     entry_points={
         "console_scripts": [
             "mission_executor = robot_missions.mission_executor:main",
+            "search_and_detect = robot_missions.search_and_detect_node:main",
         ],
     },
 )
-

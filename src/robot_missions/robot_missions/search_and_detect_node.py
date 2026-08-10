@@ -8,9 +8,11 @@
    ``NavigateThroughPoses`` Action으로 순차 주행한다.
 3. 수색 중 YOLO의 ``EmergencyEvent`` 또는 선택적인 ``DetectionSummary``에서
    임계값 이상의 쓰러진 사람을 받으면 coverage goal을 즉시 취소한다.
-4. 검출 좌표 앞 ``approach_distance_m`` 지점으로 목표를 바꾸고 Nav2의
+4. 한 번의 coverage가 끝나도 검출되지 않으면 경로를 뒤집어 제한시간까지
+   왕복 수색한다.
+5. 검출 좌표 앞 ``approach_distance_m`` 지점으로 목표를 바꾸고 Nav2의
    ``NavigateToPose`` Action으로 접근한다. 도착하면 Mission Manager Action을
-   성공 처리하고, 미검출 수색 완료/TF 실패/Nav2 실패는 abort 처리한다.
+   성공 처리하고, 수색 제한시간/TF 실패/Nav2 실패는 abort 처리한다.
 
 ROS 2 인터페이스
 ----------------
@@ -63,15 +65,21 @@ from typing import Iterable, Optional, Sequence
 
 import rclpy
 from action_msgs.msg import GoalStatus
-from aed_interfaces.msg import DetectionSummary, EmergencyEvent
+from aed_interfaces.msg import DetectionSummary, EmergencyEvent, Heartbeat
 from geometry_msgs.msg import PointStamped, PoseStamped
 from nav2_msgs.action import NavigateThroughPoses, NavigateToPose
-from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
+from rclpy.action import (
+    ActionClient,
+    ActionServer,
+    CancelResponse,
+    GoalResponse,
+)
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.time import Time
+from std_msgs.msg import String
 from tf2_geometry_msgs import do_transform_point
 from tf2_ros import Buffer, TransformException, TransformListener
 
@@ -130,6 +138,14 @@ class BoustrophedonPathPlanner:
         minimum_lane_length_m: float = 0.05,
         max_waypoints: int = 0,
     ) -> None:
+        float_values = (
+            lane_spacing_m,
+            sweep_angle_rad,
+            boundary_margin_m,
+            minimum_lane_length_m,
+        )
+        if any(not math.isfinite(value) for value in float_values):
+            raise ValueError("planner parameters must be finite")
         if lane_spacing_m <= 0.0:
             raise ValueError("lane_spacing_m must be positive")
         if boundary_margin_m < 0.0:
@@ -158,7 +174,9 @@ class BoustrophedonPathPlanner:
             ValueError: Polygon이 퇴화했거나 경로를 만들 수 없을 때.
         """
         vertices = self._normalize_polygon(polygon)
-        rotated = [self._rotate(point, -self.sweep_angle_rad) for point in vertices]
+        rotated = [
+            self._rotate(point, -self.sweep_angle_rad) for point in vertices
+        ]
         min_y = min(point.y for point in rotated)
         max_y = max(point.y for point in rotated)
 
@@ -199,6 +217,11 @@ class BoustrophedonPathPlanner:
                 for left, right in reversed(intervals):
                     path_rotated.extend((Point2D(right, y), Point2D(left, y)))
             forward = not forward
+            if self.max_waypoints and len(path_rotated) > self.max_waypoints:
+                raise ValueError(
+                    f"생성 waypoint가 max_waypoints={self.max_waypoints}를 "
+                    "초과합니다"
+                )
 
         if len(path_rotated) < 2:
             raise ValueError(
@@ -209,23 +232,34 @@ class BoustrophedonPathPlanner:
                 f"생성 waypoint {len(path_rotated)}개가 max_waypoints="
                 f"{self.max_waypoints}를 초과합니다"
             )
-        return [self._rotate(point, self.sweep_angle_rad) for point in path_rotated]
+        return [
+            self._rotate(point, self.sweep_angle_rad)
+            for point in path_rotated
+        ]
 
     @classmethod
     def _normalize_polygon(cls, polygon: Sequence[Point2D]) -> list[Point2D]:
         """중복 끝점을 제거하고 꼭짓점 수와 면적을 검증한다."""
         vertices = list(polygon)
-        if len(vertices) >= 2 and cls._distance(vertices[0], vertices[-1]) < cls._EPSILON:
+        if (
+            len(vertices) >= 2
+            and cls._distance(vertices[0], vertices[-1]) < cls._EPSILON
+        ):
             vertices.pop()
         if len(vertices) < 3:
             raise ValueError(
                 "polygon에는 서로 다른 꼭짓점이 최소 3개 필요합니다"
             )
-        if any(not math.isfinite(p.x) or not math.isfinite(p.y) for p in vertices):
+        if any(
+            not math.isfinite(p.x) or not math.isfinite(p.y)
+            for p in vertices
+        ):
             raise ValueError("polygon 좌표는 유한한 실수여야 합니다")
         double_area = sum(
             current.x * following.y - following.x * current.y
-            for current, following in zip(vertices, vertices[1:] + vertices[:1])
+            for current, following in zip(
+                vertices, vertices[1:] + vertices[:1]
+            )
         )
         if abs(double_area) < cls._EPSILON:
             raise ValueError("polygon 면적이 0입니다")
@@ -266,6 +300,54 @@ class BoustrophedonPathPlanner:
         """두 점의 유클리드 거리를 반환한다."""
         return math.hypot(first.x - second.x, first.y - second.y)
 
+    @classmethod
+    def contains(
+        cls,
+        polygon: Sequence[Point2D],
+        point: Point2D,
+        tolerance_m: float = 0.0,
+    ) -> bool:
+        """점이 Polygon 내부 또는 경계 허용거리 안에 있는지 반환한다."""
+        if tolerance_m < 0.0 or not math.isfinite(tolerance_m):
+            raise ValueError("tolerance_m must be finite and non-negative")
+        vertices = cls._normalize_polygon(polygon)
+        if not math.isfinite(point.x) or not math.isfinite(point.y):
+            return False
+
+        for start, end in zip(vertices, vertices[1:] + vertices[:1]):
+            if cls._distance_to_segment(point, start, end) <= tolerance_m:
+                return True
+
+        inside = False
+        for start, end in zip(vertices, vertices[1:] + vertices[:1]):
+            crosses_y = (start.y > point.y) != (end.y > point.y)
+            if not crosses_y:
+                continue
+            crossing_x = start.x + (
+                (point.y - start.y) * (end.x - start.x) / (end.y - start.y)
+            )
+            if point.x < crossing_x:
+                inside = not inside
+        return inside
+
+    @staticmethod
+    def _distance_to_segment(
+        point: Point2D, start: Point2D, end: Point2D
+    ) -> float:
+        """점과 선분 사이의 최단거리를 반환한다."""
+        dx = end.x - start.x
+        dy = end.y - start.y
+        length_squared = dx * dx + dy * dy
+        if length_squared <= 1.0e-18:
+            return math.hypot(point.x - start.x, point.y - start.y)
+        ratio = (
+            (point.x - start.x) * dx + (point.y - start.y) * dy
+        ) / length_squared
+        ratio = min(1.0, max(0.0, ratio))
+        closest_x = start.x + ratio * dx
+        closest_y = start.y + ratio * dy
+        return math.hypot(point.x - closest_x, point.y - closest_y)
+
 
 class DetectionStateController:
     """YOLO 결과의 임계값/연속성 검사와 최초 대상 latch를 담당한다.
@@ -287,11 +369,13 @@ class DetectionStateController:
         required_hits: int,
         reset_timeout_s: float,
     ) -> None:
-        if not 0.0 <= confidence_threshold <= 1.0:
+        if not math.isfinite(confidence_threshold) or not (
+            0.0 <= confidence_threshold <= 1.0
+        ):
             raise ValueError("confidence_threshold must be in [0, 1]")
         if required_hits < 1:
             raise ValueError("required_hits must be at least 1")
-        if reset_timeout_s <= 0.0:
+        if not math.isfinite(reset_timeout_s) or reset_timeout_s <= 0.0:
             raise ValueError("reset_timeout_s must be positive")
         self.confidence_threshold = confidence_threshold
         self.required_hits = required_hits
@@ -326,7 +410,9 @@ class DetectionStateController:
             if self._target is not None:
                 return False
             if (
-                confidence < self.confidence_threshold
+                not math.isfinite(confidence)
+                or not math.isfinite(now_s)
+                or confidence < self.confidence_threshold
                 or not location.header.frame_id
                 or not math.isfinite(location.point.x)
                 or not math.isfinite(location.point.y)
@@ -343,7 +429,9 @@ class DetectionStateController:
             self._hit_count += 1
             if self._hit_count < self.required_hits:
                 return False
-            self._target = Detection(copy.deepcopy(location), confidence, now_s)
+            self._target = Detection(
+                copy.deepcopy(location), confidence, now_s
+            )
             return True
 
     @property
@@ -372,6 +460,9 @@ class ApproachPoseCalculator:
         Returns:
             ``(접근 위치, target을 바라보는 yaw)``.
         """
+        coordinates = (robot.x, robot.y, target.x, target.y, standoff_m)
+        if any(not math.isfinite(value) for value in coordinates):
+            raise ValueError("approach coordinates must be finite")
         if standoff_m < 0.0:
             raise ValueError("standoff_m must be non-negative")
         dx = target.x - robot.x
@@ -403,8 +494,11 @@ class SearchAndDetectNode(Node):
         self._goal_reserved = False
         self._active_server_goal = None
         self._active_nav_goal = None
+        self._active_polygon: Optional[list[Point2D]] = None
         self._search_started_s: Optional[float] = None
         self._failure_reason = ""
+        self._last_vision_heartbeat_s: Optional[float] = None
+        self._last_vision_status_s: Optional[float] = None
 
         self._detector = DetectionStateController(
             self.detection_confidence_threshold,
@@ -443,6 +537,20 @@ class SearchAndDetectNode(Node):
             10,
             callback_group=self._callback_group,
         )
+        self._heartbeat_subscription = self.create_subscription(
+            Heartbeat,
+            self.vision_heartbeat_topic,
+            self._on_vision_heartbeat,
+            10,
+            callback_group=self._callback_group,
+        )
+        self._vision_status_subscription = self.create_subscription(
+            String,
+            self.vision_status_topic,
+            self._on_vision_status,
+            10,
+            callback_group=self._callback_group,
+        )
         self._summary_subscription = None
         if self.detection_summary_topic:
             self._summary_subscription = self.create_subscription(
@@ -456,7 +564,9 @@ class SearchAndDetectNode(Node):
         # Action execute callback이 Nav2 결과를 기다리는 동안에도 timeout을
         # 감시하려면 별도 timer callback이 필요하므로 Reentrant group에 둔다.
         self._watchdog = self.create_timer(
-            0.1, self._check_search_timeout, callback_group=self._callback_group
+            0.1,
+            self._check_search_timeout,
+            callback_group=self._callback_group,
         )
         self.get_logger().info(
             "SearchAndDetect ready: namespace=%s search_action=%s "
@@ -477,6 +587,8 @@ class SearchAndDetectNode(Node):
             ("search_action_name", "search_and_detect"),
             ("detection_event_topic", "vision/emergency_event"),
             ("detection_summary_topic", ""),
+            ("vision_heartbeat_topic", "vision/heartbeat"),
+            ("vision_status_topic", "vision/status"),
             ("navigate_through_poses_action", "navigate_through_poses"),
             ("navigate_to_pose_action", "navigate_to_pose"),
             ("map_frame", "map"),
@@ -484,16 +596,26 @@ class SearchAndDetectNode(Node):
             # coverage 폭 = min(tool width, FOV 기반 관측 폭 * (1-overlap)).
             ("camera_fov_deg", 69.0),
             ("detection_range_m", 2.0),
-            ("tool_width_m", 0.6),
+            # 좁은 수색 구역에서도 여러 lane이 생기도록 기본 간격을 30 cm로
+            # 제한한다. Nav2 inflation_radius와는 별개인 경로 생성 설정이다.
+            ("tool_width_m", 0.30),
             ("path_overlap_ratio", 0.20),
             ("sweep_angle_deg", 0.0),
             ("boundary_margin_m", 0.10),
             ("minimum_lane_length_m", 0.20),
-            ("max_waypoints", 0),
+            ("minimum_coverage_poses", 4),
+            ("max_waypoints", 200),
+            ("max_polygon_vertices", 50),
+            ("max_search_extent_m", 20.0),
             ("detection_confidence_threshold", 0.60),
             ("detection_required_hits", 1),
             ("detection_reset_timeout_s", 1.0),
             ("detection_max_age_s", 2.0),
+            ("detection_future_tolerance_s", 0.5),
+            ("detection_polygon_tolerance_m", 0.15),
+            ("require_vision_heartbeat", True),
+            ("vision_heartbeat_timeout_s", 3.0),
+            ("vision_status_timeout_s", 3.0),
             ("approach_distance_m", 0.70),
             ("nav2_server_timeout_s", 3.0),
             ("tf_timeout_s", 0.5),
@@ -507,6 +629,8 @@ class SearchAndDetectNode(Node):
             "search_action_name",
             "detection_event_topic",
             "detection_summary_topic",
+            "vision_heartbeat_topic",
+            "vision_status_topic",
             "navigate_through_poses_action",
             "navigate_to_pose_action",
             "map_frame",
@@ -517,6 +641,8 @@ class SearchAndDetectNode(Node):
         required_strings = (
             "search_action_name",
             "detection_event_topic",
+            "vision_heartbeat_topic",
+            "vision_status_topic",
             "navigate_through_poses_action",
             "navigate_to_pose_action",
             "map_frame",
@@ -539,9 +665,14 @@ class SearchAndDetectNode(Node):
             "sweep_angle_deg",
             "boundary_margin_m",
             "minimum_lane_length_m",
+            "max_search_extent_m",
             "detection_confidence_threshold",
             "detection_reset_timeout_s",
             "detection_max_age_s",
+            "detection_future_tolerance_s",
+            "detection_polygon_tolerance_m",
+            "vision_heartbeat_timeout_s",
+            "vision_status_timeout_s",
             "approach_distance_m",
             "nav2_server_timeout_s",
             "tf_timeout_s",
@@ -550,18 +681,80 @@ class SearchAndDetectNode(Node):
         for name in float_names:
             setattr(self, name, float(self.get_parameter(name).value))
         self.max_waypoints = int(self.get_parameter("max_waypoints").value)
+        self.minimum_coverage_poses = int(
+            self.get_parameter("minimum_coverage_poses").value
+        )
+        self.max_polygon_vertices = int(
+            self.get_parameter("max_polygon_vertices").value
+        )
         self.detection_required_hits = int(
             self.get_parameter("detection_required_hits").value
         )
+        self.require_vision_heartbeat = bool(
+            self.get_parameter("require_vision_heartbeat").value
+        )
+
+        finite_parameters = (
+            "camera_fov_deg",
+            "detection_range_m",
+            "tool_width_m",
+            "path_overlap_ratio",
+            "sweep_angle_deg",
+            "boundary_margin_m",
+            "minimum_lane_length_m",
+            "max_search_extent_m",
+            "detection_confidence_threshold",
+            "detection_reset_timeout_s",
+            "detection_max_age_s",
+            "detection_future_tolerance_s",
+            "detection_polygon_tolerance_m",
+            "vision_heartbeat_timeout_s",
+            "vision_status_timeout_s",
+            "approach_distance_m",
+            "nav2_server_timeout_s",
+            "tf_timeout_s",
+            "search_timeout_s",
+        )
+        if any(
+            not math.isfinite(getattr(self, name))
+            for name in finite_parameters
+        ):
+            raise ValueError("numeric parameters must be finite")
 
         if not 0.0 < self.camera_fov_deg < 180.0:
             raise ValueError("camera_fov_deg must be in (0, 180)")
         if self.detection_range_m <= 0.0 or self.tool_width_m <= 0.0:
-            raise ValueError("detection_range_m and tool_width_m must be positive")
+            raise ValueError(
+                "detection_range_m and tool_width_m must be positive"
+            )
         if not 0.0 <= self.path_overlap_ratio < 1.0:
             raise ValueError("path_overlap_ratio must be in [0, 1)")
         if self.detection_max_age_s <= 0.0:
             raise ValueError("detection_max_age_s must be positive")
+        if self.detection_future_tolerance_s < 0.0:
+            raise ValueError(
+                "detection_future_tolerance_s must be non-negative"
+            )
+        if self.detection_polygon_tolerance_m < 0.0:
+            raise ValueError(
+                "detection_polygon_tolerance_m must be non-negative"
+            )
+        if self.vision_heartbeat_timeout_s <= 0.0:
+            raise ValueError("vision_heartbeat_timeout_s must be positive")
+        if self.vision_status_timeout_s <= 0.0:
+            raise ValueError("vision_status_timeout_s must be positive")
+        if self.boundary_margin_m < 0.0 or self.minimum_lane_length_m <= 0.0:
+            raise ValueError("coverage margin/length parameters are invalid")
+        if (
+            self.minimum_coverage_poses < 2
+            or self.max_waypoints < 0
+            or self.max_polygon_vertices < 3
+        ):
+            raise ValueError("waypoint/Polygon limits are invalid")
+        if self.max_search_extent_m <= 0.0:
+            raise ValueError("max_search_extent_m must be positive")
+        if self.approach_distance_m < 0.0:
+            raise ValueError("approach_distance_m must be non-negative")
         if self.nav2_server_timeout_s <= 0.0 or self.tf_timeout_s <= 0.0:
             raise ValueError("Nav2/TF timeout must be positive")
         if self.search_timeout_s < 0.0:
@@ -570,14 +763,42 @@ class SearchAndDetectNode(Node):
     def _on_search_goal(self, goal_request) -> GoalResponse:
         """Polygon과 단일 임무 제약을 검사해 goal을 수락/거절한다."""
         if len(goal_request.poses) < 3:
-            self.get_logger().warning("Search goal rejected: polygon needs >= 3 poses")
+            self.get_logger().warning(
+                "Search goal rejected: polygon needs >= 3 poses"
+            )
+            return GoalResponse.REJECT
+        if len(goal_request.poses) > self.max_polygon_vertices:
+            self.get_logger().warning(
+                "Search goal rejected: polygon has %d vertices; maximum is %d"
+                % (len(goal_request.poses), self.max_polygon_vertices)
+            )
             return GoalResponse.REJECT
         if any(not pose.header.frame_id for pose in goal_request.poses):
-            self.get_logger().warning("Search goal rejected: polygon frame_id is empty")
+            self.get_logger().warning(
+                "Search goal rejected: polygon frame_id is empty"
+            )
             return GoalResponse.REJECT
+        if any(
+            not math.isfinite(pose.pose.position.x)
+            or not math.isfinite(pose.pose.position.y)
+            for pose in goal_request.poses
+        ):
+            self.get_logger().warning(
+                "Search goal rejected: polygon contains non-finite coordinates"
+            )
+            return GoalResponse.REJECT
+        if self.require_vision_heartbeat:
+            vision_error = self._vision_health_error()
+            if vision_error:
+                self.get_logger().warning(
+                    f"Search goal rejected: {vision_error}"
+                )
+                return GoalResponse.REJECT
         with self._lock:
             if self._goal_reserved:
-                self.get_logger().warning("Search goal rejected: another search is active")
+                self.get_logger().warning(
+                    "Search goal rejected: another search is active"
+                )
                 return GoalResponse.REJECT
             # goal_callback과 execute_callback 사이에 두 번째 요청이 끼어드는 race를
             # 막기 위해 수락 시점에 슬롯을 미리 예약한다.
@@ -586,7 +807,9 @@ class SearchAndDetectNode(Node):
 
     def _on_search_cancel(self, _goal_handle) -> CancelResponse:
         """Mission Manager 취소와 함께 Nav2 goal도 즉시 취소한다."""
-        self.get_logger().warning("Mission Manager requested search cancellation")
+        self.get_logger().warning(
+            "Mission Manager requested search cancellation"
+        )
         self._request_active_nav_cancel("mission manager cancel")
         return CancelResponse.ACCEPT
 
@@ -602,6 +825,17 @@ class SearchAndDetectNode(Node):
 
         try:
             polygon = self._polygon_in_map(goal_handle.request.poses)
+            polygon_width = max(point.x for point in polygon) - min(
+                point.x for point in polygon
+            )
+            polygon_height = max(point.y for point in polygon) - min(
+                point.y for point in polygon
+            )
+            if max(polygon_width, polygon_height) > self.max_search_extent_m:
+                raise ValueError(
+                    "search polygon exceeds max_search_extent_m="
+                    f"{self.max_search_extent_m:.1f}"
+                )
             planner = BoustrophedonPathPlanner(
                 lane_spacing_m=self._effective_lane_spacing(),
                 sweep_angle_rad=math.radians(self.sweep_angle_deg),
@@ -610,33 +844,73 @@ class SearchAndDetectNode(Node):
                 max_waypoints=self.max_waypoints,
             )
             coverage_points = planner.generate(polygon)
-            coverage_poses = self._points_to_poses(coverage_points)
+            if len(coverage_points) < self.minimum_coverage_poses:
+                raise ValueError(
+                    "search polygon produced only "
+                    f"{len(coverage_points)} coverage poses; at least "
+                    f"{self.minimum_coverage_poses} are required for "
+                    "zigzag search"
+                )
+            with self._lock:
+                self._active_polygon = list(polygon)
             self.get_logger().info(
-                f"Coverage path generated: {len(coverage_poses)} poses, "
+                f"Coverage path generated: {len(coverage_points)} poses, "
                 f"lane_spacing={planner.lane_spacing_m:.2f} m"
             )
 
             with self._lock:
                 self._set_state_locked(SearchState.SEARCHING_COVERAGE)
-            coverage_status = await self._navigate_coverage(coverage_poses, goal_handle)
+            coverage_pass = 1
+            pass_points = coverage_points
+            while self._detector.target is None:
+                coverage_poses = self._points_to_poses(pass_points)
+                self.get_logger().info(
+                    f"Starting coverage pass {coverage_pass} "
+                    f"({len(coverage_poses)} poses)"
+                )
+                coverage_status = await self._navigate_coverage(
+                    coverage_poses, goal_handle
+                )
 
-            if goal_handle.is_cancel_requested:
-                goal_handle.canceled()
-                self.get_logger().warning("Search action canceled by Mission Manager")
-                return result
+                if goal_handle.is_cancel_requested:
+                    goal_handle.canceled()
+                    self.get_logger().warning(
+                        "Search action canceled by Mission Manager"
+                    )
+                    return result
 
-            with self._lock:
-                watchdog_reason = self._failure_reason
-            if watchdog_reason:
-                return self._abort_search(goal_handle, result, watchdog_reason)
+                with self._lock:
+                    watchdog_reason = self._failure_reason
+                if watchdog_reason:
+                    return self._abort_search(
+                        goal_handle, result, watchdog_reason
+                    )
+
+                if self._detector.target is not None:
+                    break
+                if coverage_status != GoalStatus.STATUS_SUCCEEDED:
+                    return self._abort_search(
+                        goal_handle,
+                        result,
+                        f"Nav2 coverage failed with status={coverage_status}",
+                    )
+
+                # 마지막 waypoint에서 곧바로 반대 방향으로 수색한다. Pose를
+                # 새로 만들어 각 waypoint의 yaw도 진행 방향에 맞게 갱신한다.
+                coverage_pass += 1
+                pass_points = list(reversed(pass_points))
+                self.get_logger().info(
+                    "Coverage completed without detection; reversing path "
+                    f"for pass {coverage_pass}"
+                )
 
             detection = self._detector.target
             if detection is None:
-                if coverage_status == GoalStatus.STATUS_SUCCEEDED:
-                    reason = "coverage search completed without detecting a fallen person"
-                else:
-                    reason = f"Nav2 coverage failed with status={coverage_status}"
-                return self._abort_search(goal_handle, result, reason)
+                return self._abort_search(
+                    goal_handle,
+                    result,
+                    "detection state was lost after coverage cancel",
+                )
 
             # 검출 callback은 먼저 coverage goal cancel을 요청한다. 취소 결과를
             # await한 뒤에만 NavigateToPose를 보내 두 Nav2 goal이 동시에 로봇을
@@ -646,41 +920,55 @@ class SearchAndDetectNode(Node):
                 approach_pose = self._make_approach_pose(target)
             except (TransformException, ValueError) as error:
                 return self._abort_search(
-                    goal_handle, result, f"target TF/approach calculation failed: {error}"
+                    goal_handle,
+                    result,
+                    f"target TF/approach calculation failed: {error}",
                 )
 
             with self._lock:
                 self._set_state_locked(SearchState.APPROACHING_TARGET)
-            approach_status = await self._navigate_to_target(approach_pose, goal_handle)
+            approach_status = await self._navigate_to_target(
+                approach_pose, goal_handle
+            )
 
             if goal_handle.is_cancel_requested:
                 goal_handle.canceled()
-                self.get_logger().warning("Approach canceled by Mission Manager")
+                self.get_logger().warning(
+                    "Approach canceled by Mission Manager"
+                )
                 return result
             if approach_status != GoalStatus.STATUS_SUCCEEDED:
                 return self._abort_search(
                     goal_handle,
                     result,
-                    f"Nav2 target approach failed with status={approach_status}",
+                    "Nav2 target approach failed with "
+                    f"status={approach_status}",
                 )
 
             with self._lock:
                 self._set_state_locked(SearchState.ARRIVED)
             goal_handle.succeed()
-            self.get_logger().info("Fallen person reached; search action succeeded")
+            self.get_logger().info(
+                "Fallen person reached; search action succeeded"
+            )
             return result
         except TransformException as error:
-            return self._abort_search(goal_handle, result, f"polygon TF timeout: {error}")
+            return self._abort_search(
+                goal_handle, result, f"polygon TF timeout: {error}"
+            )
         except (ValueError, RuntimeError) as error:
             return self._abort_search(goal_handle, result, str(error))
         # Action server worker가 예외로 유실되지 않게 반드시 abort로 종결한다.
         except Exception as error:
             self.get_logger().error(f"Unexpected search error: {error}")
-            return self._abort_search(goal_handle, result, f"unexpected error: {error}")
+            return self._abort_search(
+                goal_handle, result, f"unexpected error: {error}"
+            )
         finally:
             with self._lock:
                 self._active_nav_goal = None
                 self._active_server_goal = None
+                self._active_polygon = None
                 self._search_started_s = None
                 self._goal_reserved = False
 
@@ -691,7 +979,9 @@ class SearchAndDetectNode(Node):
         if not self._coverage_client.wait_for_server(
             timeout_sec=self.nav2_server_timeout_s
         ):
-            raise RuntimeError("Nav2 NavigateThroughPoses action server unavailable")
+            raise RuntimeError(
+                "Nav2 NavigateThroughPoses action server unavailable"
+            )
         if server_goal_handle.is_cancel_requested:
             return GoalStatus.STATUS_CANCELED
 
@@ -758,12 +1048,27 @@ class SearchAndDetectNode(Node):
 
     def _on_emergency_event(self, message: EmergencyEvent) -> None:
         """YOLO EmergencyEvent에서 검출 위치와 신뢰도를 수신한다."""
-        if message.status not in (EmergencyEvent.DETECTED, EmergencyEvent.CONFIRMED):
+        if message.status not in (
+            EmergencyEvent.DETECTED,
+            EmergencyEvent.CONFIRMED,
+        ):
             return
         location = PointStamped()
         location.header = message.location.header
         location.point = message.location.point
-        self._consider_detection(location, float(message.confidence), message.detected_at)
+        self._consider_detection(
+            location, float(message.confidence), message.detected_at
+        )
+
+    def _on_vision_heartbeat(self, _message: Heartbeat) -> None:
+        """비전 노드 heartbeat의 로컬 수신 시각을 기록한다."""
+        with self._lock:
+            self._last_vision_heartbeat_s = self._now_seconds()
+
+    def _on_vision_status(self, _message: String) -> None:
+        """실제 카메라 프레임이 추론된 로컬 수신 시각을 기록한다."""
+        with self._lock:
+            self._last_vision_status_s = self._now_seconds()
 
     def _on_detection_summary(self, message: DetectionSummary) -> None:
         """선택적인 DetectionSummary 입력을 동일한 탐지기로 전달한다."""
@@ -775,24 +1080,62 @@ class SearchAndDetectNode(Node):
             message.stamp,
         )
 
-    def _consider_detection(self, location: PointStamped, confidence: float, stamp) -> None:
+    def _consider_detection(
+        self, location: PointStamped, confidence: float, stamp
+    ) -> None:
         """상태/신선도/신뢰도를 검사하고 Nav2 cancel로 전환한다."""
         with self._lock:
-            if self._state != SearchState.SEARCHING_COVERAGE:
+            active_polygon = self._active_polygon
+            if (
+                self._state != SearchState.SEARCHING_COVERAGE
+                or active_polygon is None
+            ):
                 return
         now_s = self._now_seconds()
         message_s = self._stamp_seconds(stamp)
         # bag 재생/통신 지연으로 오래된 detection이 도착해 현재 임무를 잘못
         # 가로채는 것을 막는다. stamp가 0이면 수신 시각을 사용한다.
-        if message_s > 0.0 and now_s - message_s > self.detection_max_age_s:
+        if message_s > 0.0:
+            age_s = now_s - message_s
+            if age_s > self.detection_max_age_s:
+                self.get_logger().warning(
+                    f"Ignoring stale detection: age={age_s:.2f} s"
+                )
+                return
+            if age_s < -self.detection_future_tolerance_s:
+                self.get_logger().warning(
+                    f"Ignoring future-dated detection: age={age_s:.2f} s"
+                )
+                return
+
+        try:
+            mapped_location = self._point_in_map(location)
+        except (TransformException, ValueError) as error:
             self.get_logger().warning(
-                f"Ignoring stale detection: age={now_s - message_s:.2f} s"
+                f"Ignoring detection with invalid TF/frame: {error}"
             )
             return
-        if not self._detector.register(location, confidence, now_s):
+
+        mapped_point = Point2D(
+            mapped_location.point.x,
+            mapped_location.point.y,
+        )
+        if not BoustrophedonPathPlanner.contains(
+            active_polygon,
+            mapped_point,
+            tolerance_m=self.detection_polygon_tolerance_m,
+        ):
+            self.get_logger().warning(
+                "Ignoring detection outside search polygon: "
+                f"({mapped_point.x:.2f}, {mapped_point.y:.2f})"
+            )
             return
 
         with self._lock:
+            if self._state != SearchState.SEARCHING_COVERAGE:
+                return
+            if not self._detector.register(mapped_location, confidence, now_s):
+                return
             self._set_state_locked(SearchState.PERSON_DETECTED)
         self.get_logger().warning(
             f"Fallen person detected (confidence={confidence:.3f}); "
@@ -900,22 +1243,47 @@ class SearchAndDetectNode(Node):
                 setattr(feedback, field, getattr(nav_feedback, field))
         server_goal_handle.publish_feedback(feedback)
 
-    def _request_active_nav_cancel(self, reason: str) -> None:
-        """현재 Nav2 goal handle이 있으면 비동기 cancel을 요청한다."""
+    def _request_active_nav_cancel(self, reason: str):
+        """현재 Nav2 goal 취소 Future를 반환한다. goal이 없으면 None이다."""
         with self._lock:
             nav_goal = self._active_nav_goal
         if nav_goal is None:
-            return
+            return None
         try:
-            nav_goal.cancel_goal_async()
+            future = nav_goal.cancel_goal_async()
             self.get_logger().info(f"Nav2 cancel requested: {reason}")
+            return future
         except Exception as error:
             self.get_logger().error(f"Failed to request Nav2 cancel: {error}")
+            return None
+
+    def _vision_health_error(self) -> Optional[str]:
+        """비전 publisher, heartbeat와 프레임 처리 상태를 검사한다."""
+        event_publishers = self.count_publishers(self.detection_event_topic)
+        now_s = self._now_seconds()
+        with self._lock:
+            heartbeat_s = self._last_vision_heartbeat_s
+            status_s = self._last_vision_status_s
+
+        if event_publishers == 0:
+            return "vision event publisher is missing"
+        if heartbeat_s is None:
+            return "vision heartbeat was not received"
+        heartbeat_age_s = now_s - heartbeat_s
+        if (
+            heartbeat_age_s < 0.0
+            or heartbeat_age_s > self.vision_heartbeat_timeout_s
+        ):
+            return f"vision heartbeat is stale ({heartbeat_age_s:.1f}s)"
+        if status_s is None:
+            return "vision has not processed a camera frame"
+        status_age_s = now_s - status_s
+        if status_age_s < 0.0 or status_age_s > self.vision_status_timeout_s:
+            return f"vision camera frames are stale ({status_age_s:.1f}s)"
+        return None
 
     def _check_search_timeout(self) -> None:
         """coverage 수색 제한시간 초과 시 Nav2 goal을 취소해 Action을 깨운다."""
-        if self.search_timeout_s == 0.0:
-            return
         with self._lock:
             if (
                 self._state != SearchState.SEARCHING_COVERAGE
@@ -923,13 +1291,31 @@ class SearchAndDetectNode(Node):
                 or self._failure_reason
             ):
                 return
-            elapsed = self._now_seconds() - self._search_started_s
-            if elapsed <= self.search_timeout_s:
+        vision_error = (
+            self._vision_health_error()
+            if self.require_vision_heartbeat
+            else None
+        )
+        with self._lock:
+            if (
+                self._state != SearchState.SEARCHING_COVERAGE
+                or self._search_started_s is None
+                or self._failure_reason
+            ):
                 return
-            self._failure_reason = f"search timeout after {elapsed:.1f} s"
-            self._set_state_locked(SearchState.SEARCH_FAILED)
+            if vision_error:
+                self._failure_reason = vision_error
+                self._set_state_locked(SearchState.SEARCH_FAILED)
+            elif self.search_timeout_s == 0.0:
+                return
+            elapsed = self._now_seconds() - self._search_started_s
+            if not vision_error and elapsed <= self.search_timeout_s:
+                return
+            if not vision_error:
+                self._failure_reason = f"search timeout after {elapsed:.1f} s"
+                self._set_state_locked(SearchState.SEARCH_FAILED)
         self.get_logger().error(self._failure_reason)
-        self._request_active_nav_cancel("search timeout")
+        self._request_active_nav_cancel(self._failure_reason)
 
     def _abort_search(self, goal_handle, result, reason: str):
         """상태/로그/Action terminal transition을 한곳에서 일관되게 처리한다."""
@@ -944,7 +1330,9 @@ class SearchAndDetectNode(Node):
     def _set_state_locked(self, next_state: SearchState) -> None:
         """lock을 잡은 호출자 안에서 상태를 변경하고 전이를 기록한다."""
         if self._state != next_state:
-            self.get_logger().info(f"state: {self._state.name} -> {next_state.name}")
+            self.get_logger().info(
+                f"state: {self._state.name} -> {next_state.name}"
+            )
             self._state = next_state
 
     def _now_seconds(self) -> float:
@@ -972,10 +1360,15 @@ class MockInputInjector(Node):
         """Mock 파라미터, Action client, 검출 publisher를 생성한다."""
         super().__init__("search_and_detect_mock_injector")
         self.declare_parameter("search_action_name", "search_and_detect")
-        self.declare_parameter("detection_event_topic", "vision/emergency_event")
+        self.declare_parameter(
+            "detection_event_topic", "vision/emergency_event"
+        )
+        self.declare_parameter("vision_heartbeat_topic", "vision/heartbeat")
+        self.declare_parameter("vision_status_topic", "vision/status")
         self.declare_parameter("map_frame", "map")
         self.declare_parameter(
-            "mock_polygon_xy", [-2.0, -1.5, 2.0, -1.5, 2.0, 1.5, -2.0, 1.5]
+            "mock_polygon_xy",
+            [-2.0, -1.5, 2.0, -1.5, 2.0, 1.5, -2.0, 1.5],
         )
         self.declare_parameter("mock_detection_xy", [0.8, 0.4])
         self.declare_parameter("mock_detection_confidence", 0.95)
@@ -983,10 +1376,12 @@ class MockInputInjector(Node):
 
         self._map_frame = str(self.get_parameter("map_frame").value)
         self._polygon_xy = [
-            float(value) for value in self.get_parameter("mock_polygon_xy").value
+            float(value)
+            for value in self.get_parameter("mock_polygon_xy").value
         ]
         self._detection_xy = [
-            float(value) for value in self.get_parameter("mock_detection_xy").value
+            float(value)
+            for value in self.get_parameter("mock_detection_xy").value
         ]
         if len(self._polygon_xy) < 6 or len(self._polygon_xy) % 2:
             raise ValueError("mock_polygon_xy needs at least three x,y pairs")
@@ -1003,10 +1398,32 @@ class MockInputInjector(Node):
             str(self.get_parameter("detection_event_topic").value),
             10,
         )
+        self._heartbeat_publisher = self.create_publisher(
+            Heartbeat,
+            str(self.get_parameter("vision_heartbeat_topic").value),
+            10,
+        )
+        self._vision_status_publisher = self.create_publisher(
+            String,
+            str(self.get_parameter("vision_status_topic").value),
+            10,
+        )
+        self._heartbeat_sequence = 0
         self._goal_sent = False
         self._detection_sent = False
         self._detection_timer = None
+        self._heartbeat_timer = self.create_timer(0.1, self._publish_heartbeat)
         self._goal_timer = self.create_timer(0.5, self._try_send_goal)
+
+    def _publish_heartbeat(self) -> None:
+        """Mock 모드에서도 실제 비전과 같은 heartbeat를 발행한다."""
+        self._heartbeat_sequence += 1
+        message = Heartbeat()
+        message.sender_id = "search_and_detect_mock"
+        message.stamp = self.get_clock().now().to_msg()
+        message.sequence = self._heartbeat_sequence
+        self._heartbeat_publisher.publish(message)
+        self._vision_status_publisher.publish(String(data="{\"mock\": true}"))
 
     def _try_send_goal(self) -> None:
         """Action server가 준비되면 Mock Polygon을 한 번 전송한다."""
@@ -1022,7 +1439,9 @@ class MockInputInjector(Node):
             pose.pose.position.y = y
             pose.pose.orientation.w = 1.0
             goal.poses.append(pose)
-        self.get_logger().info(f"Injecting mock polygon with {len(goal.poses)} vertices")
+        self.get_logger().info(
+            f"Injecting mock polygon with {len(goal.poses)} vertices"
+        )
         future = self._action_client.send_goal_async(goal)
         future.add_done_callback(self._on_goal_response)
 
@@ -1034,8 +1453,13 @@ class MockInputInjector(Node):
             return
         self.get_logger().info("Mock search goal accepted")
         goal_handle.get_result_async().add_done_callback(self._on_goal_result)
-        delay = max(0.01, float(self.get_parameter("mock_detection_delay_s").value))
-        self._detection_timer = self.create_timer(delay, self._publish_detection)
+        delay = max(
+            0.01,
+            float(self.get_parameter("mock_detection_delay_s").value),
+        )
+        self._detection_timer = self.create_timer(
+            delay, self._publish_detection
+        )
 
     def _publish_detection(self) -> None:
         """현재 YOLO 인터페이스와 같은 EmergencyEvent를 한 번 발행한다."""
@@ -1069,7 +1493,9 @@ class MockInputInjector(Node):
     def _on_goal_result(self, future) -> None:
         """독립 시험 결과의 Action 상태를 로그로 출력한다."""
         wrapped_result = future.result()
-        self.get_logger().info(f"Mock search finished: status={wrapped_result.status}")
+        self.get_logger().info(
+            f"Mock search finished: status={wrapped_result.status}"
+        )
 
 
 def main(args=None) -> None:
@@ -1096,7 +1522,14 @@ def main(args=None) -> None:
             )
         executor.spin()
     except KeyboardInterrupt:
-        pass
+        if search_node is not None:
+            cancel_future = search_node._request_active_nav_cancel(
+                "search node interrupted"
+            )
+            if cancel_future is not None:
+                executor.spin_until_future_complete(
+                    cancel_future, timeout_sec=2.0
+                )
     finally:
         executor.shutdown()
         if mock_node is not None:
