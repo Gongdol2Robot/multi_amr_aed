@@ -115,6 +115,7 @@ ROBOT_IDS = ("robot1", "robot2")
 # 있어서, 두 요청이 겹치면 어느 쪽 값인지 가릴 수 없다. 요청 id 가 들어
 # 있는 result 하나만 받는다.
 ETA_RESULT_TOPIC = "/emergency/eta/result"
+CROWD_STATE_TOPIC = "/emergency/crowd/state"
 
 
 def predicted_eta_topic(robot_id: str) -> str:

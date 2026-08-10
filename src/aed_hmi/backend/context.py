@@ -81,6 +81,9 @@ class Context:
     def on_fallback_state(self, robot_id: str, state: str) -> None:
         self.live.put_fallback_state(robot_id, state)
 
+    def on_crowd_zone(self, crowd_zone) -> None:
+        self.live.put_crowd_zone(crowd_zone)
+
     def on_predicted_eta(self, robot_id: str, seconds: float) -> None:
         """Use the mission manager's ETA as the sole HMI ETA source."""
         mission_id = self._active_eta_mission.get(robot_id)

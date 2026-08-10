@@ -82,7 +82,11 @@ export default function App() {
 
         {/* 로봇 카드는 좌표를 숫자로만 준다. 두 로봇이 서로 어디 있는지와
             목표가 어느 쪽인지는 지도라야 잡힌다. */}
-        <MapView robots={robots} missions={missions} />
+        <MapView
+          robots={robots}
+          missions={missions}
+          crowdZone={snapshot?.crowd_zone ?? null}
+        />
         </div>
       </div>
 

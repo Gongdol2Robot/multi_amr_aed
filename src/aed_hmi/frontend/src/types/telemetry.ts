@@ -77,6 +77,16 @@ export interface Point2D {
   y: number;
 }
 
+export interface CrowdZoneSnapshot {
+  zone_id: string;
+  polygon: Point2D[];
+  level: number;
+  level_name: string;
+  person_count: number;
+  fresh: boolean;
+  age_sec: number | null;
+}
+
 export interface RobotSnapshot {
   robot_id: string;
   stamp: number;
@@ -175,6 +185,7 @@ export interface SystemSnapshot {
   active_event: EmergencyEventSnapshot | null;
   active_missions: MissionSummary[];
   streams: StreamHealth[];
+  crowd_zone: CrowdZoneSnapshot | null;
   ros_connected: boolean;
 }
 

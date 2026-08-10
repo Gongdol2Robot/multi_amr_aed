@@ -194,13 +194,20 @@ central() {
   local target_time=${2:-30.0}
   local trigger_ratio=${3:-0.85}
   local dual_dispatch=${4:-true}
+  local audio_devices=${AED_AUDIO_DEVICES:-}
+  local launch_args=(
+    dispatch_enabled:="$dispatch"
+    target_arrival_time_sec:="$target_time"
+    dual_dispatch_trigger_ratio:="$trigger_ratio"
+    dual_dispatch_enabled:="$dual_dispatch"
+  )
+
+  if [[ -n "$audio_devices" ]]; then
+    launch_args+=(audio_devices:="$audio_devices")
+  fi
+
   aedenv
-  ros2 launch aed_bringup server_runtime.launch.py \
-    dispatch_enabled:="$dispatch" \
-    target_arrival_time_sec:="$target_time" \
-    dual_dispatch_trigger_ratio:="$trigger_ratio" \
-    dual_dispatch_enabled:="$dual_dispatch" \
-    audio_devices:="${AED_AUDIO_DEVICES:-}"
+  ros2 launch aed_bringup server_runtime.launch.py "${launch_args[@]}"
 }
 
 executor() {

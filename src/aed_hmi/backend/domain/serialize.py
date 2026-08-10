@@ -8,6 +8,7 @@ dataclasses.asdict 를 쓰지 않는다. 그것은 Enum 을 그대로 남기고,
 from dataclasses import asdict
 
 from .models import (
+    CrowdZoneSnapshot,
     EmergencyEventSnapshot,
     MissionEvent,
     MissionSummary,
@@ -60,6 +61,12 @@ def stream_health(value: StreamHealth) -> dict:
     return asdict(value)
 
 
+def crowd_zone(value: CrowdZoneSnapshot) -> dict:
+    data = asdict(value)
+    data["polygon"] = [point(item) for item in value.polygon]
+    return data
+
+
 def system_snapshot(value: SystemSnapshot) -> dict:
     return {
         "stamp": value.stamp,
@@ -71,5 +78,8 @@ def system_snapshot(value: SystemSnapshot) -> dict:
             mission_summary(item) for item in value.active_missions
         ],
         "streams": [stream_health(item) for item in value.streams],
+        "crowd_zone": (
+            crowd_zone(value.crowd_zone) if value.crowd_zone else None
+        ),
         "ros_connected": value.ros_connected,
     }

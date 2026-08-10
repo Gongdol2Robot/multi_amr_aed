@@ -814,6 +814,57 @@
   opacity: 0.55;
 }
 
+/* RViz /emergency/crowd_markers와 같은 polygon을 지도 위에 겹친다. */
+.map__crowd {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.map__crowd polygon {
+  fill: rgba(140, 140, 140, 0.28);
+  stroke: rgb(170, 170, 170);
+  stroke-width: 2px;
+}
+
+.map__crowd--0 polygon {
+  fill: rgba(26, 217, 51, 0.28);
+  stroke: rgb(26, 217, 51);
+}
+
+.map__crowd--1 polygon {
+  fill: rgba(255, 217, 13, 0.30);
+  stroke: rgb(255, 217, 13);
+}
+
+.map__crowd--2 polygon {
+  fill: rgba(255, 102, 13, 0.32);
+  stroke: rgb(255, 102, 13);
+}
+
+.map__crowd--3 polygon {
+  fill: rgba(242, 13, 13, 0.36);
+  stroke: rgb(242, 13, 13);
+}
+
+.map__crowd-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  padding: 2px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 3px;
+  background: rgba(5, 8, 11, 0.82);
+  color: var(--text-main);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .map__empty {
   color: var(--text-faint);
   font-size: 12px;

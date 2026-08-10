@@ -22,6 +22,19 @@ class Point2D:
 
 
 @dataclass(frozen=True)
+class CrowdZoneSnapshot:
+    """RViz crowd marker와 같은 지도 구역 및 현재 혼잡 단계."""
+
+    zone_id: str
+    polygon: list[Point2D]
+    level: int
+    level_name: str
+    person_count: int
+    fresh: bool
+    age_sec: Optional[float]
+
+
+@dataclass(frozen=True)
 class RobotSnapshot:
     """RobotState.msg 한 건. 관제 화면의 로봇 카드 하나에 대응한다."""
 
@@ -274,4 +287,5 @@ class SystemSnapshot:
     active_event: Optional[EmergencyEventSnapshot]
     active_missions: list[MissionSummary]
     streams: list[StreamHealth]
+    crowd_zone: Optional[CrowdZoneSnapshot]
     ros_connected: bool

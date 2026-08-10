@@ -18,6 +18,7 @@ from ..domain.enums import (
     MissionState,
 )
 from ..domain.models import (
+    CrowdZoneSnapshot,
     EmergencyEventSnapshot,
     MissionEvent,
     MissionSummary,
@@ -60,6 +61,7 @@ class LiveState:
         self._fallback_states: dict[str, str] = {}
         # camera_id -> (연속 검출 수, 마지막으로 들은 시각)
         self._detections: dict[str, tuple[int, float]] = {}
+        self._crowd_zone: Optional[CrowdZoneSnapshot] = None
 
     # ------------------------------------------------------------------
     # 쓰기 (ROS 스레드)
@@ -84,6 +86,10 @@ class LiveState:
             normalized = "UNKNOWN"
         with self._lock:
             self._fallback_states[robot_id] = normalized
+
+    def put_crowd_zone(self, crowd_zone: CrowdZoneSnapshot) -> None:
+        with self._lock:
+            self._crowd_zone = crowd_zone
 
     def put_event(self, event: EmergencyEventSnapshot) -> None:
         with self._lock:
@@ -208,12 +214,14 @@ class LiveState:
                 if mission.state not in TERMINAL_MISSION_STATES
             ]
             event = self._event
+            crowd_zone = self._crowd_zone
         return SystemSnapshot(
             stamp=now,
             robots=robots,
             active_event=event,
             active_missions=sorted(active, key=lambda item: item.called_at),
             streams=streams,
+            crowd_zone=crowd_zone,
             ros_connected=ros_connected,
         )
 

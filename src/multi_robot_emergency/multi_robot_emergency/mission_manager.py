@@ -2251,6 +2251,11 @@ class EmergencyMissionManager(Node):
                 "level_name": snapshot.name,
                 "person_count": snapshot.person_count,
                 "raw_level": self.raw_crowd_level,
+                "zone_id": "alley_zone",
+                "polygon": [
+                    {"x": round(x, 4), "y": round(y, 4)}
+                    for x, y in self.crowd_zone_polygon
+                ],
             },
             separators=(",", ":"),
             sort_keys=True,

@@ -4,6 +4,7 @@ import pytest
 
 from backend.domain.enums import EventStatus, MissionState
 from backend.domain.models import (
+    CrowdZoneSnapshot,
     EmergencyEventSnapshot,
     MissionEvent,
     Point2D,
@@ -42,6 +43,26 @@ def mission(state: MissionState, event_id: str = "event-1") -> MissionEvent:
 
 def active_event(state: LiveState):
     return state.snapshot([], True).active_event
+
+
+def test_crowd_zone_is_included_in_live_snapshot() -> None:
+    state = LiveState()
+    zone = CrowdZoneSnapshot(
+        zone_id="alley_zone",
+        polygon=[
+            Point2D(-3.0, 1.6), Point2D(-2.9, 0.8),
+            Point2D(-1.0, 1.2), Point2D(-1.2, 2.0),
+        ],
+        level=2,
+        level_name="CROWDED",
+        person_count=5,
+        fresh=True,
+        age_sec=0.1,
+    )
+
+    state.put_crowd_zone(zone)
+
+    assert state.snapshot([], True).crowd_zone == zone
 
 
 def test_camera_cancel_does_not_hide_an_active_dispatch() -> None:
