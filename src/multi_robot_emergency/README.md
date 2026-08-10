@@ -92,8 +92,8 @@ ros2 topic pub --once /emergency/request geometry_msgs/msg/PoseStamped \
 
 요청 좌표는 로봇이 그대로 밟고 지나갈 Nav2 Goal이 아니라 **환자의 위치**로
 취급합니다. 기본 설정에서는 각 로봇의 현재 위치와 환자 위치를 잇는 방향을
-기준으로 환자에게서 0.60m 떨어진 지점을 Nav2 Goal로 만들고, 최종 자세는
-환자를 바라보도록 설정합니다. 따라서 경로 거리와 ETA도 실제 0.60m 정지
+기준으로 환자에게서 0.65m 떨어진 지점을 Nav2 Goal로 만들고, 최종 자세는
+환자를 바라보도록 설정합니다. 따라서 경로 거리와 ETA도 실제 0.65m 정지
 지점까지 계산됩니다. 각 로봇의 정지점은 현재 위치에서 환자를 향하는 접근
 방향에만 만들며, 후보 경로 계산 중 정지점을 옆이나 반대편으로 강제 이동하지
 않습니다.
@@ -101,14 +101,14 @@ ros2 topic pub --once /emergency/request geometry_msgs/msg/PoseStamped \
 ```bash
 ros2 launch multi_robot_emergency central_dispatch.launch.py \
   patient_standoff_enabled:=true \
-  patient_standoff_distance_m:=0.60 \
-  dual_robot_proximity_threshold_m:=0.40 \
+  patient_standoff_distance_m:=0.65 \
+  dual_robot_proximity_threshold_m:=0.80 \
   dual_robot_proximity_confirm_sec:=0.50 \
   dual_robot_proximity_grace_sec:=2.0
 ```
 
 두 대가 동시 출동한 경우 출발 직후 2초는 감시에서 제외합니다. 이후 두 로봇
-중심이 0.40m 이하인 상태가 0.50초 이상 계속되면, 환자까지 직선거리가 더 먼
+중심이 0.80m 이하인 상태가 0.50초 이상 계속되면, 환자까지 직선거리가 더 먼
 로봇의 현재 목표를 취소하고 저장된 출발 위치로 복귀시킵니다. 환자와의 거리가
 같으면 ETA 1순위 로봇을 남기고 다른 로봇을 복귀시킵니다.
 
@@ -136,7 +136,7 @@ HMI는 `/robotN/vision/debug/compressed`를 받아 원본 영상의 중복 구�
 중앙 노드는 다음 순서로 처리합니다.
 
 1. `/robot1/amcl_pose`, `/robot2/amcl_pose` 최신 상태 확인
-2. 환자 앞 0.60m에 로봇별 정지 목표를 만들고 두
+2. 환자 앞 0.65m에 로봇별 정지 목표를 만들고 두
    `/<robot>/compute_path_to_pose` Action에 동시 요청
 3. 반환된 `nav_msgs/Path`의 모든 구간 길이와 회전 비용 계산
 4. Camera2가 판정한 혼잡 상태와 골목 통과 길이를 ETA에 반영
@@ -150,7 +150,7 @@ YOLO 연동 시 `/camera_open/vision/emergency_event`와
 `/camera_alley/vision/emergency_event`의 `CONFIRMED` 전이만 새 요청으로
 받습니다. 프레임마다 나오는 `fallen_location`은 출동 트리거로 사용하지 않아
 같은 검출이 반복 출동으로 이어지지 않습니다. 이벤트의 map 좌표는 위의
-0.60m 환자 정지 처리에 그대로 들어갑니다.
+0.65m 환자 정지 처리에 그대로 들어갑니다.
 
 혼잡도는 비전이 발행하는 문자열 `0/1/2/3`을 각각
 `CLEAR/BUSY/CROWDED/BLOCKED`로 변환합니다. 시간 보정은 비전 JSON의

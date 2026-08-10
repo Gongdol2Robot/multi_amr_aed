@@ -18,7 +18,6 @@ import logging
 import os
 
 import cv2
-import numpy as np
 import yaml
 from fastapi import APIRouter, HTTPException, Response
 
@@ -27,6 +26,8 @@ LOGGER = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/map", tags=["map"])
 
 # 저장소 안의 공용 지도. 두 로봇이 같은 지도를 쓴다.
+
+
 def _repo_root() -> str:
     """maps/map.yaml 이 있는 디렉터리를 위로 거슬러 찾는다.
 
