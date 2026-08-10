@@ -6,11 +6,10 @@ import pytest
 from aed_vision.homography import Homography, _distance_to_segment
 
 
-def test_identity_projection_round_trip() -> None:
+def test_box_to_map_uses_bottom_center() -> None:
     homography = Homography(np.eye(3))
 
-    assert homography.pixel_to_map(12.5, 8.0) == (12.5, 8.0)
-    assert homography.map_to_pixel(12.5, 8.0) == (12.5, 8.0)
+    assert homography.box_to_map(10, 20, 30, 60) == (20.0, 60.0)
 
 
 def test_box_to_map_uses_scaled_bottom_center() -> None:

@@ -1,4 +1,16 @@
-"""고정 카메라 영상에서 구조 대상과 선택적으로 골목 혼잡도를 검출한다."""
+"""AED 비전 패키지의 시작점이자 ROS 통신을 담당하는 조정자 노드.
+
+전체 실행 순서는 다음과 같다.
+
+1. YAML에서 들어온 ROS 파라미터를 읽고 모델 파이프라인을 한 번 생성한다.
+2. USB 카메라를 직접 읽거나 ROS Image/CompressedImage 토픽을 구독한다.
+3. 프레임을 ``InferencePipeline.predict``에 넘겨 단일 프레임 후보를 받는다.
+4. 최근 프레임 기록으로 낙상을 확정하고, 필요하면 호모그래피 위치를 계산한다.
+5. 상태·혼잡도·응급 이벤트·디버그 영상을 각각의 ROS 토픽에 발행한다.
+
+모델 내부 판정은 ``inference_pipeline``에 있고, 이 파일은 입력과 출력 및 상태
+전환을 연결한다. 따라서 코드 흐름을 공부할 때 ``_process_frame``부터 보면 된다.
+"""
 
 from __future__ import annotations
 
@@ -23,7 +35,9 @@ from std_msgs.msg import Bool, String, UInt32
 from .camera_source import DirectCameraSource
 from .detection_logic import (
     Box,
+    CrowdStateStabilizer,
     TemporalConfirmation,
+    crowd_metrics,
     update_presence_confirmation,
 )
 from .homography import Homography
@@ -32,6 +46,9 @@ from .qos import CAMERA_QOS
 
 
 PARAMETER_DEFAULTS = (
+    # ROS 2는 노드가 파라미터 이름과 자료형을 먼저 선언해야 YAML 값을 받을 수
+    # 있다. 아래 값은 YAML이 없을 때의 안전 기본값이며 실제 배치값은 config의
+    # 카메라별 YAML이 덮어쓴다. 즉 설정의 주 저장소는 YAML, 여기는 선언 목록이다.
     # 카메라 역할과 입력
     ("camera_id", "camera_open"),
     ("zone_id", "open_zone"),
@@ -71,6 +88,11 @@ PARAMETER_DEFAULTS = (
     ("helper_max_distance_ratio", 0.30),
     ("crowd_roi", [0.0, 0.0, 1.0, 1.0]),
     ("fallen_person_overlap_iou", 0.4),
+    ("crowd_worsening_window", 5),
+    ("crowd_worsening_hits", 3),
+    ("crowd_improving_window", 10),
+    ("crowd_improving_hits", 7),
+    ("crowd_minimum_hold_seconds", 3.0),
     # map 좌표와 호모그래피
     ("location_frame_id", "map"),
     ("location_x", 0.0),
@@ -132,7 +154,7 @@ def raw_image_to_bgr(message: Image) -> np.ndarray:
 
 
 class VisionDetector(Node):
-    """압축 영상을 받아 카메라 설치 장소에 맞는 추론 파이프라인을 수행한다.
+    """영상 입력, 프레임 확정 상태, ROS 결과 발행을 조율한다.
 
     open 모드는 구조 모델 하나만 실행하고, alley 모드는 같은 프레임에 구조
     모델과 COCO person 모델을 실행한다. 두 역할을 하나의 클래스로 구현해
@@ -140,7 +162,7 @@ class VisionDetector(Node):
     """
 
     def __init__(self) -> None:
-        """파라미터, 모델, ROS publisher/subscriber와 타이머를 초기화한다."""
+        """설정→상태→모델→ROS 입출력 순서로 노드를 초기화한다."""
         super().__init__("vision_detector")
         self._declare_parameters()
 
@@ -197,6 +219,13 @@ class VisionDetector(Node):
         self.helper_confirmation = TemporalConfirmation(
             int(self._param("helper_confirmation_window")),
             int(self._param("helper_confirmation_hits")),
+        )
+        self.crowd_stabilizer = CrowdStateStabilizer(
+            int(self._param("crowd_worsening_window")),
+            int(self._param("crowd_worsening_hits")),
+            int(self._param("crowd_improving_window")),
+            int(self._param("crowd_improving_hits")),
+            float(self._param("crowd_minimum_hold_seconds")),
         )
         self.was_confirmed = False
         self.event_id = ""
@@ -280,7 +309,11 @@ class VisionDetector(Node):
         )
 
     def _create_publishers(self) -> None:
-        """카메라별 결과 토픽 publisher를 생성한다."""
+        """카메라별 namespace 아래에 결과 토픽 publisher를 생성한다.
+
+        status/summary/count는 현재 관측값이고, emergency_event는 확정 상태가
+        바뀔 때만 나가는 사건 메시지다. debug는 사람이 확인하는 JPEG 영상이다.
+        """
         prefix = f"/{self.camera_id}/vision"
         self.event_pub = self.create_publisher(
             EmergencyEvent, f"{prefix}/emergency_event", 10
@@ -312,7 +345,7 @@ class VisionDetector(Node):
         )
 
     def _setup_image_source(self) -> None:
-        """ROS 영상 구독 또는 USB 카메라 직접 입력을 설정한다."""
+        """설정에 따라 ROS 토픽 구독과 USB 직접 입력 중 하나만 활성화한다."""
         self.image_topic = str(self._param("image_topic"))
         self.image_is_compressed = bool(self._param("image_is_compressed"))
         if self.image_is_compressed:
@@ -329,6 +362,8 @@ class VisionDetector(Node):
         self.direct_camera = bool(self._param("direct_camera"))
         self.camera_source = None
         if self.direct_camera:
+            # 같은 카메라를 구독과 직접 열기로 중복 처리하지 않도록, 먼저 만든
+            # subscription을 제거하고 DirectCameraSource 콜백만 사용한다.
             self.destroy_subscription(self.subscription)
             self.subscription = None
             self.camera_source = DirectCameraSource(
@@ -400,7 +435,7 @@ class VisionDetector(Node):
             # 순간 오검출을 걸러낸 "확정" 여부를 얻는다.
             confirmed = self.confirmation.update(bool(result.fallen))
 
-            # 3) 현재 프레임에서 가장 신뢰도 높은 낙상 후보의 위치를 구한다.
+            # 2) 현재 프레임에서 가장 신뢰도 높은 낙상 후보의 위치를 구한다.
             # 고정 카메라는 호모그래피, 미설정 카메라는 YAML 대표 좌표를 쓴다.
             target_location = self._target_location(result.fallen, frame.shape)
 
@@ -417,7 +452,7 @@ class VisionDetector(Node):
                     f"show_window={self.show_window}"
                 )
 
-            # 4) 프레임별 요약은 항상 발행하고, 응급 이벤트는 확정 상태가
+            # 3) 프레임별 요약은 항상 발행하고, 응급 이벤트는 확정 상태가
             # 바뀐 순간에만 발행한다(False->True 또는 True->False).
             self._publish_outputs(
                 source,
@@ -509,6 +544,16 @@ class VisionDetector(Node):
         # 이 함수의 출력은 두 종류다.
         # 1) 관측값: person/helper/crowd/status/summary를 매 프레임 발행
         # 2) 사건값: CONFIRMED/CANCELED를 상태 전환 때 한 번만 발행
+        # person_count는 현재 프레임의 원본 관측값으로 발행한다. 반면 로봇의
+        # 경로 결정을 바꾸는 혼잡 등급은 시간 안정화를 통과한 값으로 교체한다.
+        observed_crowd_level = crowd_level
+        if crowd_level is not None:
+            crowd_level = self.crowd_stabilizer.update(crowd_level)
+            (
+                _stable_level,
+                crowd_time_multiplier,
+                crowd_traversable,
+            ) = crowd_metrics(crowd_level)
         self.person_count_pub.publish(UInt32(data=person_count))
         helper_count = len(helpers)
         helper_confirmed = update_presence_confirmation(
@@ -549,6 +594,7 @@ class VisionDetector(Node):
             "helper_confirmation_hits": self.helper_confirmation.hit_count,
             "person_count": person_count,
             "crowd_level": crowd_level,
+            "crowd_observed_level": observed_crowd_level,
             "crowd_time_multiplier": crowd_time_multiplier,
             "crowd_traversable": crowd_traversable,
             "confirmation_hits": self.confirmation.hit_count,
@@ -620,7 +666,7 @@ class VisionDetector(Node):
         person_count: int,
         target_location: tuple[float, float, str],
     ) -> None:
-        """한 프레임의 구조화된 검출 요약을 발행한다."""
+        """문자열 JSON이 아닌 타입 고정 DetectionSummary를 매 프레임 발행한다."""
         summary = DetectionSummary()
         summary.camera_id = self.camera_id
         summary.stamp = source.header.stamp
@@ -647,9 +693,10 @@ class VisionDetector(Node):
         event_id: str,
         location: tuple[float, float],
     ) -> None:
-        """기존 EmergencyEvent 형식으로 카메라 기반 응급 이벤트를 발행한다.
+        """확정 또는 취소 상태 전환을 EmergencyEvent 한 건으로 발행한다.
 
-        카메라가 고정되어 있으므로 YAML의 대표 map 좌표를 사용한다.
+        고정 카메라는 호모그래피 좌표를 우선하고, 행렬이 없는 카메라는 YAML의
+        대표 map 좌표를 사용한다. 확정과 취소는 같은 ``event_id``를 공유한다.
         """
         event = EmergencyEvent()
         event.event_id = event_id

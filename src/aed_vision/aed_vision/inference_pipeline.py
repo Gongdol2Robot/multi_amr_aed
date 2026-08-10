@@ -1,4 +1,16 @@
-"""YOLO 모델 로딩, 구조·혼잡 추론과 디버그 영상 렌더링."""
+"""한 프레임에 필요한 모델을 실행하고 모든 판정 결과를 하나로 조립한다.
+
+이 모듈은 ROS 메시지를 발행하지 않는다. ``VisionDetector``에서 받은 BGR 프레임을
+다음 순서로 처리한다.
+
+1. backend에 따라 실제 사람 Pose 또는 목각인형 detector로 낙상 후보를 찾는다.
+2. 필요하면 별도 COCO person 모델로 주변 사람과 골목 인원을 센다.
+3. ROI·환자 중복·조력자 거리 같은 순수 규칙은 ``detection_logic``에 맡긴다.
+4. 결과를 :class:`InferenceOutput` 하나로 묶어 ``VisionDetector``에 돌려준다.
+
+중요: 여기서 나온 ``fallen``은 한 프레임의 후보다. 여러 프레임을 누적한 최종
+응급 확정은 상위 ``VisionDetector``의 ``TemporalConfirmation``이 담당한다.
+"""
 
 from __future__ import annotations
 
@@ -13,8 +25,7 @@ import numpy as np
 
 from .detection_logic import (
     Box,
-    classify_crowd,
-    crowd_time_multiplier,
+    crowd_metrics,
     filter_helpers_near_fallen,
     filter_nonfallen_people,
     is_fallen_bbox_candidate,
@@ -98,6 +109,8 @@ def _boxes(result, class_id: int) -> list[Box]:
 
 @dataclass
 class PoseEvidence:
+    """한 검출 대상의 자세 판정 결과와 디버깅 가능한 근거값."""
+
     box: Box
     keypoints: np.ndarray
     posture: str
@@ -108,6 +121,12 @@ class PoseEvidence:
 
 @dataclass
 class InferenceOutput:
+    """한 프레임의 모델·후처리 결과를 ROS 계층으로 전달하는 묶음.
+
+    ``fallen``과 ``helpers``는 아직 현재 프레임 기준이며, ``crowd_level``이
+    ``None``이면 해당 카메라에서는 혼잡도 기능을 사용하지 않는다는 뜻이다.
+    """
+
     rescue_result: object
     person_result: object | None
     fallen: list[Box]
@@ -122,7 +141,13 @@ class InferenceOutput:
 
 
 class InferencePipeline:
-    """카메라 모드에 맞는 YOLO 모델과 후처리를 캡슐화한다."""
+    """모델 생명주기와 프레임 단위 추론 순서를 관리한다.
+
+    backend는 카메라 종류가 아니라 낙상 후보를 만드는 방식이다.
+
+    - ``person_pose``: 전체 프레임에 사람 Pose를 실행한다.
+    - ``mannequin_detect``: 전용 detector로 목각인형을 찾고 crop 자세를 판정한다.
+    """
 
     def __init__(
         self,
@@ -279,8 +304,15 @@ class InferencePipeline:
                 )
             self.person_class_id = person_names.index("person")
 
+    # ------------------------------------------------------------------
+    # 실제 사람 경로: 전체 프레임 Pose -> 관절 품질 필터 -> 자세 규칙
+    # ------------------------------------------------------------------
     def _pose_detections(self, result, frame_shape):
-        """Pose 결과를 사람 bbox, 쓰러진 bbox, 판단 근거로 변환한다."""
+        """실제 사람 Pose 결과를 사람·낙상 bbox와 자세 근거로 변환한다.
+
+        이 함수가 Pose 모델을 실행하는 것은 아니다. 호출자가 이미 실행해 넘긴
+        ``result``에서 bbox와 17개 관절을 꺼내 품질을 검사하고 자세를 분류한다.
+        """
         people: list[Box] = []
         fallen: list[Box] = []
         evidence: list[PoseEvidence] = []
@@ -317,7 +349,8 @@ class InferencePipeline:
             posture, metrics = classify_posture(
                 keypoints, xyxy, keypoint_conf=self.pose_keypoint_conf
             )
-            # 필터를 통과한 사람은 person_count(인파)에도 포함시킨다.
+            # 이 people은 person_pose backend에서 조력자 후보로 재사용할 수 있다.
+            # 골목 혼잡도는 작은 사람 누락을 줄이기 위해 별도 person 모델로 센다.
             people.append(box)
             if posture == "FALLEN":
                 fallen.append(box)
@@ -333,6 +366,9 @@ class InferencePipeline:
             )
         return people, fallen, evidence
 
+    # ------------------------------------------------------------------
+    # 목각인형 경로: 전용 bbox -> HOG+SVM 우선 -> Pose/bbox 보조 근거
+    # ------------------------------------------------------------------
     def _mannequin_pose_detections(self, frame, detection_result):
         """mannequin bbox마다 SVM과 Pose를 적용해 낙상 후보를 반환한다.
 
@@ -525,8 +561,16 @@ class InferencePipeline:
         )
         return rescue_result, people, fallen, [], evidence
 
+    # ------------------------------------------------------------------
+    # 주변 사람 경로: COCO person -> ROI/환자 제외 -> 혼잡도·조력자
+    # ------------------------------------------------------------------
     def _detect_people(self, frame, pose_people, fallen, helpers):
-        """사람 모델 또는 Pose 결과로 인원수·혼잡도·조력자를 계산한다."""
+        """주변 사람을 걸러 인원수·혼잡도·가까운 조력자를 계산한다.
+
+        ``person_model``이 존재하면 골목 혼잡도 또는 사람 조력자 검출용 COCO
+        결과를 사용한다. 없으면 person_pose가 반환한 bbox만 재사용한다.
+        마지막에는 어떤 경로든 환자 가까이에 있는 조력자만 남긴다.
+        """
         # 구조 대상 검출과 주변 사람 계산은 목적이 다르다.
         # 골목에서는 관절이 잘 안 보이는 먼 사람도 세기 위해 별도 COCO person
         # 모델을 쓰고, ROI 밖 사람과 fallen bbox에 중복된 사람을 제외한다.
@@ -556,9 +600,11 @@ class InferencePipeline:
             if self.detect_people_as_helpers:
                 helpers = people
             if self.enable_crowd:
-                crowd_level = classify_crowd(person_count)
-                time_multiplier = crowd_time_multiplier(person_count)
-                crowd_traversable = time_multiplier is not None
+                (
+                    crowd_level,
+                    time_multiplier,
+                    crowd_traversable,
+                ) = crowd_metrics(person_count)
         elif (
             self.detection_backend == "person_pose"
             and self.detect_people_as_helpers
@@ -626,7 +672,11 @@ class InferencePipeline:
         )
 
     def render_debug(self, output: InferenceOutput, camera_id: str):
-        """추론 결과의 bbox·골격·ROI·상태 정보를 입력 영상 위에 그린다."""
+        """추론 결과를 사람이 확인할 수 있게 bbox·골격·ROI 위에 그린다.
+
+        이 영상은 판정 입력이 아니라 관찰용 출력이다. 즉 그리기 코드를 바꿔도
+        ``fallen``이나 혼잡도 결과에는 영향을 주지 않는다.
+        """
         if output.detection_backend == "mannequin_detect":
             # 1차 검출에서 mannequin은 bbox만 표시하고 helping_person만
             # 이름을 표시한다. confidence는 둘 다 숨기며, Pose를 통과한

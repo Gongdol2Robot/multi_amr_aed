@@ -4,9 +4,9 @@ import pytest
 
 from aed_vision.detection_logic import (
     Box,
+    CrowdStateStabilizer,
     TemporalConfirmation,
-    apply_crowd_time_penalty,
-    classify_crowd,
+    crowd_metrics,
     filter_nonfallen_people,
     intersection_over_union,
     point_inside_normalized_roi,
@@ -77,16 +77,45 @@ def test_roi_and_fallen_person_filtering() -> None:
 
 
 @pytest.mark.parametrize(
-    "count,level,multiplied",
-    [(0, 0, 10.0), (1, 1, 11.0), (2, 2, 12.0), (3, 3, None), (8, 3, None)],
+    "count,level,multiplier",
+    [(0, 0, 1.0), (1, 1, 1.1), (2, 2, 1.2), (3, 3, None), (8, 3, None)],
 )
-def test_crowd_levels_and_time_penalty(count, level, multiplied) -> None:
-    assert classify_crowd(count) == level
-    assert apply_crowd_time_penalty(10.0, count) == multiplied
+def test_crowd_levels_and_time_multiplier(count, level, multiplier) -> None:
+    assert crowd_metrics(count) == (level, multiplier, multiplier is not None)
 
 
 def test_crowd_functions_reject_negative_values() -> None:
     with pytest.raises(ValueError):
-        classify_crowd(-1)
+        crowd_metrics(-1)
+
+
+def test_crowd_stabilizer_confirms_worsening_in_short_window() -> None:
+    stabilizer = CrowdStateStabilizer(5, 3, 10, 7, 3.0)
+
+    assert stabilizer.update(1, now=0.0) == 1
+    assert stabilizer.update(3, now=0.1) == 1
+    assert stabilizer.update(3, now=0.2) == 1
+    assert stabilizer.update(3, now=0.3) == 3
+
+
+def test_crowd_stabilizer_delays_improvement_until_hold_and_hits() -> None:
+    stabilizer = CrowdStateStabilizer(5, 3, 10, 7, 3.0)
+
+    assert stabilizer.update(3, now=0.0) == 3
+    for index in range(6):
+        assert stabilizer.update(0, now=0.5 + index * 0.4) == 3
+    # 일곱 번째 CLEAR 관측이며 BLOCKED 유지시간도 3초를 넘겼다.
+    assert stabilizer.update(0, now=3.1) == 0
+
+
+def test_crowd_stabilizer_rejects_invalid_configuration_and_level() -> None:
     with pytest.raises(ValueError):
-        apply_crowd_time_penalty(-0.1, 0)
+        CrowdStateStabilizer(2, 3, 10, 7, 3.0)
+    with pytest.raises(ValueError):
+        CrowdStateStabilizer(5, 3, 5, 0, 3.0)
+    with pytest.raises(ValueError):
+        CrowdStateStabilizer(5, 3, 10, 7, -1.0)
+
+    stabilizer = CrowdStateStabilizer(5, 3, 10, 7, 3.0)
+    with pytest.raises(ValueError):
+        stabilizer.update(4)

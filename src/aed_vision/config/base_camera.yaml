@@ -1,0 +1,43 @@
+/**/vision_detector:
+  ros__parameters:
+    # 모든 카메라가 공유하는 영상 형식과 모델 설정이다.
+    image_is_compressed: true
+    width: 640
+    height: 480
+    jpeg_quality: 85
+    detection_backend: mannequin_detect
+    rescue_weights: package://aed_vision/models/rescue2_yolo11n.pt
+    person_weights: package://aed_vision/models/coco_yolo11n.pt
+    pose_weights: package://aed_vision/models/yolo11n-pose.pt
+    posture_classifier_weights: package://aed_vision/models/mannequin_posture_svm.xml
+    rescue_conf: 0.25
+    person_conf: 0.5
+    mannequin_bbox_fallback: true
+    mannequin_fallen_aspect_threshold: 1.03
+    detect_people_as_helpers: false
+    iou: 0.5
+    imgsz: 640
+
+    # 단일 프레임 오검출과 순간적인 가림을 줄이는 공통 시간 확정 기준이다.
+    confirmation_window: 12
+    confirmation_hits: 4
+    helper_confirmation_window: 6
+    helper_confirmation_hits: 3
+    helper_max_distance_ratio: 0.30
+
+    # 프로필이 별도로 지정하지 않을 때 사용하는 전체 화면 ROI와 지도 기준이다.
+    crowd_roi: [0.0, 0.0, 1.0, 1.0]
+    fallen_person_overlap_iou: 0.4
+    # 혼잡 악화는 빠르게, 호전은 최소 유지시간 뒤 더 오래 확인해 반영한다.
+    crowd_worsening_window: 5
+    crowd_worsening_hits: 3
+    crowd_improving_window: 10
+    crowd_improving_hits: 7
+    crowd_minimum_hold_seconds: 3.0
+    location_frame_id: map
+    location_x: 0.0
+    location_y: 0.0
+    homography_margin_m: 0.15
+
+    publish_debug_image: true
+    debug_jpeg_quality: 80

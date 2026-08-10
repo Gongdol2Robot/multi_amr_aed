@@ -1,16 +1,15 @@
-"""고정 카메라 영상의 픽셀 좌표와 ROS map 좌표를 상호 변환한다."""
+"""고정 카메라의 2D 영상 좌표를 로봇이 쓰는 2D map 좌표로 변환한다.
+
+호모그래피는 바닥이 하나의 평면이라는 가정 아래 동작한다. 검출 bbox의 하단
+중심을 사람의 발 위치로 보고 3x3 측량 행렬을 적용한다. 로봇 카메라는 계속
+움직이므로 고정 행렬을 사용할 수 없고, 설정된 대표 좌표를 대신 사용한다.
+"""
 
 import os
 from math import hypot
 
 import numpy as np
 import yaml
-
-
-def _project(matrix: np.ndarray, first: float, second: float):
-    """3x3 행렬로 2D 점을 투영하고 동차좌표를 평면 좌표로 바꾼다."""
-    point = matrix @ np.array([first, second, 1.0])
-    return float(point[0] / point[2]), float(point[1] / point[2])
 
 
 def _distance_to_segment(point, start, end) -> float:
@@ -60,13 +59,12 @@ def _default_config_path(camera_id: str = None) -> str:
 
 
 class Homography:
-    """바닥 평면상의 점을 픽셀 좌표와 map 좌표 사이에서 변환한다."""
+    """측량 행렬과 유효 측량 구역을 보관하고 픽셀을 map 좌표로 바꾼다."""
 
     def __init__(self, matrix, correspondences=None, camera=None,
                  survey_area=None):
-        """변환 행렬과 측량 메타데이터를 저장하고 역행렬을 미리 계산한다."""
+        """픽셀→map 변환 행렬과 측량 메타데이터를 저장한다."""
         self.matrix = np.asarray(matrix, dtype=np.float64).reshape(3, 3)
-        self.inverse = np.linalg.inv(self.matrix)
         self.correspondences = correspondences or []
         self.camera = camera or {}
         self.survey_area = survey_area or []
@@ -84,19 +82,6 @@ class Homography:
             config.get("survey_area"),
         )
 
-    def pixel_to_map(self, u: float, v: float):
-        """영상 픽셀 좌표를 바닥 평면의 ROS map 좌표로 변환한다."""
-        # 동차좌표(homogeneous coordinate)로 변환 후 3x3 호모그래피 행렬을 곱한다.
-        # 결과의 z(point[2])로 나눠 다시 2D로 투영(perspective divide)해야
-        # 원근 왜곡이 반영된 실제 map 좌표가 나온다.
-        return _project(self.matrix, u, v)
-
-    def map_to_pixel(self, x: float, y: float):
-        """ROS map 좌표를 호모그래피 측량 영상의 픽셀 좌표로 역변환한다."""
-        # pixel_to_map의 역변환. 역행렬(self.inverse)을 미리 구해뒀으므로
-        # 매 호출마다 다시 invert하지 않는다.
-        return _project(self.inverse, x, y)
-
     def box_to_map(
         self, x1: float, y1: float, x2: float, y2: float,
         image_size=None,
@@ -112,19 +97,22 @@ class Homography:
             width, height = image_size
             u *= float(self.camera.get("width", width)) / width
             v *= float(self.camera.get("height", height)) / height
-        return self.pixel_to_map(u, v)
-
-    def survey_polygon(self):
-        """측량 영역의 경계. 안쪽 측량점은 꼭짓점이 아니므로 껍질을 우선한다."""
-        if self.survey_area:
-            return [tuple(point) for point in self.survey_area]
-        return [tuple(item["map"]) for item in self.correspondences]
+        # 동차좌표에 3x3 행렬을 곱한 뒤 perspective divide로 map 좌표를 얻는다.
+        point = self.matrix @ np.array([u, v, 1.0])
+        # point는 [X*w, Y*w, w] 형태의 동차좌표다. 앞의 두 값을 w로
+        # 나누는 perspective divide를 해야 실제 map 좌표 (X, Y)가 된다.
+        return float(point[0] / point[2]), float(point[1] / point[2])
 
     def inside_survey_area(
         self, x: float, y: float, margin: float = 0.0
     ) -> bool:
         """map 좌표가 측량 다각형 내부 또는 허용 여유 거리 안인지 판정한다."""
-        polygon = self.survey_polygon()
+        # 명시한 측량 경계를 우선하고, 없으면 대응점의 map 좌표를 사용한다.
+        polygon = (
+            [tuple(point) for point in self.survey_area]
+            if self.survey_area
+            else [tuple(item["map"]) for item in self.correspondences]
+        )
         if len(polygon) < 3:
             # 다각형을 정의할 점이 부족하면(측량 미비) 항상 안쪽으로 간주해
             # 잘못된 "영역 밖" 경고로 정상 검출을 버리지 않는다.
@@ -150,19 +138,3 @@ class Homography:
             if _distance_to_segment((x, y), start, end) <= margin:
                 return True
         return False
-
-
-def load_all() -> dict:
-    """설치된 카메라별 호모그래피를 모두 읽어 camera_id 로 색인한다.
-
-    검출은 어느 카메라에서 올지 모르므로, EmergencyEvent.camera_id 로 바로
-    꺼내 쓸 수 있게 미리 전부 읽어 둔다. 측량이 안 된 카메라는 아예 없다.
-    """
-    import glob
-
-    result = {}
-    pattern = os.path.join(_config_dir(), "homography_*.yaml")
-    for path in sorted(glob.glob(pattern)):
-        name = os.path.basename(path)[len("homography_"):-len(".yaml")]
-        result[name] = Homography.load(path=path)
-    return result

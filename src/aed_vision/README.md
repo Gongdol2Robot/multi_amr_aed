@@ -107,23 +107,17 @@ ros2 launch aed_vision camera_vision.launch.py \
 기본적으로 목각인형 파인튜닝 모델로 쓰러짐을 판정합니다. 실행한
 노트북에는 `AED Vision - camera_open (open)` 결과 창이 표시됩니다.
 
-실제 사람 Pose 판정을 명시적으로 선택하려면 다음처럼 실행합니다.
+운용 파라미터는 launch 인자로 중복 관리하지 않고 YAML을 단일 기준으로
+사용합니다. 모든 카메라의 공통 모델·confidence·시간 확정 기준은
+`base_camera.yaml`, 설치 위치와 입력 방식의 차이는 `open_camera.yaml`,
+`alley_camera.yaml`, `robot_camera.yaml`에서 조정합니다. 적용 순서는
+`Python 안전 기본값 → base_camera.yaml → 카메라별 YAML → camera_device`입니다.
 
-```bash
-ros2 launch aed_vision camera_vision.launch.py \
-  camera:=1 target:=person
-```
+실제 사람 Pose backend를 시험하려면 대상 프로필 YAML의 값을 직접 바꿉니다.
 
-backend별 confidence도 launch에서 조절할 수 있습니다.
-
-```bash
-# 실제 사람 Pose: 기본 0.5
-ros2 launch aed_vision camera_vision.launch.py \
-  camera:=1 person_conf:=0.55
-
-# 목각인형 파인튜닝: 기본 0.25
-ros2 launch aed_vision camera_vision.launch.py \
-  camera:=1 target:=mannequin rescue_conf:=0.30
+```yaml
+detection_backend: person_pose
+person_conf: 0.55
 ```
 
 두 backend는 다음 두 값만 허용합니다.
@@ -131,7 +125,7 @@ ros2 launch aed_vision camera_vision.launch.py \
 - `person_pose`: 실제 사람의 bbox·17관절을 검출하고 종횡비와 몸통 각도로
   `STANDING`, `SITTING`, `FALLEN` 판정
 - `mannequin_detect`(기본): `rescue2_yolo11n.pt`의 목각인형 기반
-  `fallen_person`, `helper_rc_car` 검출
+  `mannequin`, `helping_person` 검출
 
 좁은 골목 노트북:
 
@@ -152,7 +146,7 @@ ros2 launch aed_vision camera_vision.launch.py \
 - `inference_device`: YOLO 추론 장치. `"cuda:0"`은 첫 GPU를 우선 사용하되
   CUDA 또는 해당 GPU가 없으면 경고 후 CPU로 전환한다. `"cpu"`는 CPU 고정,
   빈 문자열은 Ultralytics의 자동 장치 선택을 사용한다.
-- `target`: `person`(기본) 또는 `mannequin`
+- `detection_backend`: `mannequin_detect`(기본) 또는 `person_pose`
 - `pose_weights`: 실제 사람용 Pose 가중치
 - `person_conf`, `pose_keypoint_conf`, `pose_min_keypoints`,
   `pose_min_box_area`: Pose 사람·관절 품질 필터

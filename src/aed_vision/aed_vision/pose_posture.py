@@ -1,4 +1,9 @@
-"""COCO 17관절과 bbox로 실제 사람의 자세를 판정한다."""
+"""사람 Pose 모델의 COCO 17관절을 규칙 기반 자세 라벨로 변환한다.
+
+YOLO Pose는 관절 좌표만 주고 '서 있음/앉음/쓰러짐'을 직접 말해주지 않는다.
+이 파일이 bbox 가로세로 비율, 어깨-엉덩이 몸통 각도, 엉덩이-무릎 방향을
+조합해 ``FALLEN``, ``SITTING``, ``STANDING``, ``UNKNOWN``을 결정한다.
+"""
 
 from __future__ import annotations
 
@@ -34,7 +39,7 @@ def classify_posture(
     box,
     keypoint_conf: float = 0.3,
 ) -> tuple[str, dict[str, float]]:
-    """자세와 판단 근거를 반환한다.
+    """관절과 bbox에서 ``(자세 라벨, 계산 근거)``를 반환한다.
 
     몸통이 수평이고 bbox가 가로로 길면 FALLEN, 엉덩이에서 무릎 방향이
     수평에 가까우면 SITTING, 그 외에는 STANDING으로 판정한다.
@@ -46,6 +51,8 @@ def classify_posture(
     height = max(y2 - y1, 1.0)
     # bbox가 세로보다 가로로 길수록 (aspect_ratio가 클수록) 누워 있을 가능성이 높다.
     aspect_ratio = width / height
+    # metrics는 VisionDetector의 status JSON과 디버그 화면에 노출된다.
+    # -1도는 몸통 관절 부족으로 각도를 계산하지 못했다는 뜻이다.
     metrics = {"aspect_ratio": aspect_ratio, "torso_angle_deg": -1.0}
 
     shoulders = _center(

@@ -1,4 +1,9 @@
-"""OpenCV USB 카메라 입력과 ROS 압축 원본 영상 발행."""
+"""USB 카메라에서 최신 프레임을 읽어 VisionDetector에 전달한다.
+
+``direct_camera=true``일 때만 사용한다. 이 클래스는 영상을 판단하지 않는다.
+OpenCV로 카메라를 열고, 모니터링용 JPEG 토픽을 발행한 다음, 원본 BGR 배열을
+``VisionDetector._process_frame`` 콜백에 넘기는 것이 전부다.
+"""
 
 from __future__ import annotations
 
@@ -53,6 +58,8 @@ def _resolve_camera_device(value: str) -> str | int:
 
 
 class DirectCameraSource:
+    """USB 카메라의 열기·설정·주기적 읽기·해제를 한곳에서 관리한다."""
+
     def __init__(
         self,
         node,
@@ -69,6 +76,8 @@ class DirectCameraSource:
         height = int(self._param("height"))
         fps = float(self._param("fps"))
 
+        # 초기화 도중 장치를 열지 못하면 즉시 예외를 내어, 영상이 없는 상태로
+        # 노드만 살아 있는 것처럼 보이지 않게 한다.
         self.capture = self._open_capture(device)
         self._configure_capture(width, height, fps)
         self.publisher = node.create_publisher(

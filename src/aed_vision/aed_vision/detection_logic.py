@@ -1,10 +1,17 @@
-"""ROS와 YOLO에 의존하지 않는 검출 후처리 로직."""
+"""모델 검출값을 실제 판정값으로 바꾸는 순수 후처리 로직.
+
+이 파일은 ROS, OpenCV, YOLO에 의존하지 않는다. ``InferencePipeline``이 모델의
+출력을 :class:`Box`로 바꾼 뒤 이 함수들을 호출한다. 따라서 여기서는 다음만
+판단한다: 박스 중복(IoU), ROI 포함 여부, 조력자 거리, 최근 프레임 확정,
+골목 인원수에 따른 혼잡 등급.
+"""
 
 from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
 import math
+from time import monotonic
 from typing import Iterable, Sequence
 
 
@@ -88,6 +95,91 @@ class TemporalConfirmation:
         return sum(self._history)
 
 
+class CrowdStateStabilizer:
+    """순간적인 사람 검출 변화가 로봇의 통행 판단을 흔들지 않게 한다.
+
+    혼잡도가 나빠지는 변화는 짧은 창에서 빠르게 확정하고, 좋아지는 변화는
+    더 긴 창과 최소 유지 시간을 모두 통과해야 반영한다. 예를 들어 기본값은
+    최근 5회 중 3회 BLOCKED이면 차단하지만, 해제는 최소 3초가 지난 뒤 최근
+    10회 중 7회가 더 낮은 등급이어야 한다.
+
+    ``person_count`` 자체를 평균내지는 않는다. 현재 관측 인원은 그대로 공개하고
+    로봇 제어에 쓰이는 level/time_multiplier/traversable만 안정화하기 위함이다.
+    """
+
+    def __init__(
+        self,
+        worsening_window: int,
+        worsening_hits: int,
+        improving_window: int,
+        improving_hits: int,
+        minimum_hold_seconds: float,
+    ) -> None:
+        if not 1 <= worsening_hits <= worsening_window:
+            raise ValueError("worsening_hits must be between 1 and window")
+        if not 1 <= improving_hits <= improving_window:
+            raise ValueError("improving_hits must be between 1 and window")
+        if minimum_hold_seconds < 0.0:
+            raise ValueError("minimum_hold_seconds must be non-negative")
+        self.worsening_window = worsening_window
+        self.worsening_hits = worsening_hits
+        self.improving_window = improving_window
+        self.improving_hits = improving_hits
+        self.minimum_hold_seconds = minimum_hold_seconds
+        self._history: deque[int] = deque(maxlen=max(
+            worsening_window, improving_window
+        ))
+        self._level: int | None = None
+        self._changed_at = 0.0
+
+    @property
+    def level(self) -> int | None:
+        """현재 로봇에 공개할 확정 혼잡 등급을 반환한다."""
+        return self._level
+
+    def update(self, observed_level: int, now: float | None = None) -> int:
+        """새 관측 등급을 기록하고 안정화된 등급을 반환한다."""
+        if not 0 <= observed_level <= 3:
+            raise ValueError("observed_level must be between 0 and 3")
+        current_time = monotonic() if now is None else float(now)
+        self._history.append(observed_level)
+        if self._level is None:
+            # 시작할 때까지 긴 창을 기다리면 실제로 막힌 길을 CLEAR로 오해할 수
+            # 있으므로 첫 관측값으로 상태를 즉시 초기화한다.
+            self._set_level(observed_level, current_time)
+            return observed_level
+
+        if observed_level > self._level:
+            recent = list(self._history)[-self.worsening_window:]
+            # 현재보다 높은 등급 중 가장 심각하면서 필요한 횟수를 만족한 상태로
+            # 올린다. level>=candidate로 세어 BLOCKED 관측도 CROWDED 근거가 된다.
+            for candidate in range(3, self._level, -1):
+                if sum(level >= candidate for level in recent) >= (
+                    self.worsening_hits
+                ):
+                    self._set_level(candidate, current_time)
+                    break
+        elif (
+            observed_level < self._level
+            and current_time - self._changed_at >= self.minimum_hold_seconds
+        ):
+            recent = list(self._history)[-self.improving_window:]
+            # 낮은 상태일수록 더 엄격한 조건(level<=candidate)을 만족해야 한다.
+            # CLEAR 증거가 충분하면 중간 단계를 거치지 않고 바로 CLEAR로 내린다.
+            for candidate in range(0, self._level):
+                if sum(level <= candidate for level in recent) >= (
+                    self.improving_hits
+                ):
+                    self._set_level(candidate, current_time)
+                    break
+        return self._level
+
+    def _set_level(self, level: int, changed_at: float) -> None:
+        """확정 상태와 최소 유지시간의 시작 시각을 함께 갱신한다."""
+        self._level = level
+        self._changed_at = changed_at
+
+
 def update_presence_confirmation(
     confirmation: TemporalConfirmation, detected: bool
 ) -> bool:
@@ -142,27 +234,6 @@ def point_inside_normalized_roi(
     )
 
 
-def count_crowd_people(
-    people: Iterable[Box],
-    fallen: Iterable[Box],
-    frame_size: tuple[int, int],
-    roi: Sequence[float],
-    overlap_threshold: float,
-) -> int:
-    """AMR 통로 ROI 안에서 실제 혼잡도에 포함할 사람 수를 계산한다.
-
-    처리 순서:
-    1. bbox 중심이 ROI 밖인 person을 제외한다.
-    2. fallen bbox와 IoU가 임계값 이상인 person을 동일 대상으로 보고 제외한다.
-    3. 남은 COCO person만 통행을 방해할 수 있는 인파로 센다.
-    """
-    return len(
-        filter_nonfallen_people(
-            people, fallen, frame_size, roi, overlap_threshold
-        )
-    )
-
-
 def filter_nonfallen_people(
     people: Iterable[Box],
     fallen: Iterable[Box],
@@ -176,8 +247,10 @@ def filter_nonfallen_people(
     추적 모델 없이 COCO person 검출을 재사용하되, 환자를 구조 인력으로 잘못
     세지 않도록 fallen_person 상자와 겹치는 검출은 제외한다.
     """
+    # fallen은 generator일 수도 있으므로 반복문 안에서 여러 번 비교하기 전에
+    # tuple로 고정한다. selected는 최종적으로 '환자가 아닌 주변 사람' 목록이다.
     fallen_boxes = tuple(fallen)
-    selected = []
+    selected: list[Box] = []
     for person in people:
         if not point_inside_normalized_roi(person.center, frame_size, roi):
             continue
@@ -226,34 +299,17 @@ def filter_helpers_near_fallen(
     return selected
 
 
-def classify_crowd(person_count: int) -> int:
-    """ROI 내 사람 수를 0~3 혼잡 등급으로 변환한다.
+def crowd_metrics(person_count: int) -> tuple[int, float | None, bool]:
+    """ROI 인원수에서 혼잡 등급, 이동 시간 배율과 통행 가능 여부를 계산한다.
 
-    3등급은 사람이 정확히 3명인 경우뿐 아니라 3명 이상인 모든 경우를
-    포함한다. open 카메라의 NOT_APPLICABLE 처리는 추론 파이프라인에서 한다.
+    0~2명은 등급별로 1.0/1.1/1.2 배의 이동 시간을 사용한다. 3명 이상은
+    BLOCKED(3)로 묶고 이동 시간 계산이 불가능하므로 ``None, False``를 반환한다.
     """
     if person_count < 0:
         raise ValueError("person_count must be non-negative")
-    return min(person_count, 3)
-
-
-def crowd_time_multiplier(person_count: int) -> float | None:
-    """사람 수에 따른 이동 시간 배율을 반환한다.
-
-    0명은 패널티 없음, 1명은 10%, 2명은 20%를 가산한다. 3명 이상은
-    통행 불가이므로 계산 가능한 이동 시간이 없음을 뜻하는 None을 반환한다.
-    """
-    level = classify_crowd(person_count)
+    # CrowdLevel 메시지 상수와 숫자를 맞춘다: 0 CLEAR, 1 BUSY,
+    # 2 CROWDED, 3 BLOCKED. 네 명 이상도 BLOCKED 하나로 포화시킨다.
+    level = min(person_count, 3)
     if level == 3:
-        return None
-    return 1.0 + level * 0.1
-
-
-def apply_crowd_time_penalty(
-    base_time: float, person_count: int
-) -> float | None:
-    """기본 이동 시간에 혼잡 패널티를 적용한다."""
-    if base_time < 0.0:
-        raise ValueError("base_time must be non-negative")
-    multiplier = crowd_time_multiplier(person_count)
-    return None if multiplier is None else base_time * multiplier
+        return level, None, False
+    return level, 1.0 + level * 0.1, True

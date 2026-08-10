@@ -24,21 +24,13 @@ def _create_camera_nodes(context):
     vision_detector가 USB 웹캠을 직접 읽고 추론하므로 카메라별 ROS 노드는 하나다.
     """
     camera = LaunchConfiguration("camera").perform(context)
-    target = LaunchConfiguration("target").perform(context)
-    detection_backend = {
-        "person": "person_pose",
-        "mannequin": "mannequin_detect",
-    }[target]
-    person_conf = float(LaunchConfiguration("person_conf").perform(context))
-    rescue_conf = float(LaunchConfiguration("rescue_conf").perform(context))
     camera_device = LaunchConfiguration("camera_device").perform(context)
-    if not 0.0 <= person_conf <= 1.0 or not 0.0 <= rescue_conf <= 1.0:
-        raise ValueError("person_conf and rescue_conf must be between 0 and 1")
     namespace, config_name = CAMERA_PROFILES[camera]
     share_dir = Path(get_package_share_directory("aed_vision"))
     # 소스 경로가 아니라 install/share 경로를 사용하므로 다른 노트북에 패키지를
     # 설치한 뒤에도 동일한 launch 명령을 사용할 수 있다.
-    config = share_dir / "config" / config_name
+    base_config = share_dir / "config" / "base_camera.yaml"
+    camera_config = share_dir / "config" / config_name
 
     return [
         Node(
@@ -47,13 +39,9 @@ def _create_camera_nodes(context):
             name="vision_detector",
             namespace=namespace,
             parameters=[
-                str(config),
-                {
-                    "camera_device": camera_device,
-                    "detection_backend": detection_backend,
-                    "person_conf": person_conf,
-                    "rescue_conf": rescue_conf,
-                },
+                str(base_config),
+                str(camera_config),
+                {"camera_device": camera_device},
             ],
             output="screen",
         ),
@@ -83,22 +71,6 @@ def generate_launch_description() -> LaunchDescription:
                     "USB webcam device path; auto selects the external webcam "
                     "from /dev/v4l/by-id"
                 ),
-            ),
-            DeclareLaunchArgument(
-                "target",
-                default_value="mannequin",
-                choices=("person", "mannequin"),
-                description="mannequin (default) or person",
-            ),
-            DeclareLaunchArgument(
-                "person_conf",
-                default_value="0.5",
-                description="YOLO Pose confidence for actual people (0~1)",
-            ),
-            DeclareLaunchArgument(
-                "rescue_conf",
-                default_value="0.25",
-                description="Fine-tuned mannequin detector confidence (0~1)",
             ),
             OpaqueFunction(function=_create_camera_nodes),
         ]
