@@ -54,7 +54,7 @@ export function ActiveEvent({ event, missions, now }: Props) {
             신뢰도 <b className="mono">{(event.confidence * 100).toFixed(0)}%</b>
           </span>
           <span>
-            연속검출 <b className="mono">{event.consecutive_detections}</b>
+            확정근거 <b className="mono">{event.consecutive_detections}</b>
           </span>
         </div>
       </div>

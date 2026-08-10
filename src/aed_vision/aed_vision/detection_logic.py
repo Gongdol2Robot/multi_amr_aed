@@ -94,6 +94,219 @@ class TemporalConfirmation:
         """현재 시간 창 안에서 검출에 성공한 프레임 수를 반환한다."""
         return sum(self._history)
 
+    def clear(self) -> None:
+        """새 상태 주기를 시작할 수 있도록 과거 프레임 근거를 비운다."""
+        self._history.clear()
+
+
+class FallenStateConfirmation:
+    """낙상 확정은 프레임 창으로, 해제는 실제 미검출 시간으로 판단한다.
+
+    처리 FPS가 낮아져도 확정된 사고가 같은 실제 시간 동안 유지되도록 해제만
+    monotonic 시간 기준으로 분리한다. 확정 전에는 기존 TemporalConfirmation의
+    다중 프레임 기준을 그대로 사용한다.
+    """
+
+    def __init__(
+        self, window_size: int, required_hits: int, clear_after_seconds: float
+    ) -> None:
+        if clear_after_seconds <= 0.0:
+            raise ValueError("clear_after_seconds must be positive")
+        self._confirmation = TemporalConfirmation(window_size, required_hits)
+        self.clear_after_seconds = float(clear_after_seconds)
+        self._confirmed = False
+        self._missing_since: float | None = None
+
+    def update(self, detected: bool, now: float) -> bool:
+        detected_now = bool(detected)
+        window_confirmed = self._confirmation.update(detected_now)
+        if not self._confirmed:
+            if window_confirmed:
+                self._confirmed = True
+                self._missing_since = None
+            return self._confirmed
+
+        if detected_now:
+            self._missing_since = None
+        elif self._missing_since is None:
+            self._missing_since = float(now)
+        elif float(now) - self._missing_since >= self.clear_after_seconds:
+            self._confirmed = False
+            self._missing_since = None
+            self._confirmation.clear()
+        return self._confirmed
+
+    @property
+    def hit_count(self) -> int:
+        return self._confirmation.hit_count
+
+
+class StationaryFallConfirmation:
+    """동일 낙상 bbox가 일정 시간 정지해 있을 때만 사고를 확정한다.
+
+    bbox IoU로 같은 대상을 추적하고, 연속 관측 사이의 중심 이동과 면적 변화를
+    영상 크기로 정규화해 정지 여부를 판단한다. 확정 뒤에는 bbox 움직임으로
+    취소하지 않고 기존 안전 정책처럼 일정 시간 완전 미검출일 때만 해제한다.
+    """
+
+    def __init__(
+        self,
+        stationary_seconds: float,
+        max_center_motion_ratio: float,
+        max_size_change_ratio: float,
+        match_iou: float,
+        gap_tolerance_seconds: float,
+        clear_after_seconds: float,
+    ) -> None:
+        values = (
+            stationary_seconds,
+            max_center_motion_ratio,
+            max_size_change_ratio,
+            match_iou,
+            gap_tolerance_seconds,
+            clear_after_seconds,
+        )
+        if any(value <= 0.0 for value in values):
+            raise ValueError("stationary confirmation values must be positive")
+        if max_center_motion_ratio > 1.0:
+            raise ValueError("max_center_motion_ratio must not exceed 1")
+        if max_size_change_ratio > 1.0:
+            raise ValueError("max_size_change_ratio must not exceed 1")
+        if match_iou > 1.0:
+            raise ValueError("match_iou must not exceed 1")
+        self.stationary_seconds = float(stationary_seconds)
+        self.max_center_motion_ratio = float(max_center_motion_ratio)
+        self.max_size_change_ratio = float(max_size_change_ratio)
+        self.match_iou = float(match_iou)
+        self.gap_tolerance_seconds = float(gap_tolerance_seconds)
+        self.clear_after_seconds = float(clear_after_seconds)
+        self._tracked_box: Box | None = None
+        self._anchor_box: Box | None = None
+        self._stationary_since: float | None = None
+        self._last_seen_at: float | None = None
+        self._missing_since: float | None = None
+        self._confirmed = False
+        self._hit_count = 0
+        self.stationary_duration = 0.0
+        self.center_motion_ratio = 0.0
+        self.size_change_ratio = 0.0
+
+    def update(
+        self,
+        boxes: Sequence[Box],
+        frame_size: tuple[int, int],
+        now: float,
+    ) -> bool:
+        width, height = frame_size
+        if width <= 0 or height <= 0:
+            raise ValueError("frame_size must be positive")
+        current_time = float(now)
+        candidates = tuple(boxes)
+        if not candidates:
+            self._update_missing(current_time)
+            return self._confirmed
+
+        self._missing_since = None
+        selected = self._select_candidate(candidates)
+        if self._tracked_box is None or not self._matches(selected):
+            self._start_track(selected, current_time)
+            return self._confirmed
+
+        anchor = self._anchor_box or self._tracked_box
+        diagonal = math.hypot(width, height)
+        self.center_motion_ratio = math.hypot(
+            selected.center[0] - anchor.center[0],
+            selected.center[1] - anchor.center[1],
+        ) / diagonal
+        previous_area = self._area(anchor)
+        current_area = self._area(selected)
+        self.size_change_ratio = abs(current_area - previous_area) / max(
+            previous_area, 1.0
+        )
+        gap = (
+            current_time - self._last_seen_at
+            if self._last_seen_at is not None else 0.0
+        )
+        stationary = (
+            gap <= self.gap_tolerance_seconds
+            and self.center_motion_ratio <= self.max_center_motion_ratio
+            and self.size_change_ratio <= self.max_size_change_ratio
+        )
+        self._tracked_box = selected
+        self._last_seen_at = current_time
+        if not stationary:
+            self._anchor_box = selected
+            self._stationary_since = current_time
+            self._hit_count = 1
+            self.stationary_duration = 0.0
+            return self._confirmed
+
+        self._hit_count += 1
+        if self._stationary_since is None:
+            self._stationary_since = current_time
+        self.stationary_duration = current_time - self._stationary_since
+        if self.stationary_duration >= self.stationary_seconds:
+            self._confirmed = True
+        return self._confirmed
+
+    @staticmethod
+    def _area(box: Box) -> float:
+        return max(0.0, box.x2 - box.x1) * max(0.0, box.y2 - box.y1)
+
+    def _select_candidate(self, candidates: Sequence[Box]) -> Box:
+        if self._tracked_box is None:
+            return max(candidates, key=lambda box: box.confidence)
+        nearest = max(
+            candidates,
+            key=lambda box: intersection_over_union(box, self._tracked_box),
+        )
+        if self._matches(nearest):
+            return nearest
+        return max(candidates, key=lambda box: box.confidence)
+
+    def _matches(self, candidate: Box) -> bool:
+        return intersection_over_union(candidate, self._tracked_box) >= (
+            self.match_iou
+        )
+
+    def _start_track(self, box: Box, now: float) -> None:
+        self._tracked_box = box
+        self._anchor_box = box
+        self._stationary_since = now
+        self._last_seen_at = now
+        self._hit_count = 1
+        self.stationary_duration = 0.0
+        self.center_motion_ratio = 0.0
+        self.size_change_ratio = 0.0
+
+    def _update_missing(self, now: float) -> None:
+        if self._missing_since is None:
+            self._missing_since = now
+        if self._confirmed:
+            if now - self._missing_since >= self.clear_after_seconds:
+                self._confirmed = False
+                self.clear()
+        elif (
+            self._last_seen_at is None
+            or now - self._last_seen_at > self.gap_tolerance_seconds
+        ):
+            self.clear()
+
+    def clear(self) -> None:
+        self._tracked_box = None
+        self._anchor_box = None
+        self._stationary_since = None
+        self._last_seen_at = None
+        self._missing_since = None
+        self._hit_count = 0
+        self.stationary_duration = 0.0
+        self.center_motion_ratio = 0.0
+        self.size_change_ratio = 0.0
+
+    @property
+    def hit_count(self) -> int:
+        return self._hit_count
+
 
 class CrowdStateStabilizer:
     """순간적인 사람 검출 변화가 로봇의 통행 판단을 흔들지 않게 한다.
@@ -214,6 +427,41 @@ def intersection_over_union(first: Box, second: Box) -> float:
     return intersection / union if union > 0.0 else 0.0
 
 
+def intersection_over_smaller_area(first: Box, second: Box) -> float:
+    """겹친 면적이 두 bbox 중 작은 bbox를 얼마나 덮는지 반환한다."""
+    left = max(first.x1, second.x1)
+    top = max(first.y1, second.y1)
+    right = min(first.x2, second.x2)
+    bottom = min(first.y2, second.y2)
+    intersection = max(0.0, right - left) * max(0.0, bottom - top)
+    first_area = max(0.0, first.x2 - first.x1) * max(0.0, first.y2 - first.y1)
+    second_area = max(0.0, second.x2 - second.x1) * max(
+        0.0, second.y2 - second.y1
+    )
+    smaller = min(first_area, second_area)
+    return intersection / smaller if smaller > 0.0 else 0.0
+
+
+def boxes_represent_same_person(
+    person: Box, fallen: Box, overlap_threshold: float
+) -> bool:
+    """서로 다른 모델의 bbox 크기 차이를 허용해 동일 환자인지 판정한다."""
+    if intersection_over_union(person, fallen) >= overlap_threshold:
+        return True
+    # 한 모델이 상자를 훨씬 크게 잡아 IoU가 낮아도 작은 상자의 대부분이
+    # 겹치면 같은 대상으로 본다. 0.7은 인접 조력자 제거를 피하는 보수값이다.
+    if intersection_over_smaller_area(person, fallen) >= 0.7:
+        return True
+    person_center = person.center
+    fallen_center = fallen.center
+    return (
+        person.x1 <= fallen_center[0] <= person.x2
+        and person.y1 <= fallen_center[1] <= person.y2
+        and fallen.x1 <= person_center[0] <= fallen.x2
+        and fallen.y1 <= person_center[1] <= fallen.y2
+    )
+
+
 def point_inside_normalized_roi(
     point: tuple[float, float],
     frame_size: tuple[int, int],
@@ -255,7 +503,9 @@ def filter_nonfallen_people(
         if not point_inside_normalized_roi(person.center, frame_size, roi):
             continue
         if any(
-            intersection_over_union(person, fallen_box) >= overlap_threshold
+            boxes_represent_same_person(
+                person, fallen_box, overlap_threshold
+            )
             for fallen_box in fallen_boxes
         ):
             continue

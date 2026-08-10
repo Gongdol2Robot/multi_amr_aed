@@ -9,7 +9,9 @@
 string camera_id
 builtin_interfaces/Time stamp
 
-uint32 person_count          # 서 있는 사람 포함 전체
+# ROI 안에서 낙상 bbox와 중복된 환자를 제외한 주변 사람 수. COCO person
+# 모델이나 person_pose helper 경로가 비활성화된 카메라에서는 0이다.
+uint32 person_count
 uint32 fallen_count          # 쓰러진 것으로 판단된 사람
 uint32 helper_count          # 환자 근처의 조력자 또는 helper 검출 수
 

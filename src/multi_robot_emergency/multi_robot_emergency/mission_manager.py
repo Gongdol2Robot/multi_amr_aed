@@ -912,6 +912,12 @@ class EmergencyMissionManager(Node):
         """Start one mission on a YOLO confirmation edge only."""
         if message.status != EmergencyEvent.CONFIRMED:
             return
+        if not message.location_valid:
+            self.get_logger().error(
+                "Ignoring emergency with unsafe location: "
+                f"event={message.event_id}, source={message.location_source}"
+            )
+            return
         event_id = message.event_id.strip()
         if event_id and event_id in self.processed_event_ids:
             return

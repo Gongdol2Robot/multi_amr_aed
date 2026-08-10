@@ -15,6 +15,9 @@ def _create_robot_vision(context):
     if not robot_id:
         raise ValueError("robot_id must not be empty")
     share_dir = Path(get_package_share_directory("aed_vision"))
+    base_config = share_dir / "config" / "base_camera.yaml"
+    backend = LaunchConfiguration("backend").perform(context)
+    backend_config = share_dir / "config" / f"{backend}_backend.yaml"
     config = share_dir / "config" / "robot_camera.yaml"
     return [
         Node(
@@ -23,6 +26,8 @@ def _create_robot_vision(context):
             namespace=robot_id,
             name="vision_detector",
             parameters=[
+                str(base_config),
+                str(backend_config),
                 str(config),
                 {
                     "camera_id": robot_id,
@@ -51,6 +56,11 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
         [
             DeclareLaunchArgument("robot_id", default_value="robot2"),
+            DeclareLaunchArgument(
+                "backend",
+                default_value="mannequin",
+                choices=("mannequin", "person_pose"),
+            ),
             OpaqueFunction(function=_create_robot_vision),
         ]
     )

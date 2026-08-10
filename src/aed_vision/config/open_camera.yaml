@@ -10,8 +10,8 @@
     mode: open
     image_topic: /camera_open/image_raw/compressed
 
-    # 고정 카메라는 작은 목각인형도 판정할 수 있도록 Pose 품질 기준을 낮춘다.
-    pose_keypoint_conf: 0.15
+    # 고정 카메라에서 Pose를 켤 때 사용할 현장 품질 기준이다.
+    pose_keypoint_conf: 0.5
     pose_min_keypoints: 5
     pose_min_box_area: 0.005
     pose_min_torso_keypoints: 2

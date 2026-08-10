@@ -12,40 +12,15 @@
     jpeg_quality: 85
     mode: robot
 
-    # 로봇 카메라도 목각인형 전용 detector와 HOG+SVM 자세 판정을 사용한다.
-    # 조력자 역시 고정 카메라와 동일하게 rescue 모델의 helping_person을 쓴다.
-    detection_backend: mannequin_detect
-    rescue_weights: package://aed_vision/models/rescue2_yolo11n.pt
-    person_weights: package://aed_vision/models/coco_yolo11n.pt
-    pose_weights: package://aed_vision/models/yolo11n-pose.pt
-    rescue_conf: 0.25
-    person_conf: 0.5
+    # 모델 종류는 launch가 mannequin_backend.yaml 또는
+    # person_pose_backend.yaml에서 별도로 불러온다.
+    rescue_conf: 0.5
     pose_keypoint_conf: 0.3
     pose_min_keypoints: 8
     pose_min_box_area: 0.02
     pose_min_torso_keypoints: 3
-    detect_people_as_helpers: false
-    iou: 0.5
-    imgsz: 640
     # 빈 값은 Ultralytics가 실행 환경에 맞춰 GPU 또는 CPU를 자동 선택하게 한다.
     inference_device: ""
 
-    # 최근 6프레임이 모두 FALLEN일 때만 확정한다(6프레임 연속 검출).
-    confirmation_window: 6
-    confirmation_hits: 6
-    # 고정 카메라와 동일하게 최근 6프레임 중 3회 검출해야 확정한다.
-    helper_confirmation_window: 6
-    helper_confirmation_hits: 3
-    # 환자와 화면 대각선 길이의 30% 이내에 있는 helping_person만 인정한다.
-    helper_max_distance_ratio: 0.30
-    crowd_roi: [0.0, 0.0, 1.0, 1.0]
-    fallen_person_overlap_iou: 0.4
-
-    location_frame_id: map
-    location_x: 0.0
-    location_y: 0.0
     homography_camera_id: ""
-    homography_margin_m: 0.15
-    publish_debug_image: true
     show_window: false
-    debug_jpeg_quality: 80

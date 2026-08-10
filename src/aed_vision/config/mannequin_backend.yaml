@@ -1,0 +1,15 @@
+/**/vision_detector:
+  ros__parameters:
+    detection_backend: mannequin_detect
+    rescue_weights: package://aed_vision/models/rescue2_yolo11n.pt
+    person_weights: package://aed_vision/models/coco_yolo11n.pt
+    pose_weights: package://aed_vision/models/yolo11n-pose.pt
+    posture_classifier_weights: package://aed_vision/models/mannequin_posture_svm.xml
+    rescue_conf: 0.6
+    person_conf: 0.5
+    mannequin_bbox_fallback: true
+    mannequin_fallen_aspect_threshold: 1.03
+    detect_people_as_helpers: false
+    # SVM이 최종 자세를 결정하지만 디버그 영상의 관절 골격 시각화를 위해
+    # mannequin crop에도 Pose를 실행한다.
+    run_pose_for_mannequin: true

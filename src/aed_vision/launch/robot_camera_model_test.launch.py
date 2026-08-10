@@ -33,6 +33,9 @@ def _create_test_node(context):
         LaunchConfiguration("show_window").perform(context)
     )
     share_dir = Path(get_package_share_directory("aed_vision"))
+    base_config = share_dir / "config" / "base_camera.yaml"
+    backend = LaunchConfiguration("backend").perform(context)
+    backend_config = share_dir / "config" / f"{backend}_backend.yaml"
     robot_config = share_dir / "config" / "robot_camera.yaml"
     test_camera_id = f"{robot_id}_test"
 
@@ -43,6 +46,8 @@ def _create_test_node(context):
             namespace=f"{robot_id}_vision_test",
             name="vision_detector",
             parameters=[
+                str(base_config),
+                str(backend_config),
                 str(robot_config),
                 {
                     "camera_id": test_camera_id,
@@ -69,6 +74,12 @@ def generate_launch_description() -> LaunchDescription:
                 "robot_id",
                 default_value="robot2",
                 description="OAK-D 영상을 발행하는 로봇 namespace",
+            ),
+            DeclareLaunchArgument(
+                "backend",
+                default_value="mannequin",
+                choices=("mannequin", "person_pose"),
+                description="테스트할 낙상 판정 backend 프로필",
             ),
             DeclareLaunchArgument(
                 "image_topic",

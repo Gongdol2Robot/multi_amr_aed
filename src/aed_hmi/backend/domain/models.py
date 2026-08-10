@@ -100,6 +100,8 @@ class EmergencyEventSnapshot:
     camera_id: str
     zone_id: str
     crowd_level: int = 255
+    location_source: str = ""
+    location_valid: bool = False
 
 
 @dataclass(frozen=True)

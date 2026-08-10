@@ -5,10 +5,13 @@ import pytest
 from aed_vision.detection_logic import (
     Box,
     CrowdStateStabilizer,
+    FallenStateConfirmation,
+    StationaryFallConfirmation,
     TemporalConfirmation,
     crowd_metrics,
     filter_nonfallen_people,
     intersection_over_union,
+    intersection_over_smaller_area,
     point_inside_normalized_roi,
     update_presence_confirmation,
     is_fallen_bbox_candidate,
@@ -24,6 +27,88 @@ def test_temporal_confirmation_uses_recent_window() -> None:
     assert confirmation.update(True) is True
     assert confirmation.hit_count == 3
     assert confirmation.update(False) is False
+
+
+def test_fallen_state_uses_frame_confirmation_and_timed_clear() -> None:
+    confirmation = FallenStateConfirmation(3, 3, 2.0)
+
+    assert not confirmation.update(True, now=0.0)
+    assert not confirmation.update(True, now=0.1)
+    assert confirmation.update(True, now=0.2)
+    assert confirmation.update(False, now=1.0)
+    assert confirmation.update(True, now=2.0)
+    assert confirmation.update(False, now=3.0)
+    assert confirmation.update(False, now=4.9)
+    assert not confirmation.update(False, now=5.0)
+    assert confirmation.hit_count == 0
+    assert not confirmation.update(True, now=5.1)
+
+
+def test_fallen_state_rejects_invalid_clear_timeout() -> None:
+    with pytest.raises(ValueError, match="clear_after_seconds"):
+        FallenStateConfirmation(3, 3, 0.0)
+
+
+def _stationary_confirmation() -> StationaryFallConfirmation:
+    return StationaryFallConfirmation(1.0, 0.025, 0.25, 0.3, 0.25, 2.0)
+
+
+def test_stationary_fall_confirms_same_stable_box_after_one_second() -> None:
+    confirmation = _stationary_confirmation()
+    box = Box(20, 20, 100, 80, 0.9)
+
+    for now in (0.0, 0.2, 0.4, 0.6, 0.8):
+        assert not confirmation.update([box], (640, 480), now=now)
+    assert confirmation.update([box], (640, 480), now=1.0)
+    assert confirmation.stationary_duration == pytest.approx(1.0)
+    assert confirmation.hit_count == 6
+
+
+def test_stationary_fall_resets_timer_when_box_moves_or_resizes() -> None:
+    confirmation = _stationary_confirmation()
+    original = Box(20, 20, 100, 80, 0.9)
+    moved = Box(50, 20, 130, 80, 0.9)
+    resized = Box(50, 20, 150, 90, 0.9)
+
+    assert not confirmation.update([original], (640, 480), now=0.0)
+    assert not confirmation.update([original], (640, 480), now=0.2)
+    assert not confirmation.update([moved], (640, 480), now=0.4)
+    assert confirmation.stationary_duration == 0.0
+    assert not confirmation.update([moved], (640, 480), now=0.6)
+    assert not confirmation.update([resized], (640, 480), now=0.8)
+    assert confirmation.stationary_duration == 0.0
+
+
+def test_stationary_fall_measures_motion_from_stationary_anchor() -> None:
+    confirmation = _stationary_confirmation()
+
+    for index, now in enumerate((0.0, 0.2, 0.4, 0.6, 0.8, 1.0)):
+        # 프레임 간 이동은 작지만 최초 위치로부터는 계속 멀어지는 bbox다.
+        box = Box(20 + index * 6, 20, 100 + index * 6, 80, 0.9)
+        assert not confirmation.update([box], (640, 480), now=now)
+
+    assert confirmation.stationary_duration < 1.0
+
+
+def test_stationary_fall_tolerates_short_gap_and_clears_after_timeout() -> None:
+    confirmation = _stationary_confirmation()
+    box = Box(20, 20, 100, 80, 0.9)
+
+    for now in (0.0, 0.2, 0.4, 0.6, 0.8):
+        assert not confirmation.update([box], (640, 480), now=now)
+    assert not confirmation.update([], (640, 480), now=0.9)
+    assert confirmation.update([box], (640, 480), now=1.0)
+    assert confirmation.update([], (640, 480), now=1.2)
+    assert confirmation.update([], (640, 480), now=3.1)
+    assert not confirmation.update([], (640, 480), now=3.2)
+
+
+def test_stationary_fall_rejects_invalid_parameters_and_frame_size() -> None:
+    with pytest.raises(ValueError, match="positive"):
+        StationaryFallConfirmation(0.0, 0.025, 0.25, 0.3, 0.25, 2.0)
+    confirmation = _stationary_confirmation()
+    with pytest.raises(ValueError, match="frame_size"):
+        confirmation.update([], (0, 480), now=0.0)
 
 
 def test_horizontal_bbox_is_kept_as_fallen_candidate() -> None:
@@ -58,6 +143,9 @@ def test_iou_handles_overlap_and_degenerate_boxes() -> None:
     )
     assert overlap == pytest.approx(1 / 3)
     assert intersection_over_union(Box(0, 0, 0, 0), Box(0, 0, 0, 0)) == 0.0
+    assert intersection_over_smaller_area(
+        Box(0, 0, 10, 10), Box(-5, -5, 15, 15)
+    ) == 1.0
 
 
 def test_roi_and_fallen_person_filtering() -> None:
@@ -74,6 +162,17 @@ def test_roi_and_fallen_person_filtering() -> None:
         [0, 0, 1, 1],
         0.4,
     ) == [valid]
+
+
+def test_large_person_box_is_removed_as_same_fallen_target() -> None:
+    fallen = Box(40, 40, 80, 80)
+    large_duplicate = Box(10, 10, 110, 110)
+    nearby_helper = Box(85, 40, 125, 80)
+
+    assert filter_nonfallen_people(
+        [large_duplicate, nearby_helper], [fallen], (200, 100),
+        [0, 0, 1, 1], 0.4,
+    ) == [nearby_helper]
 
 
 @pytest.mark.parametrize(

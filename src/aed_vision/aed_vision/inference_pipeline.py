@@ -173,6 +173,7 @@ class InferencePipeline:
         mannequin_bbox_fallback: bool = True,
         mannequin_fallen_aspect_threshold: float = 1.03,
         posture_classifier_weights: str = "",
+        run_pose_for_mannequin: bool = True,
     ) -> None:
         """추론 설정을 검증하고 선택한 backend에 필요한 YOLO 모델을 로드한다."""
         import torch
@@ -196,6 +197,7 @@ class InferencePipeline:
         self.mannequin_fallen_aspect_threshold = (
             mannequin_fallen_aspect_threshold
         )
+        self.run_pose_for_mannequin = bool(run_pose_for_mannequin)
         self.posture_classifier = None
         if not 0.0 <= self.pose_keypoint_conf <= 1.0:
             raise ValueError("pose_keypoint_conf must be between 0 and 1")
@@ -272,14 +274,19 @@ class InferencePipeline:
                         "mannequin posture classifier",
                     )
                 )
-        self.pose_model = YOLO(
-            str(_model_path(pose_weights, "person pose weights"))
-        )
-        if self.pose_model.task != "pose":
-            raise RuntimeError(
-                f"Person pose weights must have task=pose, "
-                f"got {self.pose_model.task}"
+        self.pose_model = None
+        if (
+            self.detection_backend == "person_pose"
+            or self.run_pose_for_mannequin
+        ):
+            self.pose_model = YOLO(
+                str(_model_path(pose_weights, "person pose weights"))
             )
+            if self.pose_model.task != "pose":
+                raise RuntimeError(
+                    f"Person pose weights must have task=pose, "
+                    f"got {self.pose_model.task}"
+                )
 
         # 자세 판정과 혼잡도 판정은 목적과 품질 기준이 다르다. person_pose의
         # bbox는 관절 품질 필터를 통과한 사람만 남으므로 인파를 누락할 수 있다.
@@ -463,6 +470,20 @@ class InferencePipeline:
                 classifier_fallen
                 if classifier_fallen is not None else bbox_fallen
             )
+            if not self.run_pose_for_mannequin:
+                if fallback_fallen:
+                    fallen.append(box)
+                evidence.append(
+                    PoseEvidence(
+                        box=box,
+                        keypoints=np.zeros((17, 3), dtype=float),
+                        posture="FALLEN" if fallback_fallen else "STANDING",
+                        aspect_ratio=box.aspect_ratio,
+                        torso_angle_deg=-1.0,
+                        visible_keypoints=0,
+                    )
+                )
+                continue
             # Pose는 전체 프레임이 아니라 확장 crop에만 실행한다. 작은 mannequin을
             # 모델 입력에서 크게 보이게 하고 주변 사람의 관절과 섞이는 것을 줄인다.
             pose_result = self.pose_model.predict(

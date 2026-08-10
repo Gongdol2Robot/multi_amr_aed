@@ -227,6 +227,8 @@ class RobotStateMonitor(Node):
         event.consecutive_detections = 1
         event.crowd_level = 255
         event.status = EmergencyEvent.CONFIRMED
+        event.location_source = "configured"
+        event.location_valid = True
         event.source_id = "rviz_publish_point"
         self.event_publisher.publish(event)
         self.get_logger().info(

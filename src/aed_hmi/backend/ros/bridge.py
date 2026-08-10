@@ -261,6 +261,8 @@ class RosBridge:
         message.confidence = 1.0          # 사람이 찍었다
         message.consecutive_detections = 1
         message.status = EmergencyEvent.CONFIRMED
+        message.location_source = "operator"
+        message.location_valid = True
         message.source_id = "operator"
         message.camera_id = ""
         message.zone_id = zone_id

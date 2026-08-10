@@ -1,27 +1,21 @@
 /**/vision_detector:
   ros__parameters:
-    # 모든 카메라가 공유하는 영상 형식과 모델 설정이다.
+    # 모든 카메라와 backend가 공유하는 영상·상태·출력 설정이다.
     image_is_compressed: true
     width: 640
     height: 480
     jpeg_quality: 85
-    detection_backend: mannequin_detect
-    rescue_weights: package://aed_vision/models/rescue2_yolo11n.pt
-    person_weights: package://aed_vision/models/coco_yolo11n.pt
-    pose_weights: package://aed_vision/models/yolo11n-pose.pt
-    posture_classifier_weights: package://aed_vision/models/mannequin_posture_svm.xml
-    rescue_conf: 0.50
-    person_conf: 0.5
-    mannequin_bbox_fallback: true
-    mannequin_fallen_aspect_threshold: 1.03
-    detect_people_as_helpers: false
     iou: 0.5
     imgsz: 640
 
-    # 단일 프레임 오검출과 순간적인 가림을 줄이는 공통 시간 확정 기준이다.
-    # 최근 6프레임이 모두 FALLEN일 때만 확정한다(6프레임 연속 검출).
-    confirmation_window: 6
-    confirmation_hits: 6
+    # 동일 FALLEN bbox의 위치와 크기가 1초 이상 안정적일 때만 확정한다.
+    fall_stationary_seconds: 1.0
+    fall_max_center_motion_ratio: 0.025
+    fall_max_size_change_ratio: 0.25
+    fall_track_match_iou: 0.30
+    fall_detection_gap_tolerance_seconds: 0.25
+    # 확정 뒤 이 시간 동안 낙상 후보가 전혀 없을 때만 CANCELED로 전환한다.
+    cancellation_timeout_seconds: 2.0
     helper_confirmation_window: 6
     helper_confirmation_hits: 3
     helper_max_distance_ratio: 0.30

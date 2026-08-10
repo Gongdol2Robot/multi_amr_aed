@@ -125,6 +125,9 @@ export interface EmergencyEventSnapshot {
   source_id: string;
   camera_id: string;
   zone_id: string;
+  crowd_level: number;
+  location_source: string;
+  location_valid: boolean;
 }
 
 export interface MissionSummary {

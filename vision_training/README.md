@@ -1,7 +1,11 @@
 # AED 비전 모델 학습
 
-구조 상황에서 `fallen_person`과 `helper_rc_car`를 검출하고, 사람의 자세와
+과거 학습 데이터셋의 `fallen_person`과 `helper_rc_car`를 검출하고, 사람의 자세와
 낙상 상태를 시험하기 위한 데이터 준비·YOLO 학습·평가 도구입니다.
+
+현재 ROS 배포 모델 `src/aed_vision/models/rescue2_yolo11n.pt`의 클래스명은
+`mannequin`, `helping_person`입니다. 아래 두 과거 클래스명은 데이터셋 라벨이며
+현재 런타임 클래스명과 혼용하면 안 됩니다.
 
 이 디렉터리는 **모델 개발용**입니다. 학습이 끝난 가중치로 ROS 추론 노드를
 실행하는 방법은 프로젝트 루트 문서를 참고하세요.

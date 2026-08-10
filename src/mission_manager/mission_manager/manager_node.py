@@ -114,6 +114,12 @@ class MissionManager(Node):
     def _on_emergency(self, event: EmergencyEvent) -> None:
         if event.status != EmergencyEvent.CONFIRMED:
             return
+        if not event.location_valid:
+            self.get_logger().error(
+                f"Ignoring event {event.event_id} with unsafe location "
+                f"source={event.location_source}"
+            )
+            return
         if not event.event_id or event.event_id in self.events:
             return
         if not event.location.header.frame_id:

@@ -33,7 +33,8 @@
   HOG+SVM으로 최종 자세를 판정하며 Pose는 골격 시각화에 사용. SVM이
   설정되지 않은 경우에만 Pose와 bbox 비율로 낙상 판정을 보완
 - 선택 `person_pose` backend는 YOLO11n-Pose의 실제 사람 관절과 bbox로 자세 판정
-- 최근 12프레임 중 4프레임 이상 검출될 때 응급상황 확정
+- 동일한 낙상 bbox의 위치와 크기가 1초 이상 안정적일 때 응급상황 확정
+- 확정 뒤 2초 동안 낙상 후보가 없을 때만 응급상황 해제
 - 확정/해제 전환 시 `aed_interfaces/EmergencyEvent` 발행
 - 검출 bbox 하단 중심점을 카메라별 호모그래피로 map 좌표 변환
 - `alley` 모드에서는 COCO YOLO11n으로 ROI 내부 `person` 수 계산
@@ -46,32 +47,37 @@
 
 실행 launch는 카메라별 `vision_detector` 노드 하나만 시작합니다.
 
-### 검출 confidence를 0.25로 둔 이유
+### 검출 confidence와 시간 확정 기준
 
-구조 대상 검출의 기본 confidence 임계값인 `rescue_conf`는 `0.25`입니다.
+고정 카메라의 구조 대상 confidence 임계값인 `rescue_conf`는 `0.60`입니다.
+로봇 카메라는 근거리 현장 탐색 특성에 맞춰 `0.50`으로 덮어씁니다.
 응급상황에서는 오검출보다 쓰러진 사람을 놓치는 미검출의 비용이 더 크므로,
 1차 YOLO 검출에서는 재현율(recall)을 우선해 후보를 넓게 받도록 설정했습니다.
 
 낮은 임계값에서 발생할 수 있는 순간적인 오검출을 곧바로 응급상황으로 처리하지는
-않습니다. 각 프레임에서 confidence가 `0.25` 이상인 `mannequin`을 먼저 찾고
-자세 판정을 통과한 대상만 낙상 후보로 받습니다. 최근 12프레임 중 4프레임
-이상에서 후보가 검출될 때만 응급상황을 확정하며, 이 4프레임은 연속일 필요가
-없습니다.
+않습니다. 고정 카메라는 각 프레임에서 confidence가 `0.60` 이상인
+`mannequin`을 먼저 찾고 자세 판정을 통과한 대상만 낙상 후보로 받습니다.
+동일한 낙상 bbox가 화면 대각선 기준 중심 이동률 2.5% 이하, 면적 변화율 25%
+이하인 상태로 1초 이상 유지될 때 응급상황을 확정합니다. 다른 bbox로 바뀌거나
+움직임 기준을 넘으면 1초 타이머를 다시 시작합니다. 확정 뒤에는 순간 가림으로
+바로 취소되지 않도록 실제 시간 기준 2초 연속 미검출 뒤에만 `CANCELED`로
+전환합니다.
 
 ```text
-YOLO confidence >= 0.25
+고정 카메라 YOLO confidence >= 0.60
         ↓ 후보 검출 — recall 우선
-최근 12프레임 중 4프레임 이상 검출
-        ↓ 시간적 검증 — 순간 오검출 억제
+동일 bbox 위치·크기 안정 상태 1초 유지
+        ↓ 시간·움직임 검증 — 순간 오검출 억제
 EmergencyEvent.CONFIRMED
+        ↓ 2초 연속 미검출
+EmergencyEvent.CANCELED
 ```
 
-따라서 `0.25` 하나만으로 응급상황을 확정하는 구조가 아니라, 낮은 임계값으로
-후보를 확보한 뒤 다중 프레임 검증으로 신뢰도를 보완하는 구조입니다. 다만
-`0.25`는 현재 기본 설정값이며 현장 데이터로 최적값이 검증된 수치는 아닙니다.
+따라서 confidence 하나만으로 응급상황을 확정하는 구조가 아니라 동일 대상의
+정지 지속 시간으로 신뢰도를 보완하는 구조입니다. 현재 값은 현장 데이터로 최적화가 끝난
+수치가 아니므로
 최종 배포 전에는 실제 카메라 위치·조명·거리에서 precision, recall, 오검출률과
-미검출률을 측정해 `rescue_conf`, `confirmation_window`, `confirmation_hits`를 함께
-조정해야 합니다.
+미검출률을 측정해 confidence와 정지 판정 파라미터를 함께 조정해야 합니다.
 
 ## 설치
 
@@ -114,17 +120,17 @@ ros2 launch aed_vision camera_vision.launch.py \
 기본적으로 목각인형 파인튜닝 모델로 쓰러짐을 판정합니다. 실행한
 노트북에는 `AED Vision - camera_open (open)` 결과 창이 표시됩니다.
 
-운용 파라미터는 launch 인자로 중복 관리하지 않고 YAML을 단일 기준으로
-사용합니다. 모든 카메라의 공통 모델·confidence·시간 확정 기준은
-`base_camera.yaml`, 설치 위치와 입력 방식의 차이는 `open_camera.yaml`,
-`alley_camera.yaml`, `robot_camera.yaml`에서 조정합니다. 적용 순서는
-`Python 안전 기본값 → base_camera.yaml → 카메라별 YAML → camera_device`입니다.
+설정은 공통·backend·카메라 역할로 분리합니다. `base_camera.yaml`은 공통
+영상·시간 상태·출력 설정, `mannequin_backend.yaml`과
+`person_pose_backend.yaml`은 모델별 설정, 나머지 카메라 YAML은 설치 위치와
+입력 방식을 담당합니다. 적용 순서는 `Python 안전 기본값 → base_camera.yaml
+→ backend YAML → 카메라별 YAML → launch override`입니다.
 
-실제 사람 Pose backend를 시험하려면 대상 프로필 YAML의 값을 직접 바꿉니다.
+실제 사람 Pose backend는 기존 명령에 launch 인자를 추가합니다.
 
-```yaml
-detection_backend: person_pose
-person_conf: 0.55
+```bash
+ros2 launch aed_vision camera_vision.launch.py \
+  camera:=1 backend:=person_pose
 ```
 
 두 backend는 다음 두 값만 허용합니다.
@@ -158,9 +164,23 @@ ros2 launch aed_vision camera_vision.launch.py \
 - `pose_weights`: 실제 사람용 Pose 가중치
 - `person_conf`, `pose_keypoint_conf`, `pose_min_keypoints`,
   `pose_min_box_area`: Pose 사람·관절 품질 필터
-- `rescue_conf`: 구조 대상 YOLO의 1차 후보 confidence 임계값. 기본값은 `0.25`
-- `confirmation_window`, `confirmation_hits`: 낙상 확정 시간 창. 현재 기본값은
-  최근 12프레임 중 4회
+- `rescue_conf`: 구조 대상 YOLO의 1차 후보 confidence 임계값. 고정 카메라
+  `0.60`, 로봇 카메라 `0.50`
+- `fall_stationary_seconds`: 동일 bbox가 안정적으로 유지돼야 하는 시간. `1.0`
+- `fall_max_center_motion_ratio`: 화면 대각선 대비 허용 중심 이동률. `0.025`
+- `fall_max_size_change_ratio`: 기준 bbox 대비 허용 면적 변화율. YOLO bbox
+  jitter를 흡수하도록 `0.25`
+- `fall_track_match_iou`: 동일 대상으로 연결할 최소 bbox IoU. `0.30`
+- `fall_detection_gap_tolerance_seconds`: 추적 중 허용할 짧은 미검출 간격. `0.25`
+- `cancellation_timeout_seconds`: 확정 뒤 해제까지 필요한 연속 미검출 시간. `2.0`
+- `run_pose_for_mannequin`: SVM 판정 뒤 디버그 골격용 Pose를 추가 실행할지 여부.
+  디버그 영상에서 목각인형 관절을 표시하기 위해 기본값은 `true`
+
+CPU에서 `robot_approach.mp4`의 동일한 6개 프레임을 비교했을 때 warm-up 제외
+평균은 Pose 활성 `146.7 ms`(6.8 FPS), 비활성 `63.2 ms`(15.8 FPS)였습니다.
+현재는 관절 시각화를 위해 Pose를 활성화합니다. 두 설정의 프레임별 낙상 개수는
+같았으며, 성능이 부족한 장치에서는 이 옵션을 `false`로 바꿀 수 있습니다.
+측정값은 현재 개발 노트북의 참고치이며 배포 장치 성능을 보장하지 않습니다.
 - `location_x`, `location_y`: 해당 고정 카메라 구조 지점의 map 좌표
 - `homography_camera_id`: 카메라별 측량 설정 ID (`cam1` 또는 `cam2`)
 - `homography_margin_m`: 측량 영역 경계에서 허용할 좌표 여유
@@ -177,7 +197,7 @@ ros2 launch aed_vision camera_vision.launch.py \
 | `/<camera_id>/vision/emergency_event` | `aed_interfaces/EmergencyEvent` | 확정 또는 해제된 구조 이벤트 |
 | `/<camera_id>/vision/status` | `std_msgs/String` | 전체 검출 상태 JSON |
 | `/<camera_id>/vision/crowd_level` | `aed_interfaces/CrowdLevel` | 0~3 혼잡 등급과 사람 수·통행 가능 여부 |
-| `/<camera_id>/vision/person_count` | `std_msgs/UInt32` | 골목 ROI 내 유효 person 수 |
+| `/<camera_id>/vision/person_count` | `std_msgs/UInt32` | ROI 안에서 환자를 제외한 주변 person 수. 해당 경로 비활성 시 0 |
 | `/<camera_id>/vision/detection_summary` | `aed_interfaces/DetectionSummary` | 프레임별 구조화된 검출 요약 |
 | `/<camera_id>/vision/fallen_location` | `geometry_msgs/PointStamped` | 호모그래피로 계산한 구조 대상 map 좌표 |
 | `/<camera_id>/vision/heartbeat` | `aed_interfaces/Heartbeat` | 초당 노드 생존 신호 |
@@ -224,6 +244,9 @@ ros2 launch aed_vision camera_vision.launch.py \
   "crowd_time_multiplier": null,
   "crowd_traversable": false,
   "confirmation_hits": 7,
+  "fallen_stationary_duration_s": 1.08,
+  "fallen_center_motion_ratio": 0.0042,
+  "fallen_size_change_ratio": 0.031,
   "inference_ms": 42.5
 }
 ```
@@ -270,8 +293,10 @@ ros2 topic echo /camera_alley/vision/fallen_location
 ```
 
 메시지 타입은 `geometry_msgs/msg/PointStamped`, `frame_id`는 `map`입니다.
-측량 신뢰 영역 밖의 좌표도 외삽값으로 발행하므로 이동에 사용할 때는 오차를
-감안해야 합니다.
+측량 신뢰 영역 밖의 좌표도 진단용 `fallen_location`에는 외삽값으로
+발행합니다. 다만 `EmergencyEvent.location_valid=false`와
+`location_source=homography_extrapolated`를 넣으며 Mission Manager는 이
+이벤트를 자동 이동 목표로 사용하지 않습니다.
 
 ## 로봇 카메라 구조 인력 검출
 
@@ -316,3 +341,29 @@ ros2 topic echo /robot1/vision/helper_confirmed
 `helper_mission_controller`는 `helper_confirmed=true`의 최신 수신값을 확인하는
 즉시 제자리 회전과 반복 호출음을 중지합니다. 과거 검출이 시간 창에 남아
 있더라도 현재 프레임에 사람이 없으면 `helper_confirmed`는 즉시 `false`가 됩니다.
+
+실제 사람을 환자와 조력자로 시험하려면 `backend:=person_pose`를 사용합니다.
+이 backend 프로필은 `detect_people_as_helpers=true`를 함께 적용합니다. 실행
+경로는 검증했지만 실제 사람 낙상 정확도는 별도 현장 데이터로 아직 검증되지
+않았습니다.
+
+```bash
+ros2 launch aed_vision robot_vision.launch.py \
+  robot_id:=robot2 backend:=person_pose
+```
+
+## 테스트
+
+```bash
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+PYTHONPATH=src/aed_vision:$PYTHONPATH \
+  python3 -m pytest -q src/aed_vision/test
+```
+
+저장소 모델을 CPU로 직접 로드하는 느린 스모크 테스트는 명시적으로 켭니다.
+
+```bash
+AED_VISION_MODEL_TESTS=1 PYTHONPATH=src/aed_vision:$PYTHONPATH \
+  python3 -m pytest -q -m model src/aed_vision/test/test_model_smoke.py
+```

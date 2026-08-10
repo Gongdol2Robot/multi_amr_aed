@@ -106,6 +106,12 @@ class HelperMissionCoordinator(Node):
         if not event.event_id:
             return
         if event.status == EmergencyEvent.CONFIRMED:
+            if not event.location_valid:
+                self.get_logger().warning(
+                    f"Ignoring event {event.event_id} with unsafe location "
+                    f"source={event.location_source}"
+                )
+                return
             if not event.location.header.frame_id:
                 self.get_logger().warning(
                     f"Ignoring event {event.event_id} without location frame"

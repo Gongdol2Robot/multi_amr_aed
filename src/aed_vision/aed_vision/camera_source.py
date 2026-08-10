@@ -122,8 +122,11 @@ class DirectCameraSource:
         """최신 카메라 프레임을 읽어 JPEG 토픽과 추론 콜백으로 전달한다."""
         success, frame = self.capture.read()
         if not success:
+            if hasattr(self.node, "camera_input_failures"):
+                self.node.camera_input_failures += 1
             self.node.get_logger().warning(
-                "Failed to read direct webcam frame"
+                "Failed to read direct webcam frame",
+                throttle_duration_sec=5.0,
             )
             return
         # 모니터링용으로 원본 프레임을 JPEG 압축해 토픽으로도 발행한다

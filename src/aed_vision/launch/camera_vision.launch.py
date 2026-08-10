@@ -25,11 +25,13 @@ def _create_camera_nodes(context):
     """
     camera = LaunchConfiguration("camera").perform(context)
     camera_device = LaunchConfiguration("camera_device").perform(context)
+    backend = LaunchConfiguration("backend").perform(context)
     namespace, config_name = CAMERA_PROFILES[camera]
     share_dir = Path(get_package_share_directory("aed_vision"))
     # 소스 경로가 아니라 install/share 경로를 사용하므로 다른 노트북에 패키지를
     # 설치한 뒤에도 동일한 launch 명령을 사용할 수 있다.
     base_config = share_dir / "config" / "base_camera.yaml"
+    backend_config = share_dir / "config" / f"{backend}_backend.yaml"
     camera_config = share_dir / "config" / config_name
 
     return [
@@ -40,6 +42,7 @@ def _create_camera_nodes(context):
             namespace=namespace,
             parameters=[
                 str(base_config),
+                str(backend_config),
                 str(camera_config),
                 {"camera_device": camera_device},
             ],
@@ -63,6 +66,12 @@ def generate_launch_description() -> LaunchDescription:
                     "1: 탁 트인 공간(fallen 검출), "
                     "2: 골목(fallen+인파 검출)"
                 ),
+            ),
+            DeclareLaunchArgument(
+                "backend",
+                default_value="mannequin",
+                choices=("mannequin", "person_pose"),
+                description="낙상 판정 backend 프로필",
             ),
             DeclareLaunchArgument(
                 "camera_device",
