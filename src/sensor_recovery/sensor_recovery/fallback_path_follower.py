@@ -185,7 +185,14 @@ class FallbackPathFollower(Node):
             self._on_nav_status,
             10,
         )
-        self.create_subscription(Odometry, "odom", self._on_odom, 10)
+        # Odom은 고주기 센서 스트림이다. Wi-Fi 손실 때 Reliable 재전송으로
+        # Nav2 통신과 ping을 밀어내지 않도록 scan과 같은 BEST_EFFORT QoS를 쓴다.
+        self.create_subscription(
+            Odometry,
+            "odom",
+            self._on_odom,
+            qos_profile_sensor_data,
+        )
         self.create_subscription(
             PoseWithCovarianceStamped, "amcl_pose", self._on_amcl_pose, 10
         )

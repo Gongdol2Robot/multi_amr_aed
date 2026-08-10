@@ -6,7 +6,7 @@
 |---|---|---|---|
 | 김지훈 | 호모그래피·위치 검증·SLAM 보조 | `emergency_location_mapper`, `aed_vision` | 카메라-지도 매핑, 응급 목표점, 위치 오차 검증 |
 | 이현민 | 목각인형·사람 Vision, 전체 통합 | `aed_vision`, `aed_interfaces`, `aed_bringup` | Vision 모델/노드, 공통 인터페이스, 통합 launch·시험 |
-| 김재엽 | 거리·경로비용 비교와 우선 로봇 선정 | `mission_manager` | 경로비용 모듈, 후보 순위, 배정 결과 |
+| 김재엽 | 거리·경로비용 비교와 우선 로봇 선정 | `multi_robot_emergency` | 경로비용 모듈, 후보 순위, 배정 결과 |
 | 김영기 | 네트워크·Nav2 서버 장애 복구 | `amr_recovery` | Heartbeat, Nav2 Health Check, Recovery Manager |
 | 박재현 | LiDAR 장애 감지·대처 | `sensor_recovery`, `robot_state_monitor` | LiDAR Watchdog, 센서 상태, 장애 시험 |
 | 김민성 | AED 도착 후 구조 인력 호출·안내 | `helper_mission`, `emergency_alert` | 사람 호출, 도움 요청, 현장 안내 미션 |
@@ -25,7 +25,7 @@
 | `emergency_location_mapper` | `location_mapper` |
 | `robot_state_monitor` | `robot_state_monitor` |
 | `amr_recovery` | `recovery_manager` |
-| `sensor_recovery` | `sensor_health_monitor` |
+| `sensor_recovery` | `lidar_watchdog`, `lidar_fallback_controller` |
 | `helper_mission` | `helper_mission_controller` |
 | `event_logger` | `event_logger` |
 | `aed_hmi` | `hmi_node` |

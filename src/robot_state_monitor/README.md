@@ -32,7 +32,7 @@ ros2 run robot_state_monitor robot_state_monitor --ros-args \
 중앙 PC 실행:
 
 ```bash
-ros2 launch aed_bringup central_dispatch.launch.py
+ros2 launch aed_hmi hmi_runtime.launch.py start_backend:=false
 ```
 
 중앙 노드를 먼저 켠 뒤 RViz에서 **Publish Point**로 지도 좌표를 클릭하면
@@ -59,7 +59,8 @@ ros2 topic echo /aed/selected_robot
 강제하지 않습니다.
 
 ```bash
-ros2 launch aed_bringup central_dispatch.launch.py dispatch_enabled:=true
+ros2 launch multi_robot_emergency central_dispatch.launch.py \
+  dispatch_enabled:=true
 ```
 
 시험 이벤트:

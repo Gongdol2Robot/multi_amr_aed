@@ -175,6 +175,7 @@ rv() {
 }
 
 mapnav() {
+  # robot_runtime이 map navigation과 LiDAR fallback을 함께 실행한다.
   local n=${1:-1}
   aedenv
   ros2 launch turtlebot4_map_navigation robot_runtime.launch.py \
@@ -186,10 +187,6 @@ fallback() {
   aedenv
   ros2 launch sensor_recovery lidar_fallback.launch.py \
     robot_name:="robot$n"
-}
-
-manager() {
-  ros2 run mission_manager mission_manager
 }
 
 # 중앙 노트북 통합 런타임. 기존 central 인자 순서를 그대로 유지한다.

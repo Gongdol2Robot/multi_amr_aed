@@ -1022,7 +1022,8 @@ class EmergencyMissionManager(Node):
         self, robot_id: str, patient: PoseStamped
     ) -> PoseStamped:
         """Place a robot on the standoff circle facing the patient."""
-        # [CODE REVIEW] 환자 좌표 자체를 goal로 주지 않고 0.15 m 전방에서 멈춘다.
+        # [CODE REVIEW] 환자 좌표 자체를 goal로 주지 않고, 환자에서
+        # 로봇 방향으로 설정된 반경(기본 0.15 m) 떨어진 지점에 멈춘다.
         # 로봇이 환자와 겹치지 않게 하면서 최종 yaw는 환자를 바라보도록 만든다.
         if not self.patient_standoff_enabled:
             return deepcopy(patient)

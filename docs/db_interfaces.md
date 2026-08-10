@@ -31,17 +31,17 @@ ROS 인터페이스  →  ros/converters.py  →  domain 모델  →  store/repo
 
 | 토픽 | 자료형 | 발행 노드 | 구독 노드 | 상태 | DB 반영 |
 |---|---|---|---|---|---|
-| `/aed/robot_state` | `aed_interfaces/RobotState` | `robot_state_monitor` | `mission_manager`, `aed_hmi_bridge` | **뼈대** | `robot_samples` |
-| `/aed/mission_status` | `aed_interfaces/MissionStatus` | `mission_manager`, `mission_executor` | `aed_hmi_bridge`, `event_logger` | 동작 | `mission_events` |
-| `/{robot_id}/mission_assignment` | `aed_interfaces/MissionAssignment` | `mission_manager` | `mission_executor` | 동작 | `mission_assignments` |
-| `/aed/emergency_event` | `aed_interfaces/EmergencyEvent` | (없음) | `mission_manager`, `aed_hmi_bridge` | **발행자 없음** | `emergency_events` |
+| `/aed/robot_state` | `aed_interfaces/RobotState` | `robot_state_monitor` | `multi_robot_emergency`, `aed_hmi_bridge` | **뼈대** | `robot_samples` |
+| `/aed/mission_status` | `aed_interfaces/MissionStatus` | `multi_robot_emergency`, `mission_executor` | `aed_hmi_bridge`, `event_logger` | 동작 | `mission_events` |
+| `/{robot_id}/mission_assignment` | `aed_interfaces/MissionAssignment` | `multi_robot_emergency` | `mission_executor` | 동작 | `mission_assignments` |
+| `/aed/emergency_event` | `aed_interfaces/EmergencyEvent` | (없음) | `multi_robot_emergency`, `aed_hmi_bridge` | **발행자 없음** | `emergency_events` |
 | `/{camera_id}/vision/emergency_event` | `aed_interfaces/EmergencyEvent` | `vision_detector` | `aed_hmi_bridge` | 동작 | `emergency_events` |
-| `/{camera_id}/vision/crowd_level` | `std_msgs/String` → `CrowdLevel` | `vision_detector` | `mission_manager`, `aed_hmi_bridge` | 동작(형 교체 예정) | 안 남김 |
+| `/{camera_id}/vision/crowd_level` | `std_msgs/String` → `CrowdLevel` | `vision_detector` | `multi_robot_emergency`, `aed_hmi_bridge` | 동작(형 교체 예정) | 안 남김 |
 | `/{camera_id}/vision/detection_summary` | `aed_interfaces/DetectionSummary` | `vision_detector` | `aed_hmi_bridge` | 동작 | 안 남김 |
 | `/{camera_id}/vision/debug/compressed` | `sensor_msgs/CompressedImage` | `vision_detector` | `aed_hmi_bridge` | 동작 | 안 남김 |
 | `/{camera_id}/vision/person_count` | `std_msgs/UInt32` | `vision_detector` | `aed_hmi_bridge` | 동작 | 안 남김 |
 | `/{camera_id}/vision/heartbeat` | `aed_interfaces/Heartbeat` | `vision_detector` | `recovery_manager` | 동작 | 안 남김 |
-| `/{robot_id}/sensor_health` | `aed_interfaces/SensorHealth` | `sensor_health_monitor` | `mission_manager`, `aed_hmi_bridge` | **사양만** | 안 남김 |
+| `/{robot_id}/sensor_health` | `aed_interfaces/SensorHealth` | `sensor_health_monitor` | `multi_robot_emergency`, `aed_hmi_bridge` | **사양만** | 안 남김 |
 | `/{robot_id}/cmd_vel` | `geometry_msgs/Twist` | `sensor_health_monitor` (대체 주행) | Create3 | **사양만** | 안 남김 |
 | `/emergency/eta/result` | `std_msgs/String` (JSON) | `multi_robot_emergency` | `aed_hmi_bridge` | 동작 | `eta_records` |
 | `/emergency/eta/predicted/{robot_id}` | `std_msgs/Float32` | `multi_robot_emergency` | (안 받음) | 동작 | 안 남김 |
@@ -55,7 +55,7 @@ ROS 인터페이스  →  ros/converters.py  →  domain 모델  →  store/repo
 만든다. ROS 를 아는 코드가 `backend/ros/` 안에만 있어야 하기 때문이다.
 
 `/aed/emergency_event` 에 **발행자가 없다.** `vision_detector` 는 카메라별
-토픽에 내고 `mission_manager` 는 통합 토픽을 듣는데 그 사이를 잇는 노드
+토픽에 내고 `multi_robot_emergency`는 통합 토픽을 듣는데 그 사이를 잇는 노드
 (`location_mapper`)가 아직 뼈대뿐이다. 그래서 지금은 검출이 출동으로
 이어지지 않는다. 화면은 두 경로를 모두 구독하고 있어 이어붙인 뒤에도
 고칠 것이 없다.
@@ -70,7 +70,7 @@ ROS 인터페이스  →  ros/converters.py  →  domain 모델  →  store/repo
 
 | 액션 | 자료형 | 서버 | 클라이언트 | 상태 | DB 반영 |
 |---|---|---|---|---|---|
-| `/{robot_id}/deliver_aed` | `aed_interfaces/DeliverAed` | `mission_executor` | `mission_manager` | **사양만** | `mission_assignments` + `mission_events` |
+| `/{robot_id}/deliver_aed` | `aed_interfaces/DeliverAed` | `mission_executor` | `multi_robot_emergency` | **사양만** | `mission_assignments` + `mission_events` |
 | `/{robot_id}/navigate_to_pose` | `nav2_msgs/NavigateToPose` | Nav2 | `mission_executor` | 동작 | 안 남김 |
 
 `DeliverAed` 는 지금의 `MissionAssignment` topic 을 대체한다. 교체 전까지
@@ -122,7 +122,7 @@ bbox가 정지 확정 조건을 만족하는 동안 누적된 관측 수를 저�
 | 컬럼 | SQLite 형 | 출처 | 필드 | ROS 형 |
 |---|---|---|---|---|
 | `mission_id` | TEXT PK¹ | DeliverAed.Goal | `mission_id` | `string` |
-| `assignment_version` | INTEGER PK¹ | mission_manager 가 셈 | — | — |
+| `assignment_version` | INTEGER PK¹ | multi_robot_emergency가 셈 | — | — |
 | `event_id` | TEXT FK | DeliverAed.Goal | `event_id` | `string` |
 | `robot_id` | TEXT | goal 을 보낸 액션 이름에서 | — | — |
 | `role` | TEXT | DeliverAed.Goal | `role` | `uint8` → 이름 문자열 |

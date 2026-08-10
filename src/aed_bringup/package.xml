@@ -12,7 +12,6 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>nav2_regulated_pure_pursuit_controller</exec_depend>
-  <exec_depend>mission_manager</exec_depend>
   <exec_depend>robot_state_monitor</exec_depend>
   <exec_depend>turtlebot4_navigation</exec_depend>
   <exec_depend>aed_hmi</exec_depend>

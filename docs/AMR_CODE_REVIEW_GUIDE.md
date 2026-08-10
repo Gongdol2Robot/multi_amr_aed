@@ -1,5 +1,9 @@
 # AMR Code Review Guide
 
+박재현의 LiDAR 장애 감지/fallback 담당 파트는
+[`JAEHYEON_SENSOR_RECOVERY_CODE_REVIEW.md`](JAEHYEON_SENSOR_RECOVERY_CODE_REVIEW.md)를
+따른다.
+
 ## 0. 리뷰 목표
 
 PPT 없이 **설계도 -> 실제 코드 -> 테스트/검증 결과** 순서로 설명한다.
@@ -349,8 +353,8 @@ MissionAssignment
 
 ### 현재 자동 테스트 실행 상태
 
-이 작업을 수행한 Web Codex 실행 환경에는 `pytest` 명령이 설치되어 있지 않아 여기서는 자동 테스트를 재실행하지 못했다.
-실제 리뷰 PC의 ROS2 workspace에서 환경을 source한 뒤 아래 테스트를 직접 실행하고 결과 캡처를 준비한다.
+리뷰 전 ROS2 workspace 환경을 source한 뒤 아래 테스트를 실행하고,
+실행 일시·커밋·결과를 리뷰 자료에 기록한다.
 
 ```bash
 pytest src/multi_robot_emergency/test/test_assignment.py \

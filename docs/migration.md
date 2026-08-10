@@ -7,7 +7,7 @@
 | `aed_vision.homography` | `mini_proj.homography` | 카메라별 현장 측량값으로 map 좌표 변환 |
 | `emergency_alert.siren_node` | `turtlebot4_beep.beep_node` | `/robot2` 하드코딩 제거, 토픽·반복·음 길이 파라미터화 |
 | `robot_missions.mission_executor` | `mini_proj.mission_controller` | RC카 추종을 제거하고 취소 가능한 공통 Nav2 미션 실행기로 분리 |
-| `mission_manager` | 신규 분리 | 로봇 위치 비교와 AED·길안내 역할 배정을 중앙 관리자 책임으로 분리 |
+| `multi_robot_emergency` | 신규 분리 | 로봇 위치 비교와 AED·길안내 역할 배정을 중앙 관리자 책임으로 분리 |
 | `aed_interfaces` | 신규 분리 | 노드 사이 문자열 결합 대신 명시적 ROS 2 메시지 계약 정의 |
 | `aed_bringup/config/nav2_aed.yaml` | `mini_proj/config/nav2_mini_proj.yaml` | 실기 주행 설정 이관, 실제 로봇용 `use_sim_time: false` 적용 |
 

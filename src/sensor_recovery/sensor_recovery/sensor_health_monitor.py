@@ -1,15 +1,18 @@
-"""ROS 2 node scaffold for sensor_recovery."""
+"""Compatibility entry point for the sensor_recovery package."""
 
 import rclpy
 from rclpy.node import Node
 
 
 class SensorHealthMonitor(Node):
-    """Package entry point; feature callbacks are implemented by its owner."""
+    """Keep the legacy executable available for existing launch files."""
 
     def __init__(self) -> None:
         super().__init__("sensor_health_monitor")
-        self.get_logger().info("sensor_recovery scaffold started")
+        self.get_logger().info(
+            "sensor_recovery compatibility entry point started; operational "
+            "recovery runs in lidar_watchdog/lidar_fallback_controller"
+        )
 
 
 def main(args=None) -> None:

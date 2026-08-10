@@ -194,7 +194,8 @@ class MissionExecutor(Node):
         self.watchdog_timer = self.create_timer(1.0, self._check_progress)
 
     def _on_assignment(self, assignment: MissionAssignment) -> None:
-        # [CODE REVIEW] 같은 event에서 더 오래된 assignment_version은 무시한다.
+        # [CODE REVIEW] 같은 event에서 version과 assigned_at이 둘 다
+        # 현재 배정 이하인 중복·과거 배정은 무시한다.
         # 새 배정이 오면 기존 goal을 정리한 뒤 최신 target만 Nav2에 전달한다.
         # 다른 로봇용 assignment가 들어오면 실행하지 않는다.
         if assignment.robot_id != self.robot_id:

@@ -112,7 +112,11 @@ def generate_launch_description() -> LaunchDescription:
         OnProcessExit(
             target_action=localization_initializer,
             # TF가 준비되기 전에 RViz가 scan을 쌓지 않도록 Nav2와 함께 연다.
-            on_exit=[navigation, navigation_initializer, rviz_view],
+            on_exit=[
+                navigation,
+                navigation_initializer,
+                rviz_view,
+            ],
         )
     )
 

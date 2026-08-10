@@ -51,9 +51,9 @@ Action 을 손으로 흉내내고 있어, 취소·중복 방지를 `assignment_v
 
 | 이름 | 방식 | 타입 | 발행 | 구독 |
 |---|---|---|---|---|
-| `/{camera_id}/vision/emergency_event` | topic | `aed_interfaces/EmergencyEvent` | vision_detector | mission_manager, aed_hmi |
+| `/{camera_id}/vision/emergency_event` | topic | `aed_interfaces/EmergencyEvent` | vision_detector | multi_robot_emergency, aed_hmi |
 | `/{camera_id}/vision/detection_summary` | topic | `aed_interfaces/DetectionSummary` | vision_detector | aed_hmi |
-| `/{camera_id}/vision/crowd_level` | topic | `aed_interfaces/CrowdLevel` | vision_detector | mission_manager, aed_hmi |
+| `/{camera_id}/vision/crowd_level` | topic | `aed_interfaces/CrowdLevel` | vision_detector | multi_robot_emergency, aed_hmi |
 | `/{camera_id}/vision/debug/compressed` | topic | `sensor_msgs/CompressedImage` | vision_detector | aed_hmi |
 | `/{camera_id}/vision/heartbeat` | topic | `aed_interfaces/Heartbeat` | vision_detector | amr_recovery |
 
@@ -74,13 +74,13 @@ Action 을 손으로 흉내내고 있어, 취소·중복 방지를 `assignment_v
 |---|---|---|
 | `/aed/report_emergency` | **service** | `aed_interfaces/ReportEmergency` |
 
-## 3. 배정과 출동 — `mission_manager` ↔ `robot_missions`
+## 3. 배정과 출동 — `multi_robot_emergency` ↔ `robot_missions`
 
 | 이름 | 방식 | 타입 | 서버 | 클라이언트 |
 |---|---|---|---|---|
-| `/{robot_id}/deliver_aed` | **action** | `aed_interfaces/DeliverAed` | robot_missions | mission_manager |
-| `/aed/mission_status` | topic | `aed_interfaces/MissionStatus` | mission_manager | aed_hmi, event_logger |
-| `/aed/robot_state` | topic | `aed_interfaces/RobotState` | robot_state_monitor | mission_manager, aed_hmi |
+| `/{robot_id}/deliver_aed` | **action** | `aed_interfaces/DeliverAed` | robot_missions | multi_robot_emergency |
+| `/aed/mission_status` | topic | `aed_interfaces/MissionStatus` | multi_robot_emergency | aed_hmi, event_logger |
+| `/aed/robot_state` | topic | `aed_interfaces/RobotState` | robot_state_monitor | multi_robot_emergency, aed_hmi |
 
 Action 을 쓰면 이렇게 정리됩니다.
 
@@ -88,19 +88,19 @@ Action 을 쓰면 이렇게 정리됩니다.
 - 진행 상황 = feedback 으로 남은 거리·예상 시간이 계속 옴
 - 결과 = 성공/실패가 result 로 한 번 확정됨
 
-`MissionStatus` topic 은 남깁니다. Action 은 요청한 쪽(mission_manager)만
+`MissionStatus` topic 은 남깁니다. Action 은 요청한 쪽(`multi_robot_emergency`)만
 결과를 보지만, 화면과 로그는 모든 임무의 상태 변화를 봐야 하기 때문입니다.
 
 ## 4. 센서 이상과 대체 주행 — `sensor_recovery`
 
 | 이름 | 방식 | 타입 | 발행 | 구독 |
 |---|---|---|---|---|
-| `/{robot_id}/sensor_health` | topic | `aed_interfaces/SensorHealth` | sensor_recovery | mission_manager, aed_hmi |
+| `/{robot_id}/sensor_health` | topic | `aed_interfaces/SensorHealth` | sensor_recovery | multi_robot_emergency, aed_hmi |
 | `/{robot_id}/cmd_vel` | topic | `geometry_msgs/Twist` | sensor_recovery(대체 주행) | Create3 |
 
 라이다가 죽으면 Nav2 는 못 씁니다. 그때 `sensor_recovery` 가 `cmd_vel` 로
 직접 몹니다. Nav2 도 같은 토픽에 쓰므로 **둘이 동시에 쓰면 안 됩니다.**
-`SensorHealth.degraded` 가 참인 동안에는 mission_manager 가 Nav2 goal 을
+`SensorHealth.degraded` 가 참인 동안에는 `multi_robot_emergency`가 Nav2 goal을
 내지 않는 것으로 약속합니다.
 
 ## 5. 시간 기록 — `event_logger`, `aed_hmi`
