@@ -50,7 +50,7 @@ def generate_launch_description() -> LaunchDescription:
     """로봇 ID를 받는 OAK-D Vision launch 인터페이스를 반환한다."""
     return LaunchDescription(
         [
-            DeclareLaunchArgument("robot_id", default_value="robot1"),
+            DeclareLaunchArgument("robot_id", default_value="robot2"),
             OpaqueFunction(function=_create_robot_vision),
         ]
     )

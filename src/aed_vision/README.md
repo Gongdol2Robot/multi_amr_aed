@@ -264,8 +264,29 @@ ros2 topic echo /camera_alley/vision/fallen_location
 AED 도착 뒤 현장 탐색에는 TurtleBot4 OAK-D용 프로필을 사용합니다.
 
 ```bash
-ros2 launch aed_vision robot_vision.launch.py robot_id:=robot1
+ros2 launch aed_vision robot_vision.launch.py robot_id:=robot2
 ```
+
+로봇 OAK-D 시점에서 현재 모델의 bbox와 자세 판정을 직접 확인할 때는 운영
+노드 대신 다음 테스트 launch를 실행합니다.
+
+```bash
+ros2 launch aed_vision robot_camera_model_test.launch.py robot_id:=robot2
+```
+
+로컬 창을 띄울 수 없는 서버에서는 창을 끄고 디버그 영상 토픽을 확인합니다.
+
+```bash
+ros2 launch aed_vision robot_camera_model_test.launch.py \
+  robot_id:=robot2 show_window:=false
+ros2 run rqt_image_view rqt_image_view \
+  /robot2_test/vision/debug/compressed
+```
+
+기본 입력은 `/robot2/oakd/rgb/image_raw/compressed`이고, 다른 녹화·카메라
+토픽을 시험하려면 `image_topic:=/원하는/압축영상/토픽`으로 바꿀 수 있습니다.
+테스트 결과 토픽은 `/robot2_test/vision/*`로 분리되어 운영 결과와 충돌하지
+않습니다.
 
 `robot` 모드는 파인튜닝 모델의 `fallen_person`과 COCO 모델의 `person`을 함께
 검출합니다. 두 bbox가 겹치는 person은 환자로 보고 제외하며, 남은 person을
