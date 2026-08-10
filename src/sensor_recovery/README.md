@@ -2,7 +2,8 @@
 
 담당: 박재현
 
-LiDAR `/scan`의 수신 상태와 데이터 유효성을 감시하고 센서 장애에 대응합니다.
+LiDAR `/scan` 수신 상태를 감시하고, 장애 시 Nav2 제어권을 안전하게 인계받아
+저장 경로·odom·OAK-D depth로 대응 주행을 수행합니다.
 
 ## Nodes
 
@@ -16,12 +17,13 @@ LiDAR `/scan`의 수신 상태와 데이터 유효성을 감시하고 센서 장
 - `lidar_replacement_request` (구현 완료): LiDAR FAULT 시 주행만 멈추고
   대체 로봇이 필요하다는 신호를 발행 (자동으로 다른 로봇에 보내지 않음 —
   사람 또는 이후 Mission Manager가 판단). 아래 참고.
-- `cmd_vel_distance_test` (현재 1차 실기 기준 시험): 정해진 시작 위치에서
+- `cmd_vel_distance_test` (거리 보정 시험): 정해진 시작 위치에서
   경로 추종 없이 일정한 `cmd_vel`만 10초간 발행해 0.5m 이동시키고,
   AMCL의 예상 위치와 실제 위치 오차를 계산. 아래 참고.
-- `sensor_health_monitor` (scaffold만 존재): 센서 상태를 `RobotState`에 반영 — 다음 단계.
+- `sensor_health_monitor`: 패키지 호환 entry point. 실제 장애 감지와 대응은 위
+  watchdog/fallback 노드가 담당한다.
 
-핵심 산출물은 LiDAR Watchdog, Sensor Health Monitor와 장애 주입 시험 결과입니다.
+핵심 산출물은 LiDAR Watchdog, Nav2-fallback 전환 제어, 장애 주입 시험 결과입니다.
 
 ## lidar_watchdog
 
@@ -61,10 +63,9 @@ latched 값을 즉시 받고 싶다면:
 ros2 topic echo /robot2/lidar_state --qos-durability transient_local
 ```
 
-`aed_interfaces/msg/RobotState`에는 아직 LiDAR 전용 필드(`lidar_alive`,
-`fault_code`, `last_scan_age` 등)가 없어 이번 단계에서는 최소 `Bool`/`String`
-토픽으로 단독 검증합니다. `RobotState` 확장 여부는 `mission_manager`/`aed_interfaces`
-담당자와 협의가 필요합니다.
+LiDAR 상태 계약은 `lidar_alive`와 `lidar_state` 전용 토픽으로 분리했다. 이 구조는
+`RobotState` 메시지 개정 없이도 watchdog, fallback, 관제 계층이 같은 상태를
+구독할 수 있고, 필요하면 상위 계층에서 RobotState로 집계할 수 있다.
 
 ### Run
 
@@ -106,10 +107,9 @@ SSH 접속 정보는 저장소에 커밋된 `.env.robots`에서 읽는다.
 ### Extension points
 
 상태가 FAULT/복구로 바뀔 때 `handle_lidar_fault(robot_name)` /
-`handle_lidar_recovery(robot_name)`가 호출됩니다. 현재는 로그와 상태 발행만
-수행하며, 이후 Nav2 Goal 취소·안전 정지·Mission Manager 연동은 이 메서드 안에
-추가합니다. (실제 Nav2 제어는 이미 별도 노드 `lidar_fallback_controller`/
-`lidar_replacement_request`에 구현되어 있음 — 아래 참고.)
+`handle_lidar_recovery(robot_name)` hook이 호출된다. watchdog은 상태 판정과 발행에
+집중하고, Nav2 Goal 취소·안전 정지·대체 요청은 별도
+`lidar_fallback_controller`/`lidar_replacement_request`가 담당한다.
 
 ## lidar_fallback_controller
 
@@ -270,7 +270,7 @@ ros2 launch sensor_recovery lidar_fallback.launch.py robot_name:=robot1
 
 - `path_follow_control.py` + `fallback_state_machine.py` + `grid_path_planner.py`
   + `route_test_support.py` + `distance_test_metrics.py` 순수 함수 단위테스트
-  126개 통과(회전 오도메트리
+  131개 통과(회전 오도메트리
   합성, yaw가 ±π를 넘는
   경우, closest/target index 분리, U자형 구간 점프 방지, 제한적 재획득,
   wall-clear 경로 단순화, 회전 우선 제어, 경로 이탈 거리, depth 픽셀비율,
@@ -282,21 +282,17 @@ ros2 launch sensor_recovery lidar_fallback.launch.py robot_name:=robot1
   - FAULT→`STARTING`→`ACTIVE`(가속도 제한 램프업 확인)→장애물로
     `BLOCKED`→지속 시 `FAILED`+`replacement_needed`/`pending_goal`
     발행→ALIVE 시 재개 시도 **안 함**(이미 대체 요청함, 게이팅 확인).
-  - 이미 목표 근처인 경우 즉시 `SUCCEEDED`, `replacement_needed` 발행 안 됨
-    →ALIVE 시(실패 이력 없음) 재개 시도함(액션 서버 없어 에러 로그로
-    "시도했다"는 것만 확인 — 서버 자체는 없어서 최종 성공은 미확인).
+  - 이미 목표 근처인 경우 즉시 `SUCCEEDED`, `replacement_needed` 발행 안 됨.
   - **자체 경로계산 흐름**: 4x4 m 개활 지도를 가짜로 publish해서 확인 —
     FAULT 직후 `pre_replan_delay_sec`(1초) 동안 `cmd_vel` 전부 0 유지, 그
     다음 Nav2 액션 왕복 없이 그 자리에서 바로(동기) 경로가 계산되어
     `STARTING→ACTIVE` 전환 및 저속(0.05 m/s) 주행 시작까지 확인.
-- **실제 로봇 주행 테스트는 아직 안 함.** 실제 LiDAR를 `tools/lidar_toggle.sh
-  scan-off --allow-undocked`로 진짜 끄고 Nav2 주행 중에 FAULT를 유발해
-  자체 A* 재계획 → cmd_vel 저속 주행 → LiDAR 복구까지 가는 풀 체인은 아직
-  실기로 확인 안 됨. 특히 실제 맵 크기에서 A*/클리어런스 계산 소요 시간과
-  `soft_clearance_m`/`wall_clearance_weight`/`robot_radius_m` 기본값이 실제
-  복도 폭에 맞는지는 실기에서 조정이 필요할 수 있다.
+- robot1에서 실제 LiDAR driver를 끄고 5초 뒤 FAULT → Nav2 취소 → 저장 경로
+  3.51m fallback 주행 → `SUCCEEDED`까지 확인했다. 주행 중 OAK-D depth 정지와
+  0.5초 clear hold도 3회 정상 동작했다. 수동 takeover 4.35m 시험에서 측정한
+  odom-AMCL 횡오차는 robot1 전용 odom 보정값에 반영했다.
 
-## cmd_vel_distance_test (현재 먼저 수행할 0.5m 기준 시험)
+## cmd_vel_distance_test (0.5m 기준 보정 시험)
 
 기존 fallback/경로 추종 코드는 그대로 보존하되, 문제를 가장 작은 단위부터
 다시 검증하기 위해 새로 만든 독립 노드다. 이 시험에는 경로, A*, lookahead,
@@ -360,7 +356,7 @@ ROS-free 오차 계산 단위테스트 5개와, 가짜 AMCL/odom을 `cmd_vel`에
 노드 통합 시험에서 `WAITING → STARTING → MOVING → SETTLING → COMPLETE` 및
 결과 JSON 발행까지 확인했다. 실제 robot1의 0.5m 이동 오차는 아직 측정 전이다.
 
-## cmd_vel_route_follower (목표 경로 입력 대기)
+## cmd_vel_route_follower (검증된 route 재생 도구)
 
 나중에 정상 Nav2 주행에서 기록한 dense global path를 route YAML로 받아,
 런타임에는 Nav2/AMCL/TF 없이 시작점에 odom delta만 합성해 `cmd_vel`로 추종한다.
@@ -368,9 +364,9 @@ ROS-free 오차 계산 단위테스트 5개와, 가짜 AMCL/odom을 `cmd_vel`에
 감속한 뒤 코너 0.06m 안에서 정지한다. 다음 구간 방향으로 4도 이내 제자리
 회전이 끝나야 직진을 재개하므로 벽 코너 안쪽을 대각선으로 자르지 않는다.
 
-실행 파일, 파라미터, route template은 준비돼 있으며 실제 목표 route의
-`ready`가 `false`라 현재는 실기 실행을 의도적으로 거부한다. 상세 설계와 향후
-입력 절차는 `docs/cmd-vel-route-replay.md`에 있다.
+실행 파일, 파라미터, route template을 제공한다. route 파일은 검증 완료 뒤
+`ready: true`로 명시해야 실행되도록 방어해, 임시 좌표를 실제 로봇에 보내는 것을
+막는다. 상세 입력 절차는 `docs/cmd-vel-route-replay.md`에 있다.
 
 ```bash
 ros2 run sensor_recovery cmd_vel_route_follower --ros-args \
@@ -510,12 +506,13 @@ ros2 run sensor_recovery lidar_replacement_request --ros-args \
 
 ### 검증 상태
 
-단일 프로세스 통합 테스트로 두 모드 다 확인: 기본값(`false`)에서는 ALIVE 시
+단일 프로세스 통합 테스트로 두 모드 다 확인했다. 기본값(`false`)에서는 ALIVE 시
 `replacement_needed=False`만 발행하고 재개 시도 자체를 안 함(Mission
 Manager 대기 로그만 찍음), `auto_resume_on_recovery:=true`에서는 기존처럼
 저장된 목적지로 재개를 시도함(Nav2 액션 서버 없을 때 에러 로그만 남고
 크래시 없음). FAULT 시 `replacement_needed=True` + 목적지 발행 + cmd_vel
-0 발행도 두 모드 공통으로 확인. 실제 로봇 테스트는 아직 안 함.
+0 발행도 두 모드 공통으로 확인했다. 실기 기본 경로는 watchdog과
+`lidar_fallback_controller`를 함께 사용하는 fault-cycle 시험이다.
 
 **`lidar_fallback_controller`와 동시에 같은 로봇에서 실행하지 않는다** —
 둘 다 FAULT 시 Nav2 goal을 취소하고 `cmd_vel`을 발행하려고 해서 충돌한다.

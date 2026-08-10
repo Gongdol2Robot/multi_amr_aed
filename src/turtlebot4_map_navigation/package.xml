@@ -20,6 +20,7 @@
   <depend>rclpy</depend>
   <depend>rviz2</depend>
   <depend>sensor_msgs</depend>
+  <exec_depend>sensor_recovery</exec_depend>
   <depend>tf2_ros</depend>
   <depend>turtlebot4_navigation</depend>
   <exec_depend>python3-yaml</exec_depend>

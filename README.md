@@ -84,17 +84,19 @@ PR에는 구현 내용, 확인 방법, 아직 남은 문제를 작성합니다. 
 - `mission_manager`: 실제 경로비용 수집 대기, 우선 배정과 장애 재할당 구현 완료
 - `aed_bringup`: 실기 Nav2 안전 설정과 중앙 dispatch launch 구현 완료
 - `multi_robot_emergency`: 기존 `a1inteli` 중앙 거리 비교·직접 Nav2 출동 패키지 이관 완료
+- `sensor_recovery`: LiDAR watchdog, Nav2-fallback 전환, depth 안전 정지와
+  복구 후 제어권 반환 구현 및 실기 fault-cycle 검증 완료
 - 모든 담당 영역을 `colcon`이 인식하는 ROS 2 패키지로 구성 완료
-- `amr_recovery`, `sensor_recovery`, `helper_mission`: 실행 노드 scaffold 구성 완료
+- `amr_recovery`, `helper_mission`: 실행 노드 scaffold 구성 완료
 - `event_logger`, `aed_hmi`, `emergency_location_mapper`: 실행 노드 scaffold 구성 완료
-- 다음 단계: 담당자별 callback·토픽·서비스 구현과 단위시험 작성
+- 담당 모듈별 검증 범위와 실행 절차는 각 패키지 README를 따른다.
 
 ## Package maturity
 
 - 기능 구현: `aed_interfaces`, `aed_vision` 일부, `mission_manager` 일부,
-  `robot_missions` 일부, `emergency_alert`, `aed_bringup`
+  `robot_missions` 일부, `emergency_alert`, `aed_bringup`, `sensor_recovery`
 - 실행 가능한 scaffold: `emergency_location_mapper`, `robot_state_monitor`,
-  `amr_recovery`, `sensor_recovery`, `helper_mission`, `event_logger`, `aed_hmi`
+  `amr_recovery`, `helper_mission`, `event_logger`, `aed_hmi`
 
 scaffold 패키지도 `package.xml`, Python 모듈, resource marker, 설치 설정과
 console script를 갖추고 있어 각 담당자가 바로 노드 구현을 시작할 수 있습니다.

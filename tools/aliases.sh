@@ -160,10 +160,12 @@ rv() {
 }
 
 mapnav() {
-  local n=${1:-1}
+  # LiDAR fallback은 실제 map navigation 기본 구성이다. 비교 시험에서만
+  # `mapnav 1 false`처럼 두 번째 인자로 명시해 끈다.
+  local n=${1:-1} fallback=${2:-true}
   aedenv
   ros2 launch turtlebot4_map_navigation map_navigation.launch.py \
-    namespace:="robot$n" rviz:=true
+    namespace:="robot$n" rviz:=true lidar_fallback:="$fallback"
 }
 
 vision() {

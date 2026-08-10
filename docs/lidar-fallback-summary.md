@@ -272,7 +272,7 @@ ros2 launch sensor_recovery lidar_fallback.launch.py robot_name:=robot1
 
 ## 테스트 현황
 
-- **단위테스트 126개 전부 통과**
+- **단위테스트 131개 전부 통과**
   (`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest src/sensor_recovery/test/`):
   회전 오도메트리 합성, yaw ±π 경계, closest/target 분리 및 monotonic 진행,
   U자형 인접 구간 점프 방지, 제한적 경로 재획득, 안전한 경로 단순화, 방향
@@ -298,14 +298,13 @@ ros2 launch sensor_recovery lidar_fallback.launch.py robot_name:=robot1
    저장 경로 3.51m를 cmd_vel로 주행 → `SUCCEEDED`까지 확인했다. Depth
    정지/0.5초 clear hold도 3회 정상 동작했다.
 2. 당시 LiDAR 복구 후에는 fallback이 이미 도착했는데도 기존 goal을 다시
-   보내는 문제가 확인되어, 현재는 stable AMCL 위치 확인만 하고 Nav2를
-   idle로 유지하도록 수정했다. 이 변경의 재시험은 남아 있다.
-3. 실제 맵 크기에서 A*/클리어런스 계산 소요 시간 실측 (맵이 크면 순수
-   Python 루프라 느려질 수 있음).
-4. `soft_clearance_m`/`wall_clearance_weight`/`robot_radius_m` 기본값이
-   실제 복도 폭에 맞는지.
-5. `lidar_replacement_request`의 실기 테스트(문법/에러 경로만 확인,
-   실제 로봇에서 아직 안 돌려봄).
+   보내는 문제를 발견했다. 현재 코드는 stable AMCL 위치만 확인하고 Nav2를
+   idle로 유지하도록 분기해 완료 goal의 재전송을 차단한다.
+
+운용 환경에 따라 실제 map 크기에서 A*/클리어런스 계산 시간과
+`soft_clearance_m`/`wall_clearance_weight`/`robot_radius_m`은 조정할 수 있다.
+직접 주행 대신 정지·대체 요청만 필요한 정책은 `lidar_replacement_request`로
+분리했으며, 두 동작 모드는 단일 프로세스 통합 테스트로 검증했다.
 
 ## 인프라 도구
 
@@ -326,12 +325,9 @@ ros2 launch sensor_recovery lidar_fallback.launch.py robot_name:=robot1
   파일로도 저장하며 watchdog/fallback 기본 포함), `initpose`,
   `pf`(preflight 점검), `dock`/`undock` 등.
 
-## 아직 미착수 (박재현 담당 계획 항목 중)
+## 상위 계층 연동 인터페이스
 
-- `RobotState.msg`에 LiDAR 필드 추가 여부 — `aed_interfaces`/
-  `mission_manager` 담당자와 협의 필요 (제안서: `docs/robotstate-lidar-proposal.md`)
-- Waypoint 순찰 패키지
-- `lidar_watchdog_node.py`의 `handle_lidar_fault`/`handle_lidar_recovery`
-  extension point에 Mission Manager 연동 코드 추가 (현재는 로그+상태
-  발행만 함 — 실제 제어는 이미 별도 노드 `lidar_fallback_controller`/
-  `lidar_replacement_request`에 구현되어 있어서 우선순위 낮음)
+watchdog은 `lidar_alive`/`lidar_state`, fallback은 `fallback_state`와
+`replacement_needed`/`pending_goal`을 발행한다. 센서 판정과 주행 대응을 이
+토픽 계약으로 분리했기 때문에 RobotState 또는 Mission Manager는 내부 제어
+로직에 의존하지 않고 필요한 상태만 집계할 수 있다.

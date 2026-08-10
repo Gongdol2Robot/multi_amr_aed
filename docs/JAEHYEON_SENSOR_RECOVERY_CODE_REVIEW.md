@@ -112,6 +112,11 @@ status도 active/canceling 상태에서 벗어난 것을 확인한 뒤에만 non
 장애 직전 최신 `/plan`에서 현재 위치 이전 구간을 제거하고 남은 경로를 사용한다. 장애가
 발생하기 전 Nav2가 이미 주행 가능하다고 계산한 경로이므로 기본 선택으로 사용한다.
 
+`/plan`을 계속 누적 저장하는 방식은 아니다. 정상 주행 중 map frame의 최신 유효 `Path`
+한 건만 메모리에서 교체 보관하고, FAULT edge에서 현재 pose와 가장 가까운 지점부터
+목적지까지를 `(x, y)` 목록으로 snapshot한다. Nav2가 취소 과정에서 발행할 수 있는 빈
+Path는 캐시를 덮어쓰지 않는다.
+
 ### 우선순위 2: static map A*
 
 저장 경로를 쓰지 않는 설정에서는 `grid_path_planner.py`가 latched `/map`만으로 경로를
@@ -233,16 +238,18 @@ LiDAR가 복구되어 상태를 정리할 때는 `replacement_needed=False`를 �
 
 ---
 
-## 10. 실제 리뷰에서 보여줄 핵심 8곳
+## 10. 실제 리뷰에서 보여줄 핵심 10곳
 
 1. `lidar_state_machine.py::on_tick`
 2. `lidar_watchdog_node.py::_handle_transition`
 3. `fallback_path_follower.py::_on_lidar_state`
-4. `fallback_path_follower.py::_start_fallback`
-5. `fallback_path_follower.py::_nav2_cancel_ready`
-6. `fallback_path_follower.py::_request_replan`
-7. `fallback_path_follower.py::_on_control_tick`
-8. `fallback_path_follower.py::_request_replacement`
+4. `fallback_path_follower.py::_on_plan`
+5. `fallback_path_follower.py::_start_fallback`
+6. `path_follow_control.py::remaining_path_from_pose`
+7. `fallback_path_follower.py::_nav2_cancel_ready`
+8. `fallback_path_follower.py::_request_replan`
+9. `fallback_path_follower.py::_on_control_tick`
+10. `fallback_path_follower.py::_request_replacement`
 
 모든 parameter나 테스트 코드를 줄별로 읽지 않고, 문제 상황과 안전 설계가 연결되는 위
 지점만 보여준다.

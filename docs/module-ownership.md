@@ -25,7 +25,7 @@
 | `emergency_location_mapper` | `location_mapper` |
 | `robot_state_monitor` | `robot_state_monitor` |
 | `amr_recovery` | `recovery_manager` |
-| `sensor_recovery` | `sensor_health_monitor` |
+| `sensor_recovery` | `lidar_watchdog`, `lidar_fallback_controller` |
 | `helper_mission` | `helper_mission_controller` |
 | `event_logger` | `event_logger` |
 | `aed_hmi` | `hmi_node` |

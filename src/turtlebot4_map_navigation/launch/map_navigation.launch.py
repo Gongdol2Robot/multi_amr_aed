@@ -24,6 +24,7 @@ def generate_launch_description() -> LaunchDescription:
         'multi_robot_emergency'
     )
     nav2_bringup = get_package_share_directory('nav2_bringup')
+    sensor_recovery = get_package_share_directory('sensor_recovery')
 
     namespace = LaunchConfiguration('namespace')
     use_sim_time = LaunchConfiguration('use_sim_time')
@@ -37,6 +38,7 @@ def generate_launch_description() -> LaunchDescription:
     initial_y = LaunchConfiguration('initial_y')
     initial_yaw_deg = LaunchConfiguration('initial_yaw_deg')
     nav2_params = LaunchConfiguration('nav2_params')
+    lidar_fallback_enabled = LaunchConfiguration('lidar_fallback')
 
     localization_launch = PathJoinSubstitution(
         [turtlebot4_navigation, 'launch', 'localization.launch.py']
@@ -49,6 +51,9 @@ def generate_launch_description() -> LaunchDescription:
     )
     rviz_config = PathJoinSubstitution(
         [multi_robot_emergency, 'rviz', 'nav2_crowd_view.rviz']
+    )
+    lidar_fallback_launch = PathJoinSubstitution(
+        [sensor_recovery, 'launch', 'lidar_fallback.launch.py']
     )
 
     localization = IncludeLaunchDescription(
@@ -108,11 +113,23 @@ def generate_launch_description() -> LaunchDescription:
         name='navigation_initializer',
         output='screen',
     )
+    # [CODE REVIEW] fallback은 map/AMCL/odom과 Nav2 action 상태를 사용하므로
+    # localization 준비가 끝난 뒤 Nav2와 같은 robot namespace에서 시작한다.
+    lidar_fallback = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(lidar_fallback_launch),
+        condition=IfCondition(lidar_fallback_enabled),
+        launch_arguments={'robot_name': namespace}.items(),
+    )
     start_navigation_when_localized = RegisterEventHandler(
         OnProcessExit(
             target_action=localization_initializer,
             # TF가 준비되기 전에 RViz가 scan을 쌓지 않도록 Nav2와 함께 연다.
-            on_exit=[navigation, navigation_initializer, rviz_view],
+            on_exit=[
+                navigation,
+                navigation_initializer,
+                lidar_fallback,
+                rviz_view,
+            ],
         )
     )
 
@@ -148,6 +165,14 @@ def generate_launch_description() -> LaunchDescription:
                 default_value='true',
                 choices=['true', 'false'],
                 description='Open the namespaced Nav2 RViz view',
+            ),
+            DeclareLaunchArgument(
+                'lidar_fallback',
+                default_value='true',
+                choices=['true', 'false'],
+                description=(
+                    'Start the LiDAR watchdog and fallback controller'
+                ),
             ),
             DeclareLaunchArgument(
                 'auto_initial_pose',

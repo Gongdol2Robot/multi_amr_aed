@@ -457,9 +457,9 @@ class FallbackPathFollower(Node):
     # -- subscriptions -----------------------------------------------------
 
     def _on_plan(self, msg: Path) -> None:
-        # Keep the last complete map-frame path.  Nav2 can briefly publish an
-        # empty path while stopping; overwriting here would lose the mission
-        # destination exactly when the LiDAR fault is handled.
+        # [CODE REVIEW] 경로를 누적하거나 파일로 기록하지 않고 최신 유효 Path
+        # 한 건만 교체 보관한다. Nav2가 정지 과정에서 내는 빈 Path는 무시해
+        # FAULT snapshot 직전에 목적지와 남은 경로가 사라지지 않게 한다.
         if msg.poses and msg.header.frame_id == "map":
             self._latest_path = msg
 

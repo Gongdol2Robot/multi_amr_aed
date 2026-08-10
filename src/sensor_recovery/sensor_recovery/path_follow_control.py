@@ -119,6 +119,8 @@ def remaining_path_from_pose(
     """
     if not path_points:
         return []
+    # [CODE REVIEW] 장애 전 전체 Nav2 경로에서 이미 지나온 prefix를 제거하고,
+    # odom 적분 기준과 경로 시작점을 일치시키기 위해 fault pose를 첫 점으로 넣는다.
     closest = find_closest_index(path_points, x, y)
     result = [(float(x), float(y))]
     for point in path_points[closest:]:
