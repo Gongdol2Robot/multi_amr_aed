@@ -5,7 +5,8 @@
 그쪽 코드를 보고 맞춘다.
 
   고정 웹캠 검출 : aed_vision/vision_detector.py  (camera_id 별 절대 토픽)
-  로봇 상태/임무 : mission_manager, robot_missions (/aed/... 공용 토픽)
+  로봇 상태/임무 : emergency_mission_manager, robot_missions
+                   (/aed/... 공용 토픽)
   로봇 카메라   : turtlebot4 기본 OAK-D
   ETA 측정      : multi_robot_emergency/mission_manager.py
 
@@ -19,38 +20,32 @@ from dataclasses import dataclass
 
 
 def state_qos():
-    """상태·이벤트용. 기본은 RELIABLE 이다.
+    """HMI 상태·이벤트 구독용 BEST_EFFORT QoS.
 
-    상태 전이(MissionStatus, EmergencyEvent)는 한 번만 오므로 놓치면 그
-    기록이 영영 없다. 그래서 기본을 RELIABLE 로 둔다. 지금 발행하는
-    mission_manager(depth 20)와 vision_detector(depth 10) 둘 다 RELIABLE 이라
-    맞는다.
-
-    다만 터틀봇 위에서 도는 노드는 사정이 다르다. Create3 와 센서 토픽이
-    전부 `qos_profile_sensor_data`(BEST_EFFORT)라, 그 위에서 상태를 내는
-    노드도 같은 QoS 를 쓰기 쉽다. **발행이 BEST_EFFORT 인데 구독이
-    RELIABLE 이면 ROS 2 는 연결을 아예 안 맺고 경고도 안 낸다.** 화면에는
-    "ROS 수신" 이라 떠 있는데 로봇 칸만 영영 비는 모습이 된다.
-
-    그때 코드를 고치지 않고 넘길 수 있게 환경변수로 연다.
-
-        AED_HMI_STATE_RELIABILITY=best_effort python3 -m backend.main
-
-    BEST_EFFORT 로 내리면 어느 발행자와도 붙는다(RELIABLE 발행자와도 붙는다).
-    대신 상태 전이를 놓칠 수 있으므로, 안 붙을 때만 쓴다.
+    관제는 로봇 제어 주체가 아니므로 재전송을 요구하지 않는다. RELIABLE
+    발행자와 BEST_EFFORT 발행자 모두에 연결되며, 무선이 밀릴 때 오래된
+    화면 갱신보다 최신 값을 우선한다.
     """
     from rclpy.qos import (
         DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy,
     )
-    wanted = os.environ.get("AED_HMI_STATE_RELIABILITY", "reliable").lower()
-    reliability = (
-        ReliabilityPolicy.BEST_EFFORT if wanted == "best_effort"
-        else ReliabilityPolicy.RELIABLE
-    )
     return QoSProfile(
         history=HistoryPolicy.KEEP_LAST,
         depth=20,
-        reliability=reliability,
+        reliability=ReliabilityPolicy.BEST_EFFORT,
+        durability=DurabilityPolicy.VOLATILE,
+    )
+
+
+def operator_event_qos():
+    """HMI 지도 클릭을 미션 매니저에 확실히 전달하는 발행 QoS."""
+    from rclpy.qos import (
+        DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy,
+    )
+    return QoSProfile(
+        history=HistoryPolicy.KEEP_LAST,
+        depth=10,
+        reliability=ReliabilityPolicy.RELIABLE,
         durability=DurabilityPolicy.VOLATILE,
     )
 
@@ -72,14 +67,14 @@ def image_qos():
 
 
 def latched_qos():
-    """ETA 측정 결과용.
+    """ETA·LiDAR 상태 구독용 BEST_EFFORT + TRANSIENT_LOCAL QoS.
 
     multi_robot_emergency/mission_manager.py 의 eta_result_qos 와 같아야
     한다. durability 가 다르면 ROS 2 는 연결을 아예 안 맺고, 경고도 없이
     아무것도 안 온다.
 
-    TRANSIENT_LOCAL 이라 관제가 나중에 떠도 최근 10건을 받는다. 도착은
-    몇 분에 한 번뿐이라 놓치면 다음 것을 한참 기다려야 한다.
+    TRANSIENT_LOCAL 이라 관제가 나중에 떠도 최근 10건을 받는다. 신뢰도는
+    BEST_EFFORT로 낮춰 화면 때문에 발행자 재전송 큐가 밀리지 않게 한다.
     """
     from rclpy.qos import (
         DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy,
@@ -87,19 +82,19 @@ def latched_qos():
     return QoSProfile(
         history=HistoryPolicy.KEEP_LAST,
         depth=10,
-        reliability=ReliabilityPolicy.RELIABLE,
+        reliability=ReliabilityPolicy.BEST_EFFORT,
         durability=DurabilityPolicy.TRANSIENT_LOCAL,
     )
 
 
-# mission_manager 가 보는 공용 토픽.
+# emergency_mission_manager가 보는 공용 토픽.
 ROBOT_STATE_TOPIC = "/aed/robot_state"
 MISSION_STATUS_TOPIC = "/aed/mission_status"
 AGGREGATE_EVENT_TOPIC = "/aed/emergency_event"
 
-# mission_manager 가 로봇마다 따로 내는 배정 지시. 목표 좌표는 여기에만
-# 실려 온다. MissionStatus 에는 상태만 있고 좌표가 없어서, 이걸 안 받으면
-# 화면의 목표 좌표와 도착 예상이 영영 빈다.
+# emergency_mission_manager가 로봇마다 따로 내는 배정 지시. 목표 좌표는
+# 여기에만 실려 온다. MissionStatus 에는 상태만 있고 좌표가 없어서, 이걸
+# 안 받으면 화면의 목표 좌표와 도착 예상이 영영 빈다.
 #
 # DeliverAed action 으로 바뀌면 이 토픽은 사라지고 goal 이 같은 값을 싣는다.
 

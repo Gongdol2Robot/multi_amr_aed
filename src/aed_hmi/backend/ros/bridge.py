@@ -133,9 +133,12 @@ class RosBridge:
 
         node = self._node
         # 운영자가 지도에서 찍은 자리를 발행한다. 검출 노드가 내는 것과
-        # 같은 토픽·같은 타입이라 mission_manager 는 출처를 가리지 않는다.
+        # 같은 토픽·같은 타입이라 emergency_mission_manager는
+        # 출처를 가리지 않는다.
         self._event_publisher = node.create_publisher(
-            EmergencyEvent, topics.AGGREGATE_EVENT_TOPIC, topics.state_qos()
+            EmergencyEvent,
+            topics.AGGREGATE_EVENT_TOPIC,
+            topics.operator_event_qos(),
         )
 
         node.create_subscription(
@@ -235,7 +238,7 @@ class RosBridge:
                                 zone_id: str = "operator") -> str:
         """운영자가 지도에서 찍은 자리를 EmergencyEvent 로 낸다.
 
-        검출과 같은 토픽으로 낸다. mission_manager 는 카메라가 봤는지
+        검출과 같은 토픽으로 낸다. emergency_mission_manager는 카메라가 봤는지
         사람이 찍었는지를 가리지 않고 같은 규칙으로 배정한다. source_id 로
         만 구분이 남는다.
 
@@ -354,7 +357,9 @@ class RosBridge:
                 fresh=bool(data["fresh"]),
                 age_sec=None if age is None else float(age),
             )
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        except (
+            KeyError, TypeError, ValueError, json.JSONDecodeError
+        ) as error:
             LOGGER.warning("혼잡 구역 상태 형식 오류: %s", error)
             return
         self._on_crowd_zone(crowd_zone)

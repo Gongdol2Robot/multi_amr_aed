@@ -79,8 +79,8 @@ Action 을 손으로 흉내내고 있어, 취소·중복 방지를 `assignment_v
 | 이름 | 방식 | 타입 | 서버 | 클라이언트 |
 |---|---|---|---|---|
 | `/{robot_id}/deliver_aed` | **action** | `aed_interfaces/DeliverAed` | robot_missions | multi_robot_emergency |
-| `/aed/mission_status` | topic | `aed_interfaces/MissionStatus` | multi_robot_emergency | aed_hmi, event_logger |
-| `/aed/robot_state` | topic | `aed_interfaces/RobotState` | robot_state_monitor | multi_robot_emergency, aed_hmi |
+| `/aed/mission_status` | topic | `aed_interfaces/MissionStatus` | robot_missions, helper_mission | multi_robot_emergency, aed_hmi, event_logger |
+| `/aed/robot_state` | topic | `aed_interfaces/RobotState` | robot_state_monitor | aed_hmi |
 
 Action 을 쓰면 이렇게 정리됩니다.
 

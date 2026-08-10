@@ -31,12 +31,12 @@ ROS 인터페이스  →  ros/converters.py  →  domain 모델  →  store/repo
 
 | 토픽 | 자료형 | 발행 노드 | 구독 노드 | 상태 | DB 반영 |
 |---|---|---|---|---|---|
-| `/aed/robot_state` | `aed_interfaces/RobotState` | `robot_state_monitor` | `multi_robot_emergency`, `aed_hmi_bridge` | **뼈대** | `robot_samples` |
-| `/aed/mission_status` | `aed_interfaces/MissionStatus` | `multi_robot_emergency`, `mission_executor` | `aed_hmi_bridge`, `event_logger` | 동작 | `mission_events` |
+| `/aed/robot_state` | `aed_interfaces/RobotState` | `robot_state_monitor` | `aed_hmi_bridge` | 동작 | `robot_samples` |
+| `/aed/mission_status` | `aed_interfaces/MissionStatus` | `mission_executor`, `helper_mission` | `multi_robot_emergency`, `aed_hmi_bridge`, `event_logger` | 동작 | `mission_events` |
 | `/{robot_id}/mission_assignment` | `aed_interfaces/MissionAssignment` | `multi_robot_emergency` | `mission_executor` | 동작 | `mission_assignments` |
-| `/aed/emergency_event` | `aed_interfaces/EmergencyEvent` | (없음) | `multi_robot_emergency`, `aed_hmi_bridge` | **발행자 없음** | `emergency_events` |
-| `/{camera_id}/vision/emergency_event` | `aed_interfaces/EmergencyEvent` | `vision_detector` | `aed_hmi_bridge` | 동작 | `emergency_events` |
-| `/{camera_id}/vision/crowd_level` | `std_msgs/String` → `CrowdLevel` | `vision_detector` | `multi_robot_emergency`, `aed_hmi_bridge` | 동작(형 교체 예정) | 안 남김 |
+| `/aed/emergency_event` | `aed_interfaces/EmergencyEvent` | `aed_hmi_bridge`(지도 클릭·수동 신고) | `multi_robot_emergency`, `aed_hmi_bridge` | 동작 | `emergency_events` |
+| `/{camera_id}/vision/emergency_event` | `aed_interfaces/EmergencyEvent` | `vision_detector` | `multi_robot_emergency`, `aed_hmi_bridge` | 동작 | `emergency_events` |
+| `/{camera_id}/vision/crowd_level` | `aed_interfaces/CrowdLevel` | `vision_detector` | `multi_robot_emergency`, `aed_hmi_bridge` | 동작 | 안 남김 |
 | `/{camera_id}/vision/detection_summary` | `aed_interfaces/DetectionSummary` | `vision_detector` | `aed_hmi_bridge` | 동작 | 안 남김 |
 | `/{camera_id}/vision/debug/compressed` | `sensor_msgs/CompressedImage` | `vision_detector` | `aed_hmi_bridge` | 동작 | 안 남김 |
 | `/{camera_id}/vision/person_count` | `std_msgs/UInt32` | `vision_detector` | `aed_hmi_bridge` | 동작 | 안 남김 |
@@ -54,11 +54,12 @@ ROS 인터페이스  →  ros/converters.py  →  domain 모델  →  store/repo
 `python3 -m backend.main` 으로 뜨고, 그 안에서 별도 스레드로 이 노드를
 만든다. ROS 를 아는 코드가 `backend/ros/` 안에만 있어야 하기 때문이다.
 
-`/aed/emergency_event` 에 **발행자가 없다.** `vision_detector` 는 카메라별
-토픽에 내고 `multi_robot_emergency`는 통합 토픽을 듣는데 그 사이를 잇는 노드
-(`location_mapper`)가 아직 뼈대뿐이다. 그래서 지금은 검출이 출동으로
-이어지지 않는다. 화면은 두 경로를 모두 구독하고 있어 이어붙인 뒤에도
-고칠 것이 없다.
+`multi_robot_emergency`의 `emergency_mission_manager`는 공용
+`/aed/emergency_event`와 두 고정 카메라의
+`/{camera_id}/vision/emergency_event`를 모두 직접 구독합니다. 따라서 비전의
+`CONFIRMED` 이벤트는 별도 중계 노드 없이 출동 계산으로 이어집니다. HMI 지도
+클릭과 수동 신고는 공용 토픽을 사용하고, HMI 화면도 두 입력 경로를 모두
+구독합니다.
 
 ### Service — 한 번 묻고 즉시 답
 
@@ -342,19 +343,17 @@ PY
 
 ---
 
-## 6. 아직 이어지지 않은 곳
+## 6. 남은 인터페이스 전환 작업
 
-기능 통합 전이라 지금은 끊겨 있다. 리뷰에서 짚어야 할 자리다.
+현재 출동 경로는 연결되어 있습니다. 아래는 기능 단절이 아니라 향후 인터페이스
+정리 또는 확장 항목입니다.
 
 | 자리 | 지금 | 해야 할 일 | 막히는 것 |
 |---|---|---|---|
-| `location_mapper` | 29줄 뼈대 | 카메라별 이벤트를 `/aed/emergency_event` 로 중계 | **검출이 출동으로 안 이어짐** |
-| `robot_state_monitor` | 29줄 뼈대 | `RobotState` 발행 | **`robot_samples` 가 안 쌓임**, 로봇 카드가 빈칸 |
+| `location_mapper` | scaffold | 외부 신고 좌표 변환·검증 기능 구현 | 비전 출동에는 영향 없음(카메라 이벤트 직접 구독) |
+| `robot_state_monitor` | 구현 | 실기 토픽과 DB 표본 주기 검증 | 로봇 상태·경로비용 발행은 동작 |
 | `event_logger` | 29줄 뼈대 | `MissionStatus` 구독·기록 | 지금은 hmi 가 대신 기록 |
-| 좌표 | `vision_detector` 의 `location_x/y` 가 0.0 | 호모그래피로 픽셀→map 변환 | 좌표가 0,0 으로 남음 |
-| 카메라 이름 | 노드는 `camera_open`/`camera_alley`, 호모그래피 파일은 `homography_cam1/cam2.yaml` | 이름 맞추기 | 변환식을 못 찾음 |
 | 배정 | `MissionAssignment.msg` topic | `DeliverAed` action 으로 교체 | 취소·중복을 손으로 관리 |
-| 혼잡도 | `std_msgs/String` | `CrowdLevel.msg` 로 교체 | 판단 근거가 안 따라옴 |
 | `crowd_level` | 메시지에는 넣었으나 DB·화면이 안 읽음 | `emergency_events` 에 컬럼 추가 | "왜 2대가 갔나"를 못 되짚음 |
 | 속도 | `RobotState.speed_mps` 를 넣었으나 화면이 연속 pose 로 직접 계산 | monitor 가 채우면 그 값 쓰기 | 받는 쪽마다 값이 달라질 수 있음 |
 

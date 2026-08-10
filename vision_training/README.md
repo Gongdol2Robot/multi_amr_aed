@@ -216,7 +216,7 @@ ROS 2 환경을 먼저 source한 뒤 실행합니다.
 
 ```bash
 python3 vision_training/testing/turtlebot_yolo_test.py \
-  --topic /robot2/oakd/rgb/image_raw/compressed \
+  --topic /robot2/oakd/rgb/preview/image_raw \
   --device 0
 ```
 

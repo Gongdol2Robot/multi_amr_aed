@@ -11,7 +11,7 @@ event_id 로 "내가 찍은 그 신고"를 이력에서 찾는다. WebSocket 으
 왜 검출과 같은 토픽으로 내보내나
 --------------------------------
 `/aed/emergency_event` 에 `EmergencyEvent` 로 낸다. 카메라가 본 것과 같은
-토픽·같은 타입이다. mission_manager 는 출처를 가리지 않고 같은 규칙으로
+토픽·같은 타입이다. emergency_mission_manager는 출처를 가리지 않고 같은 규칙으로
 배정하고, 무엇이 신고했는지는 `source_id` 에만 남는다. 사람이 찍었다고
 다른 경로를 만들면 배정 규칙이 두 벌이 된다.
 

@@ -88,13 +88,16 @@ def check_topics(node: Node, namespace: str) -> bool:
 
 
 def check_camera(node: Node, namespace: str) -> bool:
-    from sensor_msgs.msg import CompressedImage
+    from sensor_msgs.msg import Image
 
-    topic = f"/{namespace}/oakd/rgb/image_raw/compressed"
-    rgb = wait_for(node, topic, CompressedImage)
+    topic = f"/{namespace}/oakd/rgb/preview/image_raw"
+    rgb = wait_for(node, topic, Image)
     return report(
         f"OAK-D RGB {topic}", rgb is not None,
-        f"{len(rgb.data)} bytes" if rgb else "메시지 없음",
+        (
+            f"{rgb.width}x{rgb.height} {rgb.encoding}"
+            if rgb else "메시지 없음"
+        ),
     )
 
 

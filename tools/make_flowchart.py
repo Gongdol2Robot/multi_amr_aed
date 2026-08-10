@@ -136,7 +136,6 @@ def across(canvas: Canvas, y: int, lines: list[str], accent=None) -> None:
 
 def build() -> str:
     c = Canvas()
-    RED, DIM = "var(--red)", "var(--dim)"
 
     # ── 제목 ────────────────────────────────────────────────────────────
     c.text(LEFT_X, 54, "Multi-AMR AED — main 기준 실제 배선", size=27,
@@ -177,26 +176,25 @@ def build() -> str:
         "상태가 바뀔 때만 (DETECTED→CONFIRMED→RESOLVED)",
     ])
 
-    # ── ③ location_mapper (끊김) ────────────────────────────────────────
-    y = node(c, y, "③ location_mapper  ·  카메라별 → 공용 토픽 중계",
-             "뼈대", [
-        "패키지와 노드는 있으나 콜백이 비어 있다 (29줄 scaffold)",
-        "이것이 없어서 검출이 출동으로 이어지지 않는다",
-    ], accent=RED)
+    # ── ③ 이벤트 입력 ──────────────────────────────────────────────────
+    y = node(c, y, "③ 응급 이벤트 입력  ·  비전 + HMI", "구현", [
+        "비전은 카메라별 EmergencyEvent를 중앙에 직접 전달한다",
+        "HMI 지도 클릭·수동 신고는 /aed/emergency_event를 사용한다",
+        "중앙은 CONFIRMED·location_valid만 출동 요청으로 바꾼다",
+    ])
     y = down(c, y, [
-        "/aed/emergency_event  ← 발행하는 노드가 없다",
+        "/{camera_id}/vision/emergency_event + /aed/emergency_event",
         "aed_interfaces/EmergencyEvent · RELIABLE depth 10",
-        "mission_manager 는 이 토픽을 듣고 있으나 아무것도 안 온다",
-    ], accent=RED)
+        "event_id 중복을 제거해 같은 검출의 반복 출동을 막는다",
+    ])
 
-    # ── ④ mission_manager ───────────────────────────────────────────────
+    # ── ④ emergency_mission_manager ─────────────────────────────────────
     y_manager = y
-    y = node(c, y, "④ mission_manager  ·  후보 순위와 배정", "구현", [
-        "구독 /aed/emergency_event (10) · /aed/robot_state (20)",
-        "        /aed/mission_status (20)",
-        "가용 조건: availability=AVAILABLE ∧ network_ok ∧ nav2_ok ∧ path_valid",
-        "순위: rank_candidates() — estimated_path_cost 오름차순",
-        "재할당: 실패 로봇을 빼고 assignment_version 을 올려 다시 배정",
+    y = node(c, y, "④ emergency_mission_manager  ·  ETA 배정", "구현", [
+        "두 /compute_path_to_pose Action에 실제 정지 목표를 동시 요청",
+        "경로 길이·회전·혼잡 지연을 합친 ETA가 짧은 로봇 우선",
+        "LiDAR 장애·경로 실패 로봇 제외, 실패 시 대체 로봇 재배정",
+        "목표시간 위험 시 2대 출동, assignment_version으로 과거 상태 차단",
     ])
     y = down(c, y, [
         "/{robot_id}/mission_assignment",
@@ -222,20 +220,20 @@ def build() -> str:
         "bt_navigator · planner · controller · AMCL (공용 지도 maps/map.yaml)",
         "출력 /{robot_id}/cmd_vel · geometry_msgs/Twist · 최대 0.20 m/s",
         "센서 /scan · /odom · /battery_state · /dock_status  (BEST_EFFORT)",
-        "카메라 /{robot_id}/oakd/rgb/image_raw/compressed (BEST_EFFORT)",
+        "카메라 /{robot_id}/oakd/rgb/preview/image_raw (BEST_EFFORT)",
     ])
     y = down(c, y, [
         "센서값을 모아 RobotState 로 옮기는 일",
         "/odom → 위치·속도 · /battery_state → 배터리 · /dock_status → 도킹",
-    ], accent=RED)
+    ])
 
-    # ── ⑦ robot_state_monitor (끊김) ────────────────────────────────────
+    # ── ⑦ robot_state_monitor ───────────────────────────────────────────
     y_state = y
-    y = node(c, y, "⑦ robot_state_monitor ×2  ·  로봇 상태 집계", "뼈대", [
-        "패키지와 노드는 있으나 콜백이 비어 있다 (29줄 scaffold)",
-        "이것이 없어서 관제의 로봇 카드가 빈칸으로 남는다",
-        "시연에서는 tools/demo_publisher.py 가 bag 의 odom·battery 를 옮긴다",
-    ], accent=RED)
+    y = node(c, y, "⑦ robot_state_monitor ×2  ·  로봇 상태 집계", "구현", [
+        "AMCL·배터리·도킹·Nav2 상태를 RobotState로 통합한다",
+        "응급 이벤트별 Nav2 경로비용과 path_valid를 함께 발행한다",
+        "관제 로봇 카드와 진단용 /aed/robot_state의 발행자다",
+    ])
     y_bottom_left = y
 
     # ── 관제로 가는 가로 화살표 (저마다 다른 높이) ──────────────────────
@@ -252,11 +250,11 @@ def build() -> str:
         "배정도 함께 구독한다 /{robot_id}/mission_assignment (목표 좌표)",
     ])
     across(c, y_state + 84, [
-        "/aed/robot_state  ← 발행하는 노드가 없다",
+        "/aed/robot_state",
         "aed_interfaces/RobotState · RELIABLE depth 20",
-        "관제는 구독하고 있으나 아무것도 안 온다",
+        "로봇 위치·배터리·가용성·경로비용을 관제에 전달한다",
         "AED_HMI_STATE_RELIABILITY=best_effort 로 BEST_EFFORT 전환 가능",
-    ], accent=RED)
+    ])
 
     # ── 오른쪽 기둥: 관제 ───────────────────────────────────────────────
     ry = TOP
@@ -319,20 +317,17 @@ def build() -> str:
             )
             iy += step
 
-    # ── 아래: 정의는 했으나 아직 아무도 안 쓰는 것 ──────────────────────
+    # ── 아래: 남은 인터페이스 정리 ──────────────────────────────────────
     fy = y_bottom_left + 56
     notes = [
-        ("정의만 해 두고 아직 쓰는 노드가 없는 인터페이스", [
+        ("향후 인터페이스 전환", [
             "action/DeliverAed        출동 지시. 지금은 MissionAssignment"
             " topic 이 그 자리를 대신한다",
             "srv/ReportEmergency      119·운영자 좌표 접수",
-            "msg/CrowdLevel           혼잡도. 지금은 std_msgs/String 이 나간다",
-            "msg/DetectionSummary     프레임당 검출 결과",
             "msg/SensorHealth         라이다 이상과 대체 주행 여부",
         ]),
-        ("main 에 없는 것", [
-            "multi_robot_emergency    ETA 예상·실측 비교. woduqAMR 브랜치에"
-            " 있다",
+        ("현재 중앙 관제 경로", [
+            "multi_robot_emergency    실제 Nav2 경로·ETA 비교와 재배정",
             "/emergency/eta/result    관제는 이미 구독한다"
             " (std_msgs/String 안의 JSON · TRANSIENT_LOCAL depth 10)",
         ]),
@@ -351,8 +346,7 @@ def build() -> str:
     body = "\n".join(c.parts)
     return (
         f'<svg viewBox="0 0 {W} {height}" role="img"'
-        f' aria-label="main 기준 실제 배선. 왼쪽은 ROS 흐름, 오른쪽은 관제.'
-        f' 빨간 상자 둘은 발행자가 없어 흐름이 멈추는 자리다.">\n'
+        f' aria-label="main 기준 실제 배선. 왼쪽은 ROS 흐름, 오른쪽은 관제.">\n'
         f'<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5"'
         f' markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
         f'<path d="M0 0 L10 5 L0 10 z" fill="context-stroke"/>'

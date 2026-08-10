@@ -157,8 +157,11 @@ ROS 실행 상태와 분리해 단위 테스트할 수 있고, 리뷰할 때도 
 /emergency/eta/result                       String (JSON)    (multi_robot_emergency)
 ```
 
-마지막 것만 QoS 가 다릅니다(`TRANSIENT_LOCAL`). 보내는 쪽과 맞추지 않으면
-ROS 2 는 연결을 아예 안 맺고 경고도 없습니다.
+HMI의 모든 구독은 `BEST_EFFORT`입니다. 영상은 최신 프레임 하나만 유지하고,
+상태·이벤트는 최근 20건을 유지합니다. ETA·LiDAR·fallback 상태는 HMI가 늦게
+실행돼도 최근 값을 받도록 `TRANSIENT_LOCAL`을 함께 사용합니다. 지도에서 직접
+찍은 긴급 좌표를 `/aed/emergency_event`로 내보내는 발행자만 출동 명령 유실을
+막기 위해 `RELIABLE`로 유지합니다.
 
 `camera_id`는 `camera_open`, `camera_alley`입니다(`aed_vision/config/*.yaml`).
 토픽은 환경변수로 바꿔 끼울 수 있습니다.

@@ -1,7 +1,7 @@
 """Pure LiDAR liveness state machine, independent of ROS runtime.
 
 Kept free of rclpy so the transition logic can be unit tested without
-spinning a node, mirroring mission_manager/role_assignment.py.
+spinning a node, like multi_robot_emergency/assignment.py.
 
 [CODE REVIEW]
 ROS Topic 수신과 시간 기반 상태 판정을 분리한 순수 상태 머신이다.

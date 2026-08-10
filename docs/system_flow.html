@@ -15,7 +15,7 @@
 </style>
 <p class="hint">브라우저에서 Ctrl + 휠 로 확대하면 글자가 깨지지 않습니다
 (그림이 SVG 라 배율을 올려도 선명합니다).</p>
-<svg viewBox="0 0 2040 2464" role="img" aria-label="main 기준 실제 배선. 왼쪽은 ROS 흐름, 오른쪽은 관제. 빨간 상자 둘은 발행자가 없어 흐름이 멈추는 자리다.">
+<svg viewBox="0 0 2040 2422" role="img" aria-label="main 기준 실제 배선. 왼쪽은 ROS 흐름, 오른쪽은 관제.">
 <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="context-stroke"/></marker></defs>
 <text x="48" y="54" font-size="27" font-weight="700" fill="currentColor" text-anchor="start" opacity="1.0">Multi-AMR AED — main 기준 실제 배선</text>
 <text x="48" y="84" font-size="15" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.75">토픽 이름·메시지 타입·QoS 를 화살표마다 적었습니다. 범례를 따로 찾아볼 필요가 없습니다.</text>
@@ -44,24 +44,24 @@
 <text x="244" y="671" font-size="14" font-weight="700" fill="currentColor" text-anchor="start" opacity="1.0" font-family="ui-monospace,monospace">/{camera_id}/vision/emergency_event</text>
 <text x="244" y="692" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85" font-family="ui-monospace,monospace">aed_interfaces/EmergencyEvent · RELIABLE depth 10</text>
 <text x="244" y="713" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">상태가 바뀔 때만 (DETECTED→CONFIRMED→RESOLVED)</text>
-<rect x="48" y="774" width="860" height="102" rx="6" fill="currentColor" fill-opacity="0.04" stroke="var(--red)" stroke-width="2.5" stroke-dasharray="7 5"/>
-<text x="68" y="804" font-size="19" font-weight="700" fill="var(--red)" text-anchor="start" opacity="1.0">③ location_mapper  ·  카메라별 → 공용 토픽 중계</text>
-<text x="888" y="804" font-size="14" font-weight="700" fill="var(--red)" text-anchor="end" opacity="0.9">[뼈대 · 콜백 없음]</text>
-<text x="68" y="832" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">패키지와 노드는 있으나 콜백이 비어 있다 (29줄 scaffold)</text>
-<text x="68" y="853" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">이것이 없어서 검출이 출동으로 이어지지 않는다</text>
-<line x1="168" y1="876" x2="168" y2="1038" stroke="var(--red)" stroke-width="2.5" marker-end="url(#a)"/>
-<rect x="228" y="915" width="680" height="89" rx="6" fill="currentColor" fill-opacity="0.04" stroke="var(--red)" stroke-width="2.5"/>
-<text x="244" y="941" font-size="14" font-weight="700" fill="var(--red)" text-anchor="start" opacity="1.0" font-family="ui-monospace,monospace">/aed/emergency_event  ← 발행하는 노드가 없다</text>
-<text x="244" y="962" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85" font-family="ui-monospace,monospace">aed_interfaces/EmergencyEvent · RELIABLE depth 10</text>
-<text x="244" y="983" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">mission_manager 는 이 토픽을 듣고 있으나 아무것도 안 온다</text>
-<rect x="48" y="1044" width="860" height="165" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.8"/>
-<text x="68" y="1074" font-size="19" font-weight="700" fill="currentColor" text-anchor="start" opacity="1.0">④ mission_manager  ·  후보 순위와 배정</text>
-<text x="888" y="1074" font-size="14" font-weight="700" fill="currentColor" text-anchor="end" opacity="0.9">[구현]</text>
-<text x="68" y="1102" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">구독 /aed/emergency_event (10) · /aed/robot_state (20)</text>
-<text x="68" y="1123" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">        /aed/mission_status (20)</text>
-<text x="68" y="1144" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">가용 조건: availability=AVAILABLE ∧ network_ok ∧ nav2_ok ∧ path_valid</text>
-<text x="68" y="1165" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">순위: rank_candidates() — estimated_path_cost 오름차순</text>
-<text x="68" y="1186" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">재할당: 실패 로봇을 빼고 assignment_version 을 올려 다시 배정</text>
+<rect x="48" y="774" width="860" height="123" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.8"/>
+<text x="68" y="804" font-size="19" font-weight="700" fill="currentColor" text-anchor="start" opacity="1.0">③ 응급 이벤트 입력  ·  비전 + HMI</text>
+<text x="888" y="804" font-size="14" font-weight="700" fill="currentColor" text-anchor="end" opacity="0.9">[구현]</text>
+<text x="68" y="832" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">비전은 카메라별 EmergencyEvent를 중앙에 직접 전달한다</text>
+<text x="68" y="853" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">HMI 지도 클릭·수동 신고는 /aed/emergency_event를 사용한다</text>
+<text x="68" y="874" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">중앙은 CONFIRMED·location_valid만 출동 요청으로 바꾼다</text>
+<line x1="168" y1="897" x2="168" y2="1059" stroke="currentColor" stroke-width="2.5" marker-end="url(#a)"/>
+<rect x="228" y="936" width="680" height="89" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.8"/>
+<text x="244" y="962" font-size="14" font-weight="700" fill="currentColor" text-anchor="start" opacity="1.0" font-family="ui-monospace,monospace">/{camera_id}/vision/emergency_event + /aed/emergency_event</text>
+<text x="244" y="983" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85" font-family="ui-monospace,monospace">aed_interfaces/EmergencyEvent · RELIABLE depth 10</text>
+<text x="244" y="1004" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">event_id 중복을 제거해 같은 검출의 반복 출동을 막는다</text>
+<rect x="48" y="1065" width="860" height="144" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.8"/>
+<text x="68" y="1095" font-size="19" font-weight="700" fill="currentColor" text-anchor="start" opacity="1.0">④ emergency_mission_manager  ·  ETA 배정</text>
+<text x="888" y="1095" font-size="14" font-weight="700" fill="currentColor" text-anchor="end" opacity="0.9">[구현]</text>
+<text x="68" y="1123" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">두 /compute_path_to_pose Action에 실제 정지 목표를 동시 요청</text>
+<text x="68" y="1144" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">경로 길이·회전·혼잡 지연을 합친 ETA가 짧은 로봇 우선</text>
+<text x="68" y="1165" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">LiDAR 장애·경로 실패 로봇 제외, 실패 시 대체 로봇 재배정</text>
+<text x="68" y="1186" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">목표시간 위험 시 2대 출동, assignment_version으로 과거 상태 차단</text>
 <line x1="168" y1="1209" x2="168" y2="1371" stroke="currentColor" stroke-width="2.5" marker-end="url(#a)"/>
 <rect x="228" y="1238" width="680" height="110" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.8"/>
 <text x="244" y="1264" font-size="14" font-weight="700" fill="currentColor" text-anchor="start" opacity="1.0" font-family="ui-monospace,monospace">/{robot_id}/mission_assignment</text>
@@ -86,33 +86,33 @@
 <text x="68" y="1747" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">출력 /{robot_id}/cmd_vel · geometry_msgs/Twist · 최대 0.20 m/s</text>
 <text x="68" y="1768" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">센서 /scan · /odom · /battery_state · /dock_status  (BEST_EFFORT)</text>
 <text x="68" y="1789" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">카메라 /{robot_id}/oakd/rgb/image_raw/compressed (BEST_EFFORT)</text>
-<line x1="168" y1="1812" x2="168" y2="1974" stroke="var(--red)" stroke-width="2.5" marker-end="url(#a)"/>
-<rect x="228" y="1862" width="680" height="68" rx="6" fill="currentColor" fill-opacity="0.04" stroke="var(--red)" stroke-width="2.5"/>
-<text x="244" y="1888" font-size="14" font-weight="700" fill="var(--red)" text-anchor="start" opacity="1.0">센서값을 모아 RobotState 로 옮기는 일</text>
+<line x1="168" y1="1812" x2="168" y2="1974" stroke="currentColor" stroke-width="2.5" marker-end="url(#a)"/>
+<rect x="228" y="1862" width="680" height="68" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.8"/>
+<text x="244" y="1888" font-size="14" font-weight="700" fill="currentColor" text-anchor="start" opacity="1.0">센서값을 모아 RobotState 로 옮기는 일</text>
 <text x="244" y="1909" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85" font-family="ui-monospace,monospace">/odom → 위치·속도 · /battery_state → 배터리 · /dock_status → 도킹</text>
-<rect x="48" y="1980" width="860" height="123" rx="6" fill="currentColor" fill-opacity="0.04" stroke="var(--red)" stroke-width="2.5" stroke-dasharray="7 5"/>
-<text x="68" y="2010" font-size="19" font-weight="700" fill="var(--red)" text-anchor="start" opacity="1.0">⑦ robot_state_monitor ×2  ·  로봇 상태 집계</text>
-<text x="888" y="2010" font-size="14" font-weight="700" fill="var(--red)" text-anchor="end" opacity="0.9">[뼈대 · 콜백 없음]</text>
-<text x="68" y="2038" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">패키지와 노드는 있으나 콜백이 비어 있다 (29줄 scaffold)</text>
-<text x="68" y="2059" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">이것이 없어서 관제의 로봇 카드가 빈칸으로 남는다</text>
-<text x="68" y="2080" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">시연에서는 tools/demo_publisher.py 가 bag 의 odom·battery 를 옮긴다</text>
+<rect x="48" y="1980" width="860" height="123" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.8"/>
+<text x="68" y="2010" font-size="19" font-weight="700" fill="currentColor" text-anchor="start" opacity="1.0">⑦ robot_state_monitor ×2  ·  로봇 상태 집계</text>
+<text x="888" y="2010" font-size="14" font-weight="700" fill="currentColor" text-anchor="end" opacity="0.9">[구현]</text>
+<text x="68" y="2038" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">AMCL·배터리·도킹·Nav2 상태를 RobotState로 통합한다</text>
+<text x="68" y="2059" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">응급 이벤트별 Nav2 경로비용과 path_valid를 함께 발행한다</text>
+<text x="68" y="2080" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">관제 로봇 카드와 진단용 /aed/robot_state의 발행자다</text>
 <line x1="908" y1="537" x2="1494" y2="537" stroke="currentColor" stroke-width="2.5" marker-end="url(#a)"/>
 <rect x="940" y="482" width="520" height="110" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.8"/>
 <text x="956" y="508" font-size="14" font-weight="700" fill="currentColor" text-anchor="start" opacity="1.0" font-family="ui-monospace,monospace">/{camera_id}/vision/debug/compressed</text>
 <text x="956" y="529" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">sensor_msgs/CompressedImage · BEST_EFFORT depth 1 · 15 Hz</text>
 <text x="956" y="550" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">검출 상자가 그려진 그림. 최신 프레임만 의미가 있어 밀리면 버린다</text>
 <text x="956" y="571" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">함께: /{camera_id}/vision/person_count · std_msgs/UInt32 · RELIABLE</text>
-<line x1="908" y1="1152" x2="1494" y2="1152" stroke="currentColor" stroke-width="2.5" marker-end="url(#a)"/>
-<rect x="940" y="1097" width="520" height="110" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.8"/>
-<text x="956" y="1123" font-size="14" font-weight="700" fill="currentColor" text-anchor="start" opacity="1.0" font-family="ui-monospace,monospace">/aed/mission_status</text>
-<text x="956" y="1144" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">aed_interfaces/MissionStatus · RELIABLE depth 20</text>
-<text x="956" y="1165" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">상태 14종. 한 번만 오므로 놓치면 그 기록이 영영 없다</text>
-<text x="956" y="1186" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">배정도 함께 구독한다 /{robot_id}/mission_assignment (목표 좌표)</text>
-<line x1="908" y1="2064" x2="1494" y2="2064" stroke="var(--red)" stroke-width="2.5" marker-end="url(#a)"/>
-<rect x="940" y="2009" width="520" height="110" rx="6" fill="currentColor" fill-opacity="0.04" stroke="var(--red)" stroke-width="2.5"/>
-<text x="956" y="2035" font-size="14" font-weight="700" fill="var(--red)" text-anchor="start" opacity="1.0" font-family="ui-monospace,monospace">/aed/robot_state  ← 발행하는 노드가 없다</text>
+<line x1="908" y1="1173" x2="1494" y2="1173" stroke="currentColor" stroke-width="2.5" marker-end="url(#a)"/>
+<rect x="940" y="1118" width="520" height="110" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.8"/>
+<text x="956" y="1144" font-size="14" font-weight="700" fill="currentColor" text-anchor="start" opacity="1.0" font-family="ui-monospace,monospace">/aed/mission_status</text>
+<text x="956" y="1165" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">aed_interfaces/MissionStatus · RELIABLE depth 20</text>
+<text x="956" y="1186" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">상태 14종. 한 번만 오므로 놓치면 그 기록이 영영 없다</text>
+<text x="956" y="1207" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">배정도 함께 구독한다 /{robot_id}/mission_assignment (목표 좌표)</text>
+<line x1="908" y1="2064" x2="1494" y2="2064" stroke="currentColor" stroke-width="2.5" marker-end="url(#a)"/>
+<rect x="940" y="2009" width="520" height="110" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.8"/>
+<text x="956" y="2035" font-size="14" font-weight="700" fill="currentColor" text-anchor="start" opacity="1.0" font-family="ui-monospace,monospace">/aed/robot_state</text>
 <text x="956" y="2056" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">aed_interfaces/RobotState · RELIABLE depth 20</text>
-<text x="956" y="2077" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">관제는 구독하고 있으나 아무것도 안 온다</text>
+<text x="956" y="2077" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">로봇 위치·배터리·가용성·경로비용을 관제에 전달한다</text>
 <text x="956" y="2098" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.85">AED_HMI_STATE_RELIABILITY=best_effort 로 BEST_EFFORT 전환 가능</text>
 <rect x="1500" y="150" width="500" height="1953" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.8"/>
 <text x="1522" y="184" font-size="19" font-weight="700" fill="currentColor" text-anchor="start" opacity="1.0">aed_hmi  ·  관제</text>
@@ -149,15 +149,13 @@
 <text x="1538" y="2017" font-size="15" font-weight="700" fill="currentColor" text-anchor="start" opacity="1.0">React + TypeScript  ·  :5173</text>
 <text x="1538" y="2039" font-size="13" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.82">4분할 영상 · 로봇 카드 · 경보 배너 · 출동 이력</text>
 <text x="1538" y="2060" font-size="13" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.82">타입은 domain/models.py 와 1:1</text>
-<rect x="48" y="2159" width="1944" height="149" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.8" stroke-dasharray="7 5"/>
-<text x="68" y="2185" font-size="16" font-weight="700" fill="currentColor" text-anchor="start" opacity="0.9">정의만 해 두고 아직 쓰는 노드가 없는 인터페이스</text>
+<rect x="48" y="2159" width="1944" height="107" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.8" stroke-dasharray="7 5"/>
+<text x="68" y="2185" font-size="16" font-weight="700" fill="currentColor" text-anchor="start" opacity="0.9">향후 인터페이스 전환</text>
 <text x="68" y="2209" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.8" font-family="ui-monospace,monospace">action/DeliverAed        출동 지시. 지금은 MissionAssignment topic 이 그 자리를 대신한다</text>
 <text x="68" y="2230" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.8" font-family="ui-monospace,monospace">srv/ReportEmergency      119·운영자 좌표 접수</text>
-<text x="68" y="2251" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.8" font-family="ui-monospace,monospace">msg/CrowdLevel           혼잡도. 지금은 std_msgs/String 이 나간다</text>
-<text x="68" y="2272" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.8" font-family="ui-monospace,monospace">msg/DetectionSummary     프레임당 검출 결과</text>
-<text x="68" y="2293" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.8" font-family="ui-monospace,monospace">msg/SensorHealth         라이다 이상과 대체 주행 여부</text>
-<rect x="48" y="2328" width="1944" height="86" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.8" stroke-dasharray="7 5"/>
-<text x="68" y="2354" font-size="16" font-weight="700" fill="currentColor" text-anchor="start" opacity="0.9">main 에 없는 것</text>
-<text x="68" y="2378" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.8" font-family="ui-monospace,monospace">multi_robot_emergency    ETA 예상·실측 비교. woduqAMR 브랜치에 있다</text>
-<text x="68" y="2399" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.8" font-family="ui-monospace,monospace">/emergency/eta/result    관제는 이미 구독한다 (std_msgs/String 안의 JSON · TRANSIENT_LOCAL depth 10)</text>
+<text x="68" y="2251" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.8" font-family="ui-monospace,monospace">msg/SensorHealth         라이다 이상과 대체 주행 여부</text>
+<rect x="48" y="2286" width="1944" height="86" rx="6" fill="currentColor" fill-opacity="0.04" stroke="currentColor" stroke-width="1.8" stroke-dasharray="7 5"/>
+<text x="68" y="2312" font-size="16" font-weight="700" fill="currentColor" text-anchor="start" opacity="0.9">현재 중앙 관제 경로</text>
+<text x="68" y="2336" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.8" font-family="ui-monospace,monospace">multi_robot_emergency    실제 Nav2 경로·ETA 비교와 재배정</text>
+<text x="68" y="2357" font-size="14" font-weight="400" fill="currentColor" text-anchor="start" opacity="0.8" font-family="ui-monospace,monospace">/emergency/eta/result    관제는 이미 구독한다 (std_msgs/String 안의 JSON · TRANSIENT_LOCAL depth 10)</text>
 </svg>

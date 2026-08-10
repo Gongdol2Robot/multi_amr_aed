@@ -64,8 +64,8 @@ ros2 topic echo /robot2/lidar_state --qos-durability transient_local
 
 `aed_interfaces/msg/RobotState`에는 아직 LiDAR 전용 필드(`lidar_alive`,
 `fault_code`, `last_scan_age` 등)가 없어 이번 단계에서는 최소 `Bool`/`String`
-토픽으로 단독 검증합니다. `RobotState` 확장 여부는 `mission_manager`/`aed_interfaces`
-담당자와 협의가 필요합니다.
+토픽으로 단독 검증합니다. `RobotState` 확장 여부는
+`multi_robot_emergency`/`aed_interfaces` 담당자와 협의가 필요합니다.
 
 ### Run
 

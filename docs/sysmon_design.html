@@ -583,22 +583,22 @@
 </div>
 
 <!-- ============================================================ -->
-<h2>6. 아직 이어지지 않은 곳</h2>
+<h2>6. 남은 인터페이스 전환 작업</h2>
 
 <p>
-  기능 통합 전이라 끊겨 있는 자리입니다. 관제 쪽은 두 경로를 모두 구독해
-  두어, 이어붙인 뒤에도 고칠 것이 없습니다.
+  비전 이벤트는 <code>emergency_mission_manager</code>가 카메라별 토픽을 직접
+  구독하므로 출동 경로가 연결되어 있습니다. 아래는 향후 정리 항목입니다.
 </p>
 
 <table>
   <tr><th>자리</th><th>지금</th><th>막히는 것</th></tr>
   <tr>
-    <td><code>location_mapper</code></td><td>29줄 뼈대</td>
-    <td><b>검출이 출동으로 안 이어짐.</b> <code>vision_detector</code> 는 카메라별 토픽에 내고 <code>mission_manager</code> 는 통합 토픽을 듣는다</td>
+    <td><code>location_mapper</code></td><td>scaffold</td>
+    <td>외부 신고 좌표 변환용 확장 자리. 비전 출동은 카메라 이벤트를 직접 구독한다</td>
   </tr>
   <tr>
-    <td><code>robot_state_monitor</code></td><td>29줄 뼈대</td>
-    <td><code>robot_samples</code> 가 안 쌓이고 로봇 카드가 빈칸</td>
+    <td><code>robot_state_monitor</code></td><td>구현</td>
+    <td>로봇 상태와 이벤트별 경로비용을 발행한다</td>
   </tr>
   <tr>
     <td>배정 인터페이스</td><td><code>MissionAssignment</code> topic</td>

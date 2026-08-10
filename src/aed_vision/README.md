@@ -203,16 +203,24 @@ CPU에서 `robot_approach.mp4`의 동일한 6개 프레임을 비교했을 때 w
 | `/<camera_id>/vision/heartbeat` | `aed_interfaces/Heartbeat` | 초당 노드 생존 신호 |
 | `/<camera_id>/vision/debug/compressed` | `sensor_msgs/CompressedImage` | bbox와 ROI가 표시된 JPEG |
 
-로봇 OAK-D 모드는 로봇에서 이미 발행하는 JPEG 압축 영상을 구독합니다.
+로봇 OAK-D 모드는 로봇에서 이미 발행하는 저해상도 preview 영상을 구독합니다.
+HMI에서도 카메라의 전체 시야를 유지하도록 운영 입력은 아래 토픽으로
+고정합니다.
 
 ```text
-/robotN/oakd/rgb/image_raw/compressed  (sensor_msgs/CompressedImage)
+/robotN/oakd/rgb/preview/image_raw  (sensor_msgs/Image)
 ```
 
-노트북에서 JPEG를 디코딩한 뒤 `robot_camera.yaml`에 설정된 추론 파이프라인에
-입력합니다. 로봇 비전의 backend, confidence와 조력자 판정 기준은 launch 인자가
+노트북에서 preview Image를 BGR로 변환한 뒤 `robot_camera.yaml`에 설정된 추론
+파이프라인에 입력합니다. HMI는 이 입력을 직접 구독하지 않고 중앙 비전 노드가
+발행한 `/robotN/vision/debug/compressed`만 표시합니다. 로봇 비전의 backend,
+confidence와 조력자 판정 기준은 launch 인자가
 덮어쓰지 않으며 이 YAML을 단일 기준으로 사용합니다.
 라즈베리파이에는 모델이나 추가 추론 프로세스를 설치하지 않습니다.
+
+`preview/image_raw`는 저해상도지만 비압축 `sensor_msgs/Image`이므로 네트워크
+트래픽이 자동으로 줄어드는 것은 아닙니다. 대역폭 절감이 필요하면 로봇에서
+preview 압축 토픽을 별도로 발행한 뒤 중앙 입력을 그 토픽으로 바꿔야 합니다.
 
 로봇의 조력자 후보는 환자와 같은 프레임에 있어야 하며, 조력자 bbox 하단
 중심과 쓰러진 환자 bbox 중심 사이 거리가 화면 대각선의 30% 이내여야 합니다.
@@ -322,8 +330,8 @@ ros2 run rqt_image_view rqt_image_view \
   /robot2_test/vision/debug/compressed
 ```
 
-기본 입력은 `/robot2/oakd/rgb/image_raw/compressed`이고, 다른 녹화·카메라
-토픽을 시험하려면 `image_topic:=/원하는/압축영상/토픽`으로 바꿀 수 있습니다.
+기본 입력은 `/robot2/oakd/rgb/preview/image_raw`이고, 다른 raw Image 카메라
+토픽을 시험하려면 `image_topic:=/원하는/Image/토픽`으로 바꿀 수 있습니다.
 테스트 결과 토픽은 `/robot2_test/vision/*`로 분리되어 운영 결과와 충돌하지
 않습니다.
 

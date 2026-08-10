@@ -27,20 +27,20 @@ fallback을 함께 시작합니다. 이미 Nav2가 실행 중인 진단 상황�
 
 ## Central dispatch
 
-각 로봇 PC에서 Nav2를 따로 실행한 뒤 중앙 PC에서 경로비용 계산과 미션 배정을
-실행합니다. 이 런치는 Nav2나 RViz를 실행하지 않습니다.
+각 로봇 PC에서 Nav2를 따로 실행한 뒤 중앙 PC에서 실제 Nav2 경로와 ETA를
+비교해 미션을 배정합니다. 중앙 런치는 Nav2나 RViz를 실행하지 않습니다.
 
 ```bash
-ros2 launch aed_bringup central_dispatch.launch.py
+ros2 launch multi_robot_emergency central_dispatch.launch.py
 ```
 
-기본값은 거리 비교 전용입니다. RViz의 **Publish Point**로 좌표를 클릭하면
-로봇별 Nav2 경로거리와 선택 결과를 발행합니다.
+기본값은 계산 전용입니다. RViz의 **Publish Point**로 좌표를 클릭하거나 비전이
+`CONFIRMED` 이벤트를 발행하면 로봇별 Nav2 경로거리와 선택 결과를 발행합니다.
 
 ```bash
-ros2 topic echo /aed/path_distance/robot1
-ros2 topic echo /aed/path_distance/robot2
-ros2 topic echo /aed/selected_robot
+ros2 topic echo /emergency/path_distance/robot1
+ros2 topic echo /emergency/path_distance/robot2
+ros2 topic echo /emergency/selected_robot
 ```
 
 ## 중앙 노트북 통합 실행

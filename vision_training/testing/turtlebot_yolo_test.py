@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """TurtleBot OAK-D RGB 토픽으로 학습된 YOLO 모델을 실시간 테스트한다.
 
-기본 입력은 ``/robot2/oakd/rgb/image_raw/compressed``이다. 화면에서 q 또는
+기본 입력은 ``/robot2/oakd/rgb/preview/image_raw``이다. 화면에서 q 또는
 ESC를 누르면 종료한다.
 """
 
@@ -20,7 +20,7 @@ DEFAULT_WEIGHTS = (
     / "weights"
     / "best.pt"
 )
-DEFAULT_TOPIC = "/robot2/oakd/rgb/image_raw/compressed"
+DEFAULT_TOPIC = "/robot2/oakd/rgb/preview/image_raw"
 
 
 def parse_args() -> argparse.Namespace:
@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--topic",
         default=DEFAULT_TOPIC,
-        help=f"OAK-D 압축 RGB 토픽 (기본: {DEFAULT_TOPIC})",
+        help=f"OAK-D preview Image 토픽 (기본: {DEFAULT_TOPIC})",
     )
     parser.add_argument("--conf", type=float, default=0.4)
     parser.add_argument("--iou", type=float, default=0.5)
@@ -77,8 +77,8 @@ def main() -> int:
 
     try:
         import cv2
-        import numpy as np
         import rclpy
+        from aed_vision.vision_detector import raw_image_to_bgr
         from rclpy.node import Node
         from rclpy.qos import (
             DurabilityPolicy,
@@ -86,7 +86,7 @@ def main() -> int:
             QoSProfile,
             ReliabilityPolicy,
         )
-        from sensor_msgs.msg import CompressedImage
+        from sensor_msgs.msg import Image
         from ultralytics import YOLO
     except ImportError as exc:
         raise SystemExit(
@@ -131,19 +131,19 @@ def main() -> int:
                 durability=DurabilityPolicy.VOLATILE,
             )
             self.subscription = self.create_subscription(
-                CompressedImage, args.topic, self.image_callback, qos
+                Image, args.topic, self.image_callback, qos
             )
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
             self.get_logger().info(f"모델: {weights}")
             self.get_logger().info(f"입력: {args.topic}")
             self.get_logger().info("종료: 화면에서 q 또는 ESC")
 
-        def image_callback(self, message: CompressedImage) -> None:
-            encoded = np.frombuffer(message.data, dtype=np.uint8)
-            frame = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
-            if frame is None:
+        def image_callback(self, message: Image) -> None:
+            try:
+                frame = raw_image_to_bgr(message)
+            except ValueError as error:
                 self.get_logger().warning(
-                    "압축 이미지를 디코딩하지 못했습니다.",
+                    f"preview 이미지를 변환하지 못했습니다: {error}",
                     throttle_duration_sec=5.0,
                 )
                 return

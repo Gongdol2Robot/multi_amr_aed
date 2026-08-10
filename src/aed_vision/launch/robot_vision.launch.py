@@ -32,12 +32,13 @@ def _create_robot_vision(context):
                 {
                     "camera_id": robot_id,
                     "zone_id": f"{robot_id}_view",
-                    # 로봇이 이미 발행하는 JPEG를 사용해 raw preview가 Nav2의
-                    # scan/TF와 Wi-Fi 대역폭을 경쟁하지 않게 한다.
+                    # HMI에서도 잘리지 않은 전체 시야를 쓰도록 OAK-D의
+                    # 저해상도 preview를 운영 입력으로 사용한다. 이 토픽은
+                    # 비압축 Image라 네트워크 절감 수단으로 간주하지 않는다.
                     "image_topic": (
-                        f"/{robot_id}/oakd/rgb/image_raw/compressed"
+                        f"/{robot_id}/oakd/rgb/preview/image_raw"
                     ),
-                    "image_is_compressed": True,
+                    "image_is_compressed": False,
                     "frame_id": f"{robot_id}/oakd_rgb_camera_optical_frame",
                 },
             ],
