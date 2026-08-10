@@ -15,6 +15,7 @@ setup(
         ("share/" + package_name, ["package.xml"]),
     ],
     install_requires=["setuptools"],
+    extras_require={"test": ["pytest"]},
     zip_safe=True,
     maintainer="multi_amr_aed team",
     maintainer_email="team@example.com",
@@ -23,7 +24,7 @@ setup(
     entry_points={
         "console_scripts": [
             "mission_executor = robot_missions.mission_executor:main",
+            "search_and_detect = robot_missions.search_and_detect_node:main",
         ],
     },
 )
-

@@ -95,10 +95,11 @@ ros2 launch aed_vision camera_vision.launch.py \
   camera:=1 backend:=mannequin
 ```
 
-기본값은 실제 출동을 막아 둡니다. 실제 주행 시에만 명시적으로 켭니다.
+통합 런타임은 현재 실제 출동이 기본으로 활성화되어 있습니다. 화면과 비전만
+시험할 때는 명시적으로 끕니다.
 
 ```bash
-ros2 launch aed_bringup server_runtime.launch.py dispatch_enabled:=true
+ros2 launch aed_bringup server_runtime.launch.py dispatch_enabled:=false
 ```
 
 `tools/aliases.sh`를 불러온 터미널에서는 기존과 동일하게 다음 단축 명령을
@@ -113,6 +114,9 @@ central true
 `true/false`는 HMI 실행 여부가 아니라 실제 로봇 출동 허용 여부입니다.
 목각인형이 기본 backend이므로 기존 명령을 그대로 사용합니다. 실제 사람
 Pose 모드만 `centralp`로 구분합니다.
+
+인자 없이 `central`, `centralp`, `centralm`을 실행하면 실제 출동이
+활성화됩니다. 비주행 시험에서는 반드시 첫 번째 인자로 `false`를 줍니다.
 
 ```bash
 central false           # HMI 포함 전체 런타임, 목각인형, 출동 비활성

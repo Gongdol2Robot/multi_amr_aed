@@ -151,7 +151,9 @@ loc() {
 
 initpose() {
   local n=${1:-1}
-  shift 2>/dev/null || true
+  if [ "$#" -gt 0 ]; then
+    shift
+  fi
   python3 "$AED_WS/tools/initpose.py" "$n" "$@"
 }
 
@@ -222,21 +224,21 @@ central() {
 
 # 비전 backend별 통합 런타임 단축어. 첫 번째 선택 인자는 실제 출동 여부다.
 centralperson() {
-  central "${1:-false}" 30.0 0.85 true person_pose
+  central "${1:-true}" 30.0 0.85 true person_pose
 }
 
 centralmannequin() {
-  central "${1:-false}" 30.0 0.85 true mannequin
+  central "${1:-true}" 30.0 0.85 true mannequin
 }
 
 # mannequin이 기본이므로 목각인형 모드는 기존 central을 그대로 사용한다.
 # 실제 사람 Pose 모드만 짧게 구분한다.
 centralp() {
-  centralperson "${1:-false}"
+  centralperson "${1:-true}"
 }
 
 centralm() {
-  centralmannequin "${1:-false}"
+  centralmannequin "${1:-true}"
 }
 
 # 고정 USB 카메라만 시험할 때 사용한다. 선택 인자는 카메라 번호(기본 1)다.
@@ -250,6 +252,11 @@ visionmannequin() {
   aedenv
   ros2 launch aed_vision camera_vision.launch.py \
     camera:="${1:-1}" backend:=mannequin
+}
+
+# 예전 detect/vision 사용법은 카메라 1 목각인형 모드로 호환한다.
+vision() {
+  visionmannequin "${1:-1}"
 }
 
 executor() {

@@ -1,4 +1,6 @@
-"""Pause Nav2 and follow a freshly map-planned path via odometry + depth
+"""Drive a map-planned fallback path while LiDAR is unavailable.
+
+Pause Nav2 and follow a freshly map-planned path via odometry + depth
 safety stop while LiDAR is FAULT/RECOVERING; report SUCCEEDED/FAILED
 explicitly and request a replacement robot on FAILED. Resume Nav2 once
 LiDAR is ALIVE again, but only if no replacement was already dispatched.
@@ -173,7 +175,9 @@ class FallbackPathFollower(Node):
             PoseStamped, "fallback_debug/estimated_pose", 10
         )
 
-        self.create_subscription(String, "lidar_state", self._on_lidar_state, 10)
+        self.create_subscription(
+            String, "lidar_state", self._on_lidar_state, _STATUS_QOS
+        )
         self.create_subscription(Path, "plan", self._on_plan, 10)
         self.create_subscription(
             GoalStatusArray,
@@ -285,7 +289,7 @@ class FallbackPathFollower(Node):
         self.declare_parameter("allow_insufficient_depth_motion", False)
         self.declare_parameter("require_active_nav_goal", True)
         self.declare_parameter("prefer_saved_nav2_path", True)
-        self.declare_parameter("resume_nav2_after_failure", True)
+        self.declare_parameter("resume_nav2_after_failure", False)
         self.declare_parameter("allow_unknown_cells", False)
         self.declare_parameter("debug_enabled", False)
         self.declare_parameter("enable_manual_trigger", False)

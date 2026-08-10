@@ -8,7 +8,6 @@ import logging
 import math
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 from .domain.enums import MissionState, RobotRole
 from .domain.models import MissionEvent, Point2D

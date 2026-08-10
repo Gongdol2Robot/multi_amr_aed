@@ -179,8 +179,16 @@ def generate_launch_description() -> LaunchDescription:
                 "frontend_dir",
                 default_value=PathJoinSubstitution(
                     [
-                        EnvironmentVariable("HOME"),
-                        "multi_amr_aed",
+                        EnvironmentVariable(
+                            "AED_WS",
+                            default_value=PathJoinSubstitution(
+                                [
+                                    EnvironmentVariable("HOME"),
+                                    "rokey_ws",
+                                    "multi_amr_aed",
+                                ]
+                            ),
+                        ),
                         "src",
                         "aed_hmi",
                         "frontend",

@@ -1,4 +1,6 @@
-"""On LiDAR FAULT: stop this robot's Nav2 goal and publish a replacement
+"""Request a replacement instead of driving a fallback path.
+
+On LiDAR FAULT, stop this robot's Nav2 goal and publish a replacement
 request (with the pending destination) for a human or another system to
 act on. Does not drive the robot itself — see fallback_path_follower.py
 for the (currently set aside) blind cmd_vel-driving alternative. Don't run
@@ -61,7 +63,9 @@ class ReplacementRequestNode(Node):
             PoseStamped, "pending_goal", _STATUS_QOS
         )
 
-        self.create_subscription(String, "lidar_state", self._on_lidar_state, 10)
+        self.create_subscription(
+            String, "lidar_state", self._on_lidar_state, _STATUS_QOS
+        )
         self.create_subscription(Path, "plan", self._on_plan, 10)
 
         self._nav_client = ActionClient(self, NavigateToPose, navigate_action)
