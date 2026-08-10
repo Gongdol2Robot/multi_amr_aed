@@ -134,6 +134,12 @@ def generate_launch_description() -> LaunchDescription:
                 choices=["true", "false"],
             ),
             DeclareLaunchArgument(
+                "vision_backend",
+                default_value="mannequin",
+                choices=["mannequin", "person_pose"],
+                description="두 로봇 비전 노드의 낙상 판정 backend",
+            ),
+            DeclareLaunchArgument(
                 "automatic_request",
                 default_value="false",
                 choices=["true", "false"],
@@ -346,6 +352,7 @@ def generate_launch_description() -> LaunchDescription:
                 ),
                 launch_arguments={
                     "robot_id": "robot1",
+                    "backend": LaunchConfiguration("vision_backend"),
                 }.items(),
             ),
             IncludeLaunchDescription(
@@ -361,6 +368,7 @@ def generate_launch_description() -> LaunchDescription:
                 ),
                 launch_arguments={
                     "robot_id": "robot2",
+                    "backend": LaunchConfiguration("vision_backend"),
                 }.items(),
             ),
         ]

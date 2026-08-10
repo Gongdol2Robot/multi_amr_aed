@@ -170,6 +170,21 @@ aed       # 워크스페이스로 이동하고 ROS 2 및 빌드 환경 source
 aedenv    # TurtleBot 4 discovery 환경까지 추가로 적용할 때
 ```
 
+비전 backend별 통합 실행 단축어도 제공합니다.
+
+```bash
+central false           # 목각인형 구조 모델, 출동 비활성
+central true            # 목각인형 구조 모델, 실제 출동
+centralp false          # 사람 Pose + COCO 조력자 검출, 출동 비활성
+centralp true           # 사람 Pose + COCO 조력자 검출, 실제 출동
+visionperson 1          # 고정 카메라 1 실제 사람 시험
+visionmannequin 1       # 고정 카메라 1 목각인형 시험
+```
+
+`central`과 `centralp`는 모두 HMI를 포함한 중앙 PC 통합 런타임입니다.
+`true/false`는 HMI 여부가 아니라 실제 출동 허용 여부입니다. 자세한 전체·개별
+실행 명령은 `src/aed_bringup/README.md`의 비전 backend 선택 절을 참고합니다.
+
 ## Build
 
 ```bash

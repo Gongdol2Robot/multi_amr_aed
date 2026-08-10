@@ -92,7 +92,7 @@ def generate_launch_description() -> LaunchDescription:
         condition=IfCondition(start_open_camera),
         arguments={
             "camera": "1",
-            "target": LaunchConfiguration("open_camera_target"),
+            "backend": LaunchConfiguration("vision_backend"),
         },
     )
     central = _include(
@@ -110,6 +110,7 @@ def generate_launch_description() -> LaunchDescription:
                 "dual_dispatch_enabled"
             ),
             "start_robot_vision": start_robot_vision,
+            "vision_backend": LaunchConfiguration("vision_backend"),
             "start_helper_mission": start_helper_mission,
             "audio_devices": LaunchConfiguration("audio_devices"),
         },
@@ -191,8 +192,12 @@ def generate_launch_description() -> LaunchDescription:
                 choices=("true", "false"),
             ),
             DeclareLaunchArgument(
-                "open_camera_target", default_value="person",
-                choices=("person", "mannequin"),
+                "vision_backend",
+                default_value="mannequin",
+                choices=("mannequin", "person_pose"),
+                description=(
+                    "고정 카메라와 로봇 카메라에 공통 적용할 낙상 판정 backend"
+                ),
             ),
             DeclareLaunchArgument(
                 "start_robot_vision", default_value="true",

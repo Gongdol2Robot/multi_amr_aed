@@ -294,13 +294,12 @@ class InferencePipeline:
         # 별도로 로드한다. mannequin_detect의 helper 판정도 같은 모델을 쓴다.
         self.person_model = None
         self.person_class_id = -1
-        if (
-            enable_crowd
-            or (
-                self.detection_backend == "mannequin_detect"
-                and detect_people_as_helpers
-            )
-        ):
+        # 조력자는 backend와 무관하게 COCO person detector로 찾는다. 특히
+        # person_pose에서 Pose bbox를 그대로 재사용하면 관절 품질 필터를 통과한
+        # 사람만 남아, 쓰러진 환자 옆에 서 있지만 관절 일부가 가려진 사람을
+        # 놓칠 수 있다. Pose는 환자 자세 판정, COCO는 주변 사람 판정으로 역할을
+        # 분리한다.
+        if enable_crowd or detect_people_as_helpers:
             self.person_model = YOLO(
                 str(_model_path(person_weights, "COCO person weights"))
             )
@@ -589,7 +588,8 @@ class InferencePipeline:
         """주변 사람을 걸러 인원수·혼잡도·가까운 조력자를 계산한다.
 
         ``person_model``이 존재하면 골목 혼잡도 또는 사람 조력자 검출용 COCO
-        결과를 사용한다. 없으면 person_pose가 반환한 bbox만 재사용한다.
+        결과를 사용한다. 조력자 검출이 꺼진 person_pose에서만 Pose bbox를
+        보조 입력으로 유지한다.
         마지막에는 어떤 경로든 환자 가까이에 있는 조력자만 남긴다.
         """
         # 구조 대상 검출과 주변 사람 계산은 목적이 다르다.
@@ -756,9 +756,27 @@ class InferencePipeline:
                 cv2.FONT_HERSHEY_SIMPLEX, 0.52, color, 2,
             )
         boxes = getattr(output.person_result, "boxes", None)
-        if boxes is not None:
+        # 골목 혼잡도 화면에서는 ROI 안 사람 전체를 보라색으로 보여준다.
+        # open/robot의 helper 모드에서는 아래의 필터를 통과한 조력자만 그려
+        # 환자와 중복된 COCO bbox를 helping_person으로 오해하지 않게 한다.
+        if boxes is not None and self.enable_crowd:
             for x1, y1, x2, y2 in boxes.xyxy.int().cpu().tolist():
                 cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 255), 2)
+
+        for helper in output.helpers:
+            x1, y1 = int(helper.x1), int(helper.y1)
+            x2, y2 = int(helper.x2), int(helper.y2)
+            cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(
+                image,
+                "helping_person",
+                (x1, max(y1 - 8, 22)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (0, 255, 0),
+                2,
+                cv2.LINE_AA,
+            )
 
         if self.enable_crowd:
             height, width = image.shape[:2]
