@@ -1,0 +1,38 @@
+/**/vision_detector:
+  ros__parameters:
+    # 모든 카메라와 backend가 공유하는 영상·상태·출력 설정이다.
+    image_is_compressed: true
+    width: 640
+    height: 480
+    jpeg_quality: 85
+    iou: 0.5
+    imgsz: 640
+
+    # 동일 FALLEN bbox의 위치와 크기가 1초 이상 안정적일 때만 확정한다.
+    fall_stationary_seconds: 1.0
+    fall_max_center_motion_ratio: 0.025
+    fall_max_size_change_ratio: 0.25
+    fall_track_match_iou: 0.30
+    fall_detection_gap_tolerance_seconds: 0.25
+    # 확정 뒤 이 시간 동안 낙상 후보가 전혀 없을 때만 CANCELED로 전환한다.
+    cancellation_timeout_seconds: 2.0
+    helper_confirmation_window: 6
+    helper_confirmation_hits: 3
+    helper_max_distance_ratio: 0.30
+
+    # 프로필이 별도로 지정하지 않을 때 사용하는 전체 화면 ROI와 지도 기준이다.
+    crowd_roi: [0.0, 0.0, 1.0, 1.0]
+    fallen_person_overlap_iou: 0.4
+    # 혼잡 악화는 빠르게, 호전은 최소 유지시간 뒤 더 오래 확인해 반영한다.
+    crowd_worsening_window: 5
+    crowd_worsening_hits: 3
+    crowd_improving_window: 10
+    crowd_improving_hits: 7
+    crowd_minimum_hold_seconds: 3.0
+    location_frame_id: map
+    location_x: 0.0
+    location_y: 0.0
+    homography_margin_m: 0.15
+
+    publish_debug_image: true
+    debug_jpeg_quality: 80

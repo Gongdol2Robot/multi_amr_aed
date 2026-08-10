@@ -5,6 +5,18 @@
 
 export AED_WS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+aed() {
+  cd "$AED_WS" || return 1
+  source /opt/ros/humble/setup.bash || return 1
+
+  if [ -f "$AED_WS/install/setup.bash" ]; then
+    source "$AED_WS/install/setup.bash"
+  else
+    echo "AED 워크스페이스로 이동했습니다. install/setup.bash가 없어 ROS 2 기본 환경만 적용했습니다."
+    echo "먼저 aedbuild를 실행하세요."
+  fi
+}
+
 aedenv() {
   source /etc/turtlebot4_discovery/setup.bash
   export ROS_SUPER_CLIENT=True
@@ -150,7 +162,8 @@ nav() {
     echo "Nav2 시작 중단: loc $n -> initpose $n 순서로 복구하세요."
     return 1
   fi
-  ros2 launch turtlebot4_navigation nav2.launch.py namespace:=/robot$n \
+  ros2 launch aed_bringup nav_with_fallback.launch.py \
+    robot_name:="robot$n" \
     params_file:="$AED_WS/src/aed_bringup/config/nav2_aed.yaml"
 }
 
@@ -162,13 +175,15 @@ rv() {
 mapnav() {
   local n=${1:-1}
   aedenv
-  ros2 launch turtlebot4_map_navigation map_navigation.launch.py \
-    namespace:="robot$n" rviz:=true
+  ros2 launch turtlebot4_map_navigation robot_runtime.launch.py \
+    robot_name:="robot$n" rviz:=true
 }
 
-vision() {
-  local dev=${1:-0}
-  ros2 run aed_vision webcam_publisher --ros-args -p device:="$dev"
+fallback() {
+  local n=${1:-1}
+  aedenv
+  ros2 launch sensor_recovery lidar_fallback.launch.py \
+    robot_name:="robot$n"
 }
 
 manager() {
@@ -176,17 +191,65 @@ manager() {
 }
 
 # 중앙 노트북 통합 런타임. 기존 central 인자 순서를 그대로 유지한다.
+#
+# 로봇마다 블루투스 스피커를 따로 붙였다면 sink 이름을 robot1,robot2 순서로
+# AED_AUDIO_DEVICES 에 넣어 둔다. 스피커가 없는 팀원 환경에서 없는 장치를
+# 강제하지 않도록 기본값은 비워 두며, 그 경우 OS 기본 출력으로 재생한다.
+#   export AED_AUDIO_DEVICES="bluez_sink.<robot1_MAC>.a2dp_sink,bluez_sink.<robot2_MAC>.a2dp_sink"
+#   pactl list short sinks | grep bluez   # sink 이름 확인
 central() {
-  local dispatch=${1:-false}
+  local dispatch=${1:-true}
   local target_time=${2:-30.0}
   local trigger_ratio=${3:-0.85}
   local dual_dispatch=${4:-true}
-  aedenv
-  ros2 launch aed_bringup server_runtime.launch.py \
-    dispatch_enabled:="$dispatch" \
-    target_arrival_time_sec:="$target_time" \
-    dual_dispatch_trigger_ratio:="$trigger_ratio" \
+  local vision_backend=${5:-${AED_VISION_BACKEND:-mannequin}}
+  local audio_devices=${AED_AUDIO_DEVICES:-}
+  local launch_args=(
+    dispatch_enabled:="$dispatch"
+    target_arrival_time_sec:="$target_time"
+    dual_dispatch_trigger_ratio:="$trigger_ratio"
     dual_dispatch_enabled:="$dual_dispatch"
+    vision_backend:="$vision_backend"
+  )
+
+  if [[ -n "$audio_devices" ]]; then
+    launch_args+=(audio_devices:="$audio_devices")
+  fi
+
+  aedenv
+  ros2 launch aed_bringup server_runtime.launch.py "${launch_args[@]}"
+}
+
+# 비전 backend별 통합 런타임 단축어. 첫 번째 선택 인자는 실제 출동 여부다.
+centralperson() {
+  central "${1:-false}" 30.0 0.85 true person_pose
+}
+
+centralmannequin() {
+  central "${1:-false}" 30.0 0.85 true mannequin
+}
+
+# mannequin이 기본이므로 목각인형 모드는 기존 central을 그대로 사용한다.
+# 실제 사람 Pose 모드만 짧게 구분한다.
+centralp() {
+  centralperson "${1:-false}"
+}
+
+centralm() {
+  centralmannequin "${1:-false}"
+}
+
+# 고정 USB 카메라만 시험할 때 사용한다. 선택 인자는 카메라 번호(기본 1)다.
+visionperson() {
+  aedenv
+  ros2 launch aed_vision camera_vision.launch.py \
+    camera:="${1:-1}" backend:=person_pose
+}
+
+visionmannequin() {
+  aedenv
+  ros2 launch aed_vision camera_vision.launch.py \
+    camera:="${1:-1}" backend:=mannequin
 }
 
 executor() {
@@ -218,9 +281,15 @@ bagrec() {
     --compression-mode file --compression-format zstd \
     /robot$n/oakd/rgb/image_raw/compressed /robot$n/scan /robot$n/odom \
     /robot$n/tf /robot$n/tf_static /robot$n/mission_assignment \
-    /robot$n/mission_status /aed/emergency_event /aed/robot_state
+    /robot$n/lidar_state /robot$n/fallback_state \
+    /robot$n/recovery_ready /robot$n/fallback_debug/path \
+    /aed/mission_status /aed/emergency_event /aed/robot_state
 }
 
 alias detect='vision'
+alias cperson='centralperson'
+alias cmannequin='centralmannequin'
+alias vperson='visionperson'
+alias vmannequin='visionmannequin'
 alias mstate='ros2 topic echo /aed/robot_state'
 alias estate='ros2 topic echo /aed/emergency_event'

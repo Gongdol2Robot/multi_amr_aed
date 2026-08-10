@@ -108,7 +108,14 @@ class SystemSpeakerOutput:
                 command.append(f"--target={self._device}")
             else:
                 command.extend(["-D", self._device])
-        command.append(source or "-")
+        if source:
+            command.append(source)
+        elif self._player != "paplay":
+            # aplay와 pw-play는 "-"를 stdin으로 읽는다. paplay는 그렇지 않고
+            # 이름이 "-"인 파일을 열려다 실패하므로 인자를 아예 붙이지 않는다
+            # (paplay는 파일 인자가 없으면 stdin에서 읽는다). 이 한 글자 때문에
+            # 합성 톤인 출동·도착·중단 경보가 소리 없이 전부 실패하고 있었다.
+            command.append("-")
         return command
 
     def _play_worker(

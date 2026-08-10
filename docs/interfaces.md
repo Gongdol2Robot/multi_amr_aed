@@ -52,7 +52,7 @@ Action 을 손으로 흉내내고 있어, 취소·중복 방지를 `assignment_v
 | 이름 | 방식 | 타입 | 발행 | 구독 |
 |---|---|---|---|---|
 | `/{camera_id}/vision/emergency_event` | topic | `aed_interfaces/EmergencyEvent` | vision_detector | mission_manager, aed_hmi |
-| `/{camera_id}/vision/detections` | topic | `aed_interfaces/DetectionSummary` | vision_detector | aed_hmi |
+| `/{camera_id}/vision/detection_summary` | topic | `aed_interfaces/DetectionSummary` | vision_detector | aed_hmi |
 | `/{camera_id}/vision/crowd_level` | topic | `aed_interfaces/CrowdLevel` | vision_detector | mission_manager, aed_hmi |
 | `/{camera_id}/vision/debug/compressed` | topic | `sensor_msgs/CompressedImage` | vision_detector | aed_hmi |
 | `/{camera_id}/vision/heartbeat` | topic | `aed_interfaces/Heartbeat` | vision_detector | amr_recovery |
@@ -146,3 +146,7 @@ DB 에 남길 시각은 전부 **이미 있는 메시지에서** 얻습니다. �
 ### 변경 `msg/EmergencyEvent.msg`
 `uint8 crowd_level` 추가. 어느 혼잡도에서 판단된 이벤트인지 남겨야 사후에
 "왜 2대가 갔나"를 되짚을 수 있습니다.
+`string location_source`, `bool location_valid`도 추가합니다. 측량 영역 밖의
+`homography_extrapolated` 좌표는 화면과 진단에는 남기되 Mission Manager가
+자동 이동 목표로 사용하지 않습니다. `consecutive_detections`는 하위 호환
+필드명이며 실제 값은 동일 bbox 정지 확정 중 누적된 관측 수입니다.

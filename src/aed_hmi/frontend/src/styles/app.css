@@ -292,14 +292,67 @@
   color: var(--accent);
 }
 
+.tile__record {
+  position: absolute;
+  z-index: 3;
+  top: 4px;
+  right: 5px;
+  padding: 2px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.68);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 10px;
+  line-height: 15px;
+  cursor: pointer;
+}
+
+.tile__record:hover:not(:disabled) {
+  color: white;
+  border-color: white;
+}
+
+.tile__record:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.tile__record--on {
+  color: white;
+  border-color: var(--danger);
+  background: rgba(190, 20, 38, 0.9);
+  animation: record-blink 1s ease-in-out infinite;
+}
+
+@keyframes record-blink {
+  50% {
+    opacity: 0.68;
+  }
+}
+
+.tile__record-error {
+  position: absolute;
+  z-index: 3;
+  top: 28px;
+  right: 5px;
+  padding: 2px 5px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.75);
+  color: var(--danger);
+  font-size: 10px;
+}
+
+.tile__capture {
+  display: none;
+}
+
 .tile__image {
   width: 100%;
   height: 100%;
-  /* contain 이면 원본 비율을 지키느라 좌우가 검게 남는다. 4분할에서 그
-     검은 띠가 화면의 3할을 먹었다. cover 로 채우면 가장자리가 조금
-     잘리는 대신 타일이 그림으로 꽉 찬다. 관제 화면에서 가운데가 아니라
-     가장자리가 잘리는 것은 판단에 지장이 없다. */
-  object-fit: cover;
+  /* 카메라 원본 종횡비와 시야를 보존한다. 타일 비율이 다르면 검은 여백이
+     생기지만 낙상자나 장애물이 가장자리에 있어도 잘려 나가지 않는다. */
+  object-fit: contain;
   display: block;
 }
 
@@ -759,6 +812,57 @@
   opacity: 0.55;
 }
 
+/* RViz /emergency/crowd_markers와 같은 polygon을 지도 위에 겹친다. */
+.map__crowd {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.map__crowd polygon {
+  fill: rgba(140, 140, 140, 0.28);
+  stroke: rgb(170, 170, 170);
+  stroke-width: 2px;
+}
+
+.map__crowd--0 polygon {
+  fill: rgba(26, 217, 51, 0.28);
+  stroke: rgb(26, 217, 51);
+}
+
+.map__crowd--1 polygon {
+  fill: rgba(255, 217, 13, 0.30);
+  stroke: rgb(255, 217, 13);
+}
+
+.map__crowd--2 polygon {
+  fill: rgba(255, 102, 13, 0.32);
+  stroke: rgb(255, 102, 13);
+}
+
+.map__crowd--3 polygon {
+  fill: rgba(242, 13, 13, 0.36);
+  stroke: rgb(242, 13, 13);
+}
+
+.map__crowd-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  padding: 2px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 3px;
+  background: rgba(5, 8, 11, 0.82);
+  color: var(--text-main);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .map__empty {
   color: var(--text-faint);
   font-size: 12px;
@@ -796,9 +900,9 @@
   position: absolute;
   width: 14px;
   height: 14px;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
+  transform: translate(-50%, -50%) rotate(45deg);
   border: 2px solid var(--danger);
+  background: rgba(255, 77, 94, 0.25);
   box-shadow: 0 0 0 4px rgba(255, 77, 94, 0.25);
   animation: detect-blink 1.2s ease-in-out infinite;
 }

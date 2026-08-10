@@ -50,7 +50,7 @@ ros2 launch aed_vision robot_vision.launch.py robot_id:=robot2
 ```bash
 ros2 launch helper_mission helper_mission.launch.py \
   robot_ids:=robot1,robot2 \
-  rotation_speed_rps:=0.35 \
+  rotation_speed_rps:=0.12 \
   helper_wait_timeout:=0.0 \
   vision_timeout_seconds:=300.0
 ```
@@ -66,10 +66,10 @@ ros2 launch helper_mission helper_mission.launch.py \
 
 | 파라미터 | 기본값 | 의미 |
 |---|---:|---|
-| `rotation_speed_rps` | `0.35` | 제자리 회전 각속도(rad/s) |
+| `rotation_speed_rps` | `0.12` | 저FPS에서도 helper를 놓치지 않는 제자리 회전 각속도(rad/s) |
 | `control_period` | `0.1` | 회전 명령 발행 주기(초) |
 | `stop_command_repeats` | `3` | 종료 시 0속도 명령 반복 횟수 |
-| `vision_stale_seconds` | `1.0` | Vision true 신호의 최대 유효 시간 |
+| `vision_stale_seconds` | `2.5` | 저FPS Vision true 신호의 최대 유효 시간 |
 | `vision_timeout_seconds` | `300.0` | Vision 메시지 단절 안전 정지 시간(5분) |
 | `helper_wait_timeout` | `0.0` | 탐색 제한 시간, 0이면 무제한 |
 | `buzzer_period` | `2.2` | 약 2초인 호출음의 반복 주기(초) |
@@ -78,12 +78,16 @@ ros2 launch helper_mission helper_mission.launch.py \
 | `audio_backend` | `system` | PC 스피커 사용, `create3`이면 기존 본체 부저 |
 | `audio_player` | `auto` | `paplay`, `pw-play`, `aplay` 자동 선택 |
 | `audio_device` | 빈 문자열 | 빈 값이면 OS 기본 출력, 필요 시 장치 지정 |
-| `call_audio_file` | 내장 CC0 WAV | 노드 직접 실행 시 별도 호출음 파일 지정 |
+| `call_audio_file` | 내장 한국어 WAV | 사람에게 도움을 요청할 음성 파일 지정 |
+| `call_voice_period` | `10.0` | Bluetooth 구조 요청 음성 반복 주기(초) |
 | `handoff_wait_seconds` | `5.0` | TTS 재생 후 정지 상태로 인계를 기다리는 시간 |
 | `handoff_audio_file` | 내장 한국어 WAV | 노드 직접 실행 시 별도 안내 TTS 지정 |
 
 ## TTS 교체 지점
 
-호출 경고음은 `emergency_alert/assets/cc0_warning_alarm.wav`(CC0), 인계 안내는
+호출 안내는 `emergency_alert/assets/helper_request_ko.wav`, 인계 안내는
 `emergency_alert/assets/helper_confirmed_return_ko.wav`를 사용합니다. 각각
 `call_audio_file`, `handoff_audio_file`로 교체할 수 있습니다.
+
+탐색 중에는 Create 3 본체가 `880 → 660 Hz` 호출음을 내고, 로봇별 Bluetooth
+스피커는 구조 요청 한국어 음성을 10초마다 재생합니다.

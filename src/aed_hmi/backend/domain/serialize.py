@@ -8,6 +8,7 @@ dataclasses.asdict 를 쓰지 않는다. 그것은 Enum 을 그대로 남기고,
 from dataclasses import asdict
 
 from .models import (
+    CrowdZoneSnapshot,
     EmergencyEventSnapshot,
     MissionEvent,
     MissionSummary,
@@ -49,6 +50,7 @@ def mission_summary(value: MissionSummary) -> dict:
     data = asdict(value)
     data["target"] = point(value.target)
     data["final_state"] = value.final_state.value
+    data["role"] = value.role.value
     data["response_seconds"] = value.response_seconds
     # 도착 예상 시각. 화면이 매 초 다시 계산하지 않도록 서버가 확정해 준다.
     data["eta_at"] = value.eta_at
@@ -58,6 +60,12 @@ def mission_summary(value: MissionSummary) -> dict:
 
 def stream_health(value: StreamHealth) -> dict:
     return asdict(value)
+
+
+def crowd_zone(value: CrowdZoneSnapshot) -> dict:
+    data = asdict(value)
+    data["polygon"] = [point(item) for item in value.polygon]
+    return data
 
 
 def system_snapshot(value: SystemSnapshot) -> dict:
@@ -71,5 +79,8 @@ def system_snapshot(value: SystemSnapshot) -> dict:
             mission_summary(item) for item in value.active_missions
         ],
         "streams": [stream_health(item) for item in value.streams],
+        "crowd_zone": (
+            crowd_zone(value.crowd_zone) if value.crowd_zone else None
+        ),
         "ros_connected": value.ros_connected,
     }

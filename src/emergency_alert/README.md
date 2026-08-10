@@ -12,14 +12,14 @@ TurtleBot4 Create3 스피커로 AED 출동·도착·중단 경보음을 재생�
 
 ```text
 MissionStatus.ASSIGNED/DISPATCHING  기존 경보 정지
-MissionStatus.EN_ROUTE             출동 경보 반복 시작
+MissionStatus.EN_ROUTE             Create 3 경보음 + Bluetooth 안내 음성 시작
 MissionStatus.ARRIVED/COMPLETED     출동 경보 정지 + 도착음 1회
 CANCELED/BLOCKED/NETWORK_LOST/
 NAVIGATION_ERROR                    출동 경보 정지 + 중단음 1회
 ```
 
 같은 상태의 중복 메시지와 과거 assignment version은 무시합니다. 기본적으로
-mission ID가 `-aed`로 끝나는 임무만 처리하므로 helper 임무의 `COMPLETED`가 AED
+mission ID가 `<event>-aed-<robot_id>`인 임무만 처리하므로 helper 임무의 `COMPLETED`가 AED
 도착음을 다시 재생하지 않습니다. 종료 상태가 유실되더라도 경보가 무한히
 재생되지 않도록 기본 600초의 `maximum_alarm_duration` 제한도 적용됩니다.
 
@@ -72,6 +72,9 @@ ros2 launch emergency_alert multi_robot_alert.launch.py \
 | 출동 중 | `1000 → 440 Hz` | 각 0.25초, 0.8초마다 반복 |
 | 도착 | `523 → 659 → 784 → 1047 Hz` | 각 0.2초, 1회 |
 | 장애·취소 | `880 → 660 → 440 → 220 Hz` | 각 0.2초, 1회 |
+
+이동 중에는 위 출동 패턴을 Create 3 본체에서 반복하고, 로봇별 Bluetooth
+스피커에서는 `travel_notice_ko.wav` 안내를 기본 8초마다 재생합니다.
 
 주파수, 음 길이와 반복 주기는 ROS 파라미터로 변경할 수 있습니다.
 `alarm_period`는 출동 음 패턴 전체 길이보다 짧게 설정할 수 없습니다. 너무 짧으면

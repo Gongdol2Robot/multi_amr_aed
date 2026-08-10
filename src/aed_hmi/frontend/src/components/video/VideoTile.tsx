@@ -9,7 +9,7 @@
  *    확인되면 주소에 시각을 붙여 강제로 다시 연결한다.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { videoUrl } from '../../api/http';
 import type { StreamHealth } from '../../types/telemetry';
@@ -23,15 +23,149 @@ interface Props {
   onToggle: () => void;
 }
 
+const RETRY_INITIAL_MS = 4000;
+const RETRY_MAX_MS = 30000;
+
 export function VideoTile({ health, seat, focused, onToggle }: Props) {
   const [reloadKey, setReloadKey] = useState(0);
+  const [recording, setRecording] = useState(false);
+  const [recordError, setRecordError] = useState('');
+  const retryDelay = useRef(RETRY_INITIAL_MS);
+  const imageRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const captureStreamRef = useRef<MediaStream | null>(null);
+  const drawTimerRef = useRef<number | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
-    if (health.online) return;
-    // 끊긴 동안 주기적으로 다시 붙는다. 서버가 살아나면 저절로 복구된다.
-    const timer = window.setInterval(() => setReloadKey((n) => n + 1), 4000);
-    return () => window.clearInterval(timer);
-  }, [health.online]);
+    if (health.online) {
+      retryDelay.current = RETRY_INITIAL_MS;
+      return;
+    }
+    // 장시간 끊긴 카메라를 4초마다 계속 두드리지 않는다. 처음에는 빠르게
+    // 복구하고, 실패가 이어지면 최대 30초까지 간격을 늘린다.
+    const delay = retryDelay.current;
+    const timer = window.setTimeout(() => {
+      retryDelay.current = Math.min(delay * 2, RETRY_MAX_MS);
+      setReloadKey((n) => n + 1);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [health.online, reloadKey]);
+
+  const releaseCapture = () => {
+    if (drawTimerRef.current !== null) {
+      window.clearInterval(drawTimerRef.current);
+      drawTimerRef.current = null;
+    }
+    captureStreamRef.current?.getTracks().forEach((track) => track.stop());
+    captureStreamRef.current = null;
+  };
+
+  const stopRecording = () => {
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+  };
+
+  useEffect(() => {
+    if (!health.online && recording) stopRecording();
+  }, [health.online, recording]);
+
+  useEffect(
+    () => () => {
+      const recorder = recorderRef.current;
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+      releaseCapture();
+    },
+    [],
+  );
+
+  const startRecording = () => {
+    setRecordError('');
+    const image = imageRef.current;
+    const canvas = canvasRef.current;
+    if (!health.online || !image || !canvas || image.naturalWidth === 0) {
+      setRecordError('영상 준비 안 됨');
+      return;
+    }
+    if (typeof MediaRecorder === 'undefined' || !canvas.captureStream) {
+      setRecordError('브라우저 녹화 미지원');
+      return;
+    }
+
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      setRecordError('캔버스 생성 실패');
+      return;
+    }
+
+    const draw = () => {
+      try {
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      } catch {
+        setRecordError('영상 캡처 실패');
+        stopRecording();
+      }
+    };
+    draw();
+    // 이미 받은 MJPEG 프레임을 브라우저에서만 다시 그린다. ROS 구독이나
+    // 로봇 네트워크 연결은 추가하지 않는다.
+    const captureFps = Math.max(1, Math.min(10, Math.ceil(health.fps || 7)));
+    drawTimerRef.current = window.setInterval(draw, 1000 / captureFps);
+    try {
+      const stream = canvas.captureStream(captureFps);
+      captureStreamRef.current = stream;
+
+      const mimeCandidates = [
+        'video/webm;codecs=vp9',
+        'video/webm;codecs=vp8',
+        'video/webm',
+      ];
+      const mimeType = mimeCandidates.find((value) =>
+        MediaRecorder.isTypeSupported(value),
+      );
+      const recorder = new MediaRecorder(
+        stream,
+        mimeType ? { mimeType, videoBitsPerSecond: 2_000_000 } : undefined,
+      );
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorder.onerror = () => setRecordError('녹화 중 오류');
+      recorder.onstop = () => {
+        releaseCapture();
+        recorderRef.current = null;
+        setRecording(false);
+        if (chunksRef.current.length === 0) return;
+        const blob = new Blob(chunksRef.current, {
+          type: recorder.mimeType || 'video/webm',
+        });
+        chunksRef.current = [];
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        anchor.href = url;
+        anchor.download = `${health.stream_id}-${stamp}.webm`;
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      };
+      recorderRef.current = recorder;
+      recorder.start(1000);
+      setRecording(true);
+    } catch {
+      releaseCapture();
+      setRecordError('브라우저 녹화 시작 실패');
+    }
+  };
+
+  const toggleRecording = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (recording) stopRecording();
+    else startRecording();
+  };
 
   const source = `${videoUrl(health.stream_id)}?k=${reloadKey}`;
   const tone = health.online ? 'ok' : 'danger';
@@ -43,9 +177,11 @@ export function VideoTile({ health, seat, focused, onToggle }: Props) {
       title={focused ? '눌러서 4분할로 (Esc)' : `눌러서 크게 (숫자키 ${seat})`}
     >
       <img
+        ref={imageRef}
         className="tile__image"
         src={source}
         alt={health.label}
+        crossOrigin="anonymous"
         // 화면이 4개라 지연 로딩이 더 헷갈린다. 항상 즉시 붙인다.
         loading="eager"
       />
@@ -56,6 +192,19 @@ export function VideoTile({ health, seat, focused, onToggle }: Props) {
 
       {/* 어느 숫자키가 이 타일인지 화면에 있어야 외우지 않아도 쓴다. */}
       <span className="tile__seat mono">{seat}</span>
+
+      <button
+        type="button"
+        className={recording ? 'tile__record tile__record--on' : 'tile__record'}
+        onClick={toggleRecording}
+        disabled={!health.online && !recording}
+        title={recording ? '녹화를 끝내고 저장' : '이 영상만 브라우저에서 녹화'}
+      >
+        {recording ? '■ 저장' : '● 녹화'}
+      </button>
+      {recordError && <span className="tile__record-error">{recordError}</span>}
+
+      <canvas ref={canvasRef} className="tile__capture" aria-hidden="true" />
 
       <figcaption className="tile__bar">
         <span className="tile__name">

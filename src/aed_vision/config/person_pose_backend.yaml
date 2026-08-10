@@ -1,0 +1,12 @@
+/**/vision_detector:
+  ros__parameters:
+    detection_backend: person_pose
+    person_weights: package://aed_vision/models/coco_yolo11n.pt
+    pose_weights: package://aed_vision/models/yolo11n-pose.pt
+    person_conf: 0.6
+    pose_keypoint_conf: 0.3
+    pose_min_keypoints: 8
+    pose_min_box_area: 0.02
+    pose_min_torso_keypoints: 3
+    # 주변 실제 사람을 환자와 구분해 조력자 후보로 사용한다.
+    detect_people_as_helpers: true

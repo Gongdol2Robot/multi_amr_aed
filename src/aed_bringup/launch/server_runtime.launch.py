@@ -72,7 +72,10 @@ def generate_launch_description() -> LaunchDescription:
         "emergency_alert",
         "multi_robot_status_alert.launch.py",
         condition=IfCondition(start_alert),
-        arguments={"robot_ids": "robot1,robot2"},
+        arguments={
+            "robot_ids": "robot1,robot2",
+            "audio_devices": LaunchConfiguration("audio_devices"),
+        },
     )
     hmi = _include(
         "aed_hmi",
@@ -89,7 +92,7 @@ def generate_launch_description() -> LaunchDescription:
         condition=IfCondition(start_open_camera),
         arguments={
             "camera": "1",
-            "target": LaunchConfiguration("open_camera_target"),
+            "backend": LaunchConfiguration("vision_backend"),
         },
     )
     central = _include(
@@ -107,10 +110,9 @@ def generate_launch_description() -> LaunchDescription:
                 "dual_dispatch_enabled"
             ),
             "start_robot_vision": start_robot_vision,
-            "robot_vision_target": LaunchConfiguration(
-                "robot_vision_target"
-            ),
+            "vision_backend": LaunchConfiguration("vision_backend"),
             "start_helper_mission": start_helper_mission,
+            "audio_devices": LaunchConfiguration("audio_devices"),
         },
     )
 
@@ -134,7 +136,7 @@ def generate_launch_description() -> LaunchDescription:
             OpaqueFunction(function=_acquire_runtime_lock),
             DeclareLaunchArgument(
                 "dispatch_enabled",
-                default_value="false",
+                default_value="true",
                 choices=("true", "false"),
                 description="실제 로봇에 출동 목표를 전송할지 여부",
             ),
@@ -148,6 +150,15 @@ def generate_launch_description() -> LaunchDescription:
                 "dual_dispatch_enabled",
                 default_value="true",
                 choices=("true", "false"),
+            ),
+            DeclareLaunchArgument(
+                "audio_devices",
+                default_value="",
+                description=(
+                    "로봇별 오디오 출력 장치를 robot1,robot2 순서로 나열한다. "
+                    "블루투스 스피커를 로봇마다 따로 붙일 때 사용하며, "
+                    "비우면 두 로봇 모두 OS 기본 출력으로 재생한다."
+                ),
             ),
             DeclareLaunchArgument(
                 "start_alert", default_value="true",
@@ -181,16 +192,16 @@ def generate_launch_description() -> LaunchDescription:
                 choices=("true", "false"),
             ),
             DeclareLaunchArgument(
-                "open_camera_target", default_value="person",
-                choices=("person", "mannequin"),
+                "vision_backend",
+                default_value="mannequin",
+                choices=("mannequin", "person_pose"),
+                description=(
+                    "고정 카메라와 로봇 카메라에 공통 적용할 낙상 판정 backend"
+                ),
             ),
             DeclareLaunchArgument(
                 "start_robot_vision", default_value="true",
                 choices=("true", "false"),
-            ),
-            DeclareLaunchArgument(
-                "robot_vision_target", default_value="person",
-                choices=("person", "mannequin"),
             ),
             DeclareLaunchArgument(
                 "start_helper_mission", default_value="true",

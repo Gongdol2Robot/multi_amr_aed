@@ -145,9 +145,12 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 'rviz',
-                default_value='true',
+                default_value='false',
                 choices=['true', 'false'],
-                description='Open the namespaced Nav2 RViz view',
+                description=(
+                    'Open the namespaced Nav2 RViz view (disabled by default '
+                    'to reduce robot Wi-Fi DDS traffic)'
+                ),
             ),
             DeclareLaunchArgument(
                 'auto_initial_pose',

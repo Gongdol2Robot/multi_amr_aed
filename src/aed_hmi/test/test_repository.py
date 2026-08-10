@@ -23,7 +23,13 @@ def test_recent_mission_contains_eta_accuracy_for_aed_only(tmp_path) -> None:
         source_id="operator",
         camera_id="",
         zone_id="",
+        crowd_level=2,
     ))
+    stored = repository._connection().execute(
+        "SELECT crowd_level FROM emergency_events WHERE event_id = ?",
+        (event_id,),
+    ).fetchone()
+    assert stored["crowd_level"] == 2
     repository.insert_assignment(
         mission_id, 1, event_id, "robot2", "aed_delivery",
         Point2D(2.0, 3.0), 101.0,

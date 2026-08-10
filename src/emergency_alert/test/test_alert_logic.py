@@ -9,6 +9,8 @@ from emergency_alert.alert_logic import (
     MissionAlertPolicy,
     MissionPhase,
     TonePattern,
+    is_aed_delivery_mission,
+    is_return_mission,
 )
 
 
@@ -37,6 +39,22 @@ def test_tone_pattern_validates_values_and_duration():
         TonePattern.from_values([440], nan)
     with pytest.raises(ValueError):
         TonePattern.from_values([440], inf)
+
+
+def test_aed_delivery_mission_matches_central_dispatch_id_format():
+    assert is_aed_delivery_mission("event-1-aed-robot1", "robot1")
+    assert not is_aed_delivery_mission("event-1-aed-robot1", "robot2")
+    assert not is_aed_delivery_mission("event-1-helper-return-robot1", "robot1")
+    assert not is_aed_delivery_mission("event-1-helper-scan", "robot1")
+
+
+def test_return_mission_matches_every_central_return_suffix():
+    assert is_return_mission("event-1-live-return-robot1", "robot1")
+    assert is_return_mission("event-1-return-robot1", "robot1")
+    assert is_return_mission("event-1-helper-return-robot1", "robot1")
+    assert is_return_mission("event-1-proximity-return-robot1", "robot1")
+    assert not is_return_mission("event-1-live-aed-robot1", "robot1")
+    assert not is_return_mission("event-1-live-return-robot2", "robot1")
 
 
 def test_en_route_starts_once_and_arrival_plays_once():

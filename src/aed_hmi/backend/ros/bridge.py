@@ -5,7 +5,9 @@ rclpy 는 자기 스레드에서 돌고, FastAPI 는 asyncio 로 돈다. 둘을 
 넘기고, 그것을 asyncio 로 옮기는 일은 stream/hub 가 맡는다.
 """
 
+import json
 import logging
+import math
 import threading
 from typing import Callable, Optional
 
@@ -14,10 +16,12 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 
 from ..domain.models import (
+    CrowdZoneSnapshot,
     EmergencyEventSnapshot,
     EtaRecord,
     MissionEvent,
     RobotSnapshot,
+    Point2D,
 )
 from . import topics
 from .converters import (
@@ -51,6 +55,7 @@ class RosBridge:
         on_person_count: Callable[[str, int], None],
         on_lidar_state: Callable[[str, str], None],
         on_fallback_state: Callable[[str, str], None],
+        on_crowd_zone: Callable[[CrowdZoneSnapshot], None],
         on_predicted_eta: Callable[[str, float], None],
         on_eta_record: Callable[[EtaRecord], None],
         on_assignment: Callable[..., None],
@@ -63,6 +68,7 @@ class RosBridge:
         self._on_person_count = on_person_count
         self._on_lidar_state = on_lidar_state
         self._on_fallback_state = on_fallback_state
+        self._on_crowd_zone = on_crowd_zone
         self._on_predicted_eta = on_predicted_eta
         self._on_eta_record = on_eta_record
         self._on_assignment = on_assignment
@@ -180,6 +186,10 @@ class RosBridge:
             String, topics.ETA_RESULT_TOPIC,
             self._handle_eta_result, topics.latched_qos(),
         )
+        node.create_subscription(
+            String, topics.CROWD_STATE_TOPIC,
+            self._handle_crowd_state, topics.latched_qos(),
+        )
         for robot_id in topics.ROBOT_IDS:
             node.create_subscription(
                 Float32,
@@ -251,9 +261,12 @@ class RosBridge:
         message.confidence = 1.0          # 사람이 찍었다
         message.consecutive_detections = 1
         message.status = EmergencyEvent.CONFIRMED
+        message.location_source = "operator"
+        message.location_valid = True
         message.source_id = "operator"
         message.camera_id = ""
         message.zone_id = zone_id
+        message.crowd_level = 255
         self._event_publisher.publish(message)
 
         LOGGER.info("운영자 신고 발행: %s (%.2f, %.2f)", event_id, x, y)
@@ -274,6 +287,7 @@ class RosBridge:
             topics.MISSION_STATUS_TOPIC,
             topics.AGGREGATE_EVENT_TOPIC,
             topics.ETA_RESULT_TOPIC,
+            topics.CROWD_STATE_TOPIC,
         ] + [topics.assignment_topic(r) for r in topics.ROBOT_IDS] \
           + [topics.predicted_eta_topic(r) for r in topics.ROBOT_IDS] \
           + [source.topic for source in self._streams]
@@ -315,6 +329,35 @@ class RosBridge:
         record = EtaRecord.from_json(message.data)
         if record is not None:
             self._on_eta_record(record)
+
+    def _handle_crowd_state(self, message) -> None:
+        """Validate mission_manager JSON before exposing it to the browser."""
+        try:
+            data = json.loads(message.data)
+            raw_polygon = data["polygon"]
+            polygon = [
+                Point2D(float(item["x"]), float(item["y"]))
+                for item in raw_polygon
+            ]
+            if len(polygon) < 3 or not all(
+                math.isfinite(point.x) and math.isfinite(point.y)
+                for point in polygon
+            ):
+                raise ValueError("polygon must contain three finite points")
+            age = data.get("age_sec")
+            crowd_zone = CrowdZoneSnapshot(
+                zone_id=str(data.get("zone_id", "alley_zone")),
+                polygon=polygon,
+                level=int(data["level"]),
+                level_name=str(data["level_name"]),
+                person_count=max(0, int(data["person_count"])),
+                fresh=bool(data["fresh"]),
+                age_sec=None if age is None else float(age),
+            )
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+            LOGGER.warning("혼잡 구역 상태 형식 오류: %s", error)
+            return
+        self._on_crowd_zone(crowd_zone)
 
     def _handle_assignment(self, message) -> None:
         self._on_assignment(**to_assignment(message))

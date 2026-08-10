@@ -37,7 +37,7 @@ ROS 인터페이스  →  ros/converters.py  →  domain 모델  →  store/repo
 | `/aed/emergency_event` | `aed_interfaces/EmergencyEvent` | (없음) | `mission_manager`, `aed_hmi_bridge` | **발행자 없음** | `emergency_events` |
 | `/{camera_id}/vision/emergency_event` | `aed_interfaces/EmergencyEvent` | `vision_detector` | `aed_hmi_bridge` | 동작 | `emergency_events` |
 | `/{camera_id}/vision/crowd_level` | `std_msgs/String` → `CrowdLevel` | `vision_detector` | `mission_manager`, `aed_hmi_bridge` | 동작(형 교체 예정) | 안 남김 |
-| `/{camera_id}/vision/detections` | `aed_interfaces/DetectionSummary` | `vision_detector` | `aed_hmi_bridge` | **사양만** | 안 남김 |
+| `/{camera_id}/vision/detection_summary` | `aed_interfaces/DetectionSummary` | `vision_detector` | `aed_hmi_bridge` | 동작 | 안 남김 |
 | `/{camera_id}/vision/debug/compressed` | `sensor_msgs/CompressedImage` | `vision_detector` | `aed_hmi_bridge` | 동작 | 안 남김 |
 | `/{camera_id}/vision/person_count` | `std_msgs/UInt32` | `vision_detector` | `aed_hmi_bridge` | 동작 | 안 남김 |
 | `/{camera_id}/vision/heartbeat` | `aed_interfaces/Heartbeat` | `vision_detector` | `recovery_manager` | 동작 | 안 남김 |
@@ -98,11 +98,18 @@ ROS 인터페이스  →  ros/converters.py  →  domain 모델  →  store/repo
 | `source_id` | TEXT | EmergencyEvent | `source_id` | `string` |
 | `camera_id` | TEXT | EmergencyEvent | `camera_id` | `string` |
 | `zone_id` | TEXT | EmergencyEvent | `zone_id` | `string` |
+| `location_source` | 저장 안 함 | EmergencyEvent | `location_source` | `string` |
+| `location_valid` | 저장 안 함 | EmergencyEvent | `location_valid` | `bool` |
 | `called_at` | REAL | 최초 1회의 `detected_at` | — | — |
 | `updated_at` | REAL | 서버 수신 시각 | — | — |
 
 `status` 는 `DETECTED / CONFIRMED / DISPATCHED / RESOLVED / CANCELED`
 (uint8 0~4)를 소문자 이름으로 바꿔 넣는다.
+
+`consecutive_detections`는 하위 호환 필드명이다. 현재 Vision 노드에서는 동일
+bbox가 정지 확정 조건을 만족하는 동안 누적된 관측 수를 저장한다.
+`location_source`와 `location_valid`는 현재 SQLite에는 저장하지 않고 HMI의
+실시간 이벤트 상태에만 보존한다.
 
 같은 `event_id` 가 다시 오면 상태만 갱신하고 `called_at` 은 **덮어쓰지
 않는다.** 상태가 바뀔 때마다 신고 시각이 밀리면 응답 시간 통계가 무의미해진다.

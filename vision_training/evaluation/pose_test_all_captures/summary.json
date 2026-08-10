@@ -1,0 +1,33 @@
+{
+  "dataset": "/tmp/pose_eval.jeOHIz/mannequin_dataset",
+  "test_images": 91,
+  "gt_mannequin": 91,
+  "matched_detection": 90,
+  "detection_recall_iou_0_5": 0.989010989010989,
+  "pose_generated": 68,
+  "pose_generation_rate_on_detected": 0.7555555555555555,
+  "quality_pass_kp_ge_6": 67,
+  "quality_pass_rate_on_pose": 0.9852941176470589,
+  "posture_distribution": {
+    "STANDING": 52,
+    "SITTING": 5,
+    "FALLEN": 8,
+    "UNKNOWN": 3
+  },
+  "mean_det_ms_per_image": 44.60415046154454,
+  "mean_pose_ms_per_image": 46.13504072521819,
+  "mean_pipeline_ms_per_image": 91.25094116469691,
+  "pipeline_fps": 10.958791079153047,
+  "settings": {
+    "device": "cpu",
+    "imgsz": 640,
+    "det_conf": 0.2,
+    "pose_conf": 0.25,
+    "keypoint_conf": 0.3,
+    "iou": 0.5,
+    "crop_padding": 0.15,
+    "seed": 42,
+    "sample_count": 91
+  },
+  "limitation": "Detection 라벨만 있으므로 Pose keypoint mAP 및 자세 분류 정확도는 산출하지 않음"
+}

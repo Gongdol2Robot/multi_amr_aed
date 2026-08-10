@@ -13,7 +13,7 @@ import threading
 import time
 from typing import Optional
 
-from ..domain.enums import MissionState, mission_state_from_name
+from ..domain.enums import MissionState, RobotRole, mission_state_from_name
 from ..domain.models import (
     EmergencyEventSnapshot,
     MissionEvent,
@@ -36,6 +36,17 @@ class Repository:
             os.makedirs(directory, exist_ok=True)
         with open(SCHEMA_PATH, encoding="utf-8") as handle:
             self._connection().executescript(handle.read())
+        columns = {
+            row["name"]
+            for row in self._connection().execute(
+                "PRAGMA table_info(emergency_events)"
+            )
+        }
+        if "crowd_level" not in columns:
+            self._connection().execute(
+                "ALTER TABLE emergency_events "
+                "ADD COLUMN crowd_level INTEGER NOT NULL DEFAULT 255"
+            )
 
     def _connection(self) -> sqlite3.Connection:
         connection = getattr(self._local, "connection", None)
@@ -77,14 +88,16 @@ class Repository:
             INSERT INTO emergency_events (
                 event_id, detected_at, map_x, map_y, frame_id, confidence,
                 consecutive_detections, status, source_id, camera_id, zone_id,
+                crowd_level,
                 called_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (event_id) DO UPDATE SET
                 status = excluded.status,
                 confidence = excluded.confidence,
                 consecutive_detections = excluded.consecutive_detections,
                 map_x = excluded.map_x,
                 map_y = excluded.map_y,
+                crowd_level = excluded.crowd_level,
                 updated_at = excluded.updated_at
             """,
             (
@@ -92,7 +105,7 @@ class Repository:
                 event.location.x, event.location.y, event.frame_id,
                 event.confidence, event.consecutive_detections,
                 event.status.value, event.source_id, event.camera_id,
-                event.zone_id,
+                event.zone_id, event.crowd_level,
                 called_at if called_at is not None else event.detected_at,
                 now,
             ),
@@ -228,7 +241,7 @@ class Repository:
             ).fetchone()
             target = self._connection().execute(
                 """
-                SELECT target_x, target_y FROM mission_assignments
+                SELECT target_x, target_y, role FROM mission_assignments
                 WHERE mission_id = ?
                 ORDER BY assignment_version DESC LIMIT 1
                 """,
@@ -283,6 +296,10 @@ class Repository:
                 ),
                 assignment_version=row["assignment_version"] or 0,
                 reassignment_count=max(row["reassignments"] or 0, 0),
+                role=(
+                    RobotRole(target["role"])
+                    if target else RobotRole.NONE
+                ),
                 failure_reasons=reasons,
                 predicted_eta_seconds=(
                     eta["predicted_sec"] if eta else None

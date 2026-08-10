@@ -17,9 +17,13 @@ setup(
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/config", glob("config/*.yaml")),
         ("share/" + package_name + "/launch", glob("launch/*.launch.py")),
-        ("share/" + package_name + "/models", glob("models/*.pt")),
+        (
+            "share/" + package_name + "/models",
+            glob("models/*.pt") + glob("models/*.xml"),
+        ),
     ],
-    install_requires=["setuptools"],
+    install_requires=["setuptools", "ultralytics>=8.3,<9"],
+    extras_require={"test": ["pytest"]},
     zip_safe=True,
     maintainer="multi_amr_aed team",
     maintainer_email="team@example.com",
@@ -28,7 +32,6 @@ setup(
     entry_points={
         "console_scripts": [
             "vision_detector = aed_vision.vision_detector:main",
-            "webcam_publisher = aed_vision.webcam_publisher:main",
         ],
     },
 )

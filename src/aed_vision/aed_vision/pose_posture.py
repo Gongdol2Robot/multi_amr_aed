@@ -1,4 +1,9 @@
-"""COCO 17관절과 bbox로 실제 사람의 자세를 판정한다."""
+"""사람 Pose 모델의 COCO 17관절을 규칙 기반 자세 라벨로 변환한다.
+
+YOLO Pose는 관절 좌표만 주고 '서 있음/앉음/쓰러짐'을 직접 말해주지 않는다.
+이 파일이 bbox 가로세로 비율, 어깨-엉덩이 몸통 각도, 엉덩이-무릎 방향을
+조합해 ``FALLEN``, ``SITTING``, ``STANDING``, ``UNKNOWN``을 결정한다.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +17,7 @@ TORSO_INDEXES = (LEFT_SHOULDER, RIGHT_SHOULDER, LEFT_HIP, RIGHT_HIP)
 
 
 def _center(keypoints, first: int, second: int, threshold: float):
+    """관절 한 쌍에서 신뢰도 기준을 통과한 점들의 중심 좌표를 계산한다."""
     # 좌우 한 쌍(예: 양 어깨) 중 confidence가 threshold 이상인 점만 평균한다.
     # 한쪽이 가려져도(예: 옆으로 누움) 보이는 한 점만으로 중심을 낼 수 있게
     # 최소 1개만 있으면 계산하고, 둘 다 안 보이면 None을 반환한다.
@@ -33,16 +39,20 @@ def classify_posture(
     box,
     keypoint_conf: float = 0.3,
 ) -> tuple[str, dict[str, float]]:
-    """자세와 판단 근거를 반환한다.
+    """관절과 bbox에서 ``(자세 라벨, 계산 근거)``를 반환한다.
 
     몸통이 수평이고 bbox가 가로로 길면 FALLEN, 엉덩이에서 무릎 방향이
     수평에 가까우면 SITTING, 그 외에는 STANDING으로 판정한다.
     """
+    # 판정 우선순위는 FALLEN -> SITTING -> STANDING이다. 관절이 부족해
+    # 확실히 분류할 수 없을 때는 정상으로 단정하지 않고 UNKNOWN을 반환한다.
     x1, y1, x2, y2 = (float(value) for value in box)
     width = max(x2 - x1, 1.0)
     height = max(y2 - y1, 1.0)
     # bbox가 세로보다 가로로 길수록 (aspect_ratio가 클수록) 누워 있을 가능성이 높다.
     aspect_ratio = width / height
+    # metrics는 VisionDetector의 status JSON과 디버그 화면에 노출된다.
+    # -1도는 몸통 관절 부족으로 각도를 계산하지 못했다는 뜻이다.
     metrics = {"aspect_ratio": aspect_ratio, "torso_angle_deg": -1.0}
 
     shoulders = _center(
@@ -66,7 +76,9 @@ def classify_posture(
     # (2) 몸통 각도를 신뢰하기 애매해도 bbox가 아주 넓게 누운 경우(측면·가림 대비).
     if aspect_ratio >= 1.2 and torso_angle <= 40.0:
         return "FALLEN", metrics
-    if aspect_ratio >= 1.6:
+    # 목각인형에서는 사람용 Pose의 몸통 방향이 흔들릴 수 있으므로 충분히
+    # 넓은 1단계 검출 bbox는 관절 방향과 관계없이 누운 자세로 판정한다.
+    if aspect_ratio >= 1.35:
         return "FALLEN", metrics
     # 무릎이 엉덩이보다 수평 방향으로 더 벌어져 있으면(가로 거리 > 세로 거리*0.8)
     # 다리를 앞으로 뻗은 착석 자세로 본다.

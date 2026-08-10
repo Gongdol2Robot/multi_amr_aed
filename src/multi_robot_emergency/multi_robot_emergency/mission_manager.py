@@ -10,7 +10,9 @@ import time
 
 from action_msgs.msg import GoalStatus
 from aed_interfaces.msg import (
+    CrowdLevel,
     EmergencyEvent,
+    Heartbeat,
     MissionAssignment,
     MissionStatus,
     RobotState,
@@ -99,9 +101,11 @@ class EmergencyMissionManager(Node):
         self.declare_parameter("target_arrival_time_sec", 30.0)
         self.declare_parameter("dual_dispatch_trigger_ratio", 0.85)
         self.declare_parameter("patient_standoff_enabled", True)
-        self.declare_parameter("patient_standoff_distance_m", 0.15)
+        # Nav2 XY 허용 오차(0.15m)를 감안해 환자와 최소 0.50m를 확보한다.
+        self.declare_parameter("patient_standoff_distance_m", 0.65)
         self.declare_parameter("return_after_helper_enabled", True)
-        self.declare_parameter("dual_robot_proximity_threshold_m", 0.40)
+        # TurtleBot 두 대가 서로의 local costmap을 막기 전에 한 대를 뺀다.
+        self.declare_parameter("dual_robot_proximity_threshold_m", 0.80)
         self.declare_parameter("dual_robot_proximity_confirm_sec", 0.50)
         self.declare_parameter("dual_robot_proximity_grace_sec", 2.0)
         self.declare_parameter("nominal_linear_speed_mps", 0.20)
@@ -116,6 +120,16 @@ class EmergencyMissionManager(Node):
         self.declare_parameter(
             "crowd_level_topic", "/camera_alley/vision/crowd_level"
         )
+        self.declare_parameter(
+            "vision_heartbeat_topics",
+            [
+                "/camera_open/vision/heartbeat",
+                "/camera_alley/vision/heartbeat",
+                "/robot1/vision/heartbeat",
+                "/robot2/vision/heartbeat",
+            ],
+        )
+        self.declare_parameter("vision_heartbeat_timeout_sec", 3.0)
         self.declare_parameter(
             "crowd_level_names", ["CLEAR", "BUSY", "CROWDED", "BLOCKED"]
         )
@@ -388,6 +402,22 @@ class EmergencyMissionManager(Node):
             ),
         )
         self.raw_crowd_level = "UNKNOWN"
+        self.vision_heartbeat_timeout = float(
+            self.get_parameter("vision_heartbeat_timeout_sec").value
+        )
+        if self.vision_heartbeat_timeout <= 0.0:
+            raise ValueError("vision_heartbeat_timeout_sec must be positive")
+        heartbeat_topics = [
+            str(topic)
+            for topic in self.get_parameter("vision_heartbeat_topics").value
+        ]
+        heartbeat_started_at = time.monotonic()
+        self.vision_heartbeat_received = {
+            f"aed_vision:{topic.strip('/').split('/')[0]}": (
+                heartbeat_started_at
+            )
+            for topic in heartbeat_topics
+        }
         if self.docked_start_offset < 0.0:
             raise ValueError("docked_start_offset_m must be non-negative")
 
@@ -500,6 +530,28 @@ class EmergencyMissionManager(Node):
             self._on_mission_status,
             20,
         )
+        self.fallback_state_subscriptions = [
+            self.create_subscription(
+                String,
+                f"/{robot_id}/fallback_state",
+                lambda message, rid=robot_id: self._on_fallback_state(
+                    rid, message
+                ),
+                latched_qos,
+            )
+            for robot_id in self.robot_ids
+        ]
+        self.lidar_state_subscriptions = [
+            self.create_subscription(
+                String,
+                f"/{robot_id}/lidar_state",
+                lambda message, rid=robot_id: self._on_lidar_state(
+                    rid, message
+                ),
+                latched_qos,
+            )
+            for robot_id in self.robot_ids
+        ]
         self.crowd_person_count_subscription = self.create_subscription(
             UInt32,
             str(self.get_parameter("crowd_person_count_topic").value),
@@ -507,10 +559,22 @@ class EmergencyMissionManager(Node):
             10,
         )
         self.crowd_level_subscription = self.create_subscription(
-            String,
+            CrowdLevel,
             str(self.get_parameter("crowd_level_topic").value),
             self._on_raw_crowd_level,
             10,
+        )
+        self.vision_heartbeat_subscriptions = [
+            self.create_subscription(
+                Heartbeat,
+                str(topic),
+                self._on_vision_heartbeat,
+                10,
+            )
+            for topic in heartbeat_topics
+        ]
+        self.vision_heartbeat_timer = self.create_timer(
+            1.0, self._check_vision_heartbeats
         )
         # Robot1이 꺼진 Robot2 단독 시험에서도 keepout mask를 만들 수
         # 있도록 두 map_server 중 먼저 보이는 공용 지도를 사용한다.
@@ -623,6 +687,13 @@ class EmergencyMissionManager(Node):
         self.return_failed_robots: set[str] = set()
         self.returning_robots: set[str] = set()
         self.awaiting_helper_robots: set[str] = set()
+        self.fallback_states: dict[str, str] = {
+            robot_id: "UNKNOWN" for robot_id in self.robot_ids
+        }
+        self.lidar_states: dict[str, str] = {
+            robot_id: "UNKNOWN" for robot_id in self.robot_ids
+        }
+        self.recovery_robots: set[str] = set()
         self.dual_dispatch_active = False
         self.dual_dispatch_started_at: float | None = None
         self.proximity_close_since: float | None = None
@@ -738,10 +809,11 @@ class EmergencyMissionManager(Node):
         """Keep the count for diagnostics; vision owns classification."""
         self.crowd_filter.update_person_count(int(message.data))
 
-    def _on_raw_crowd_level(self, message: String) -> None:
+    def _on_raw_crowd_level(self, message: CrowdLevel) -> None:
         """Consume the final crowd decision made by the vision node."""
         previous = self.crowd_filter.snapshot(time.monotonic())
-        self.raw_crowd_level = message.data.strip() or "UNKNOWN"
+        self.raw_crowd_level = str(int(message.level))
+        self.crowd_filter.update_person_count(int(message.person_count))
         snapshot = self.crowd_filter.update_level(
             self.raw_crowd_level, time.monotonic()
         )
@@ -820,6 +892,17 @@ class EmergencyMissionManager(Node):
         self.return_failed_robots.clear()
         self.returning_robots.clear()
         self.awaiting_helper_robots.clear()
+        self.recovery_robots = {
+            robot_id
+            for robot_id in self.robot_ids
+            if self.fallback_states.get(robot_id) in {
+                "STARTING",
+                "ACTIVE",
+                "BLOCKED",
+                "RECOVERING",
+            }
+            or self.lidar_states.get(robot_id) in {"FAULT", "RECOVERING"}
+        }
         self.dual_dispatch_active = False
         self.dual_dispatch_started_at = None
         self.proximity_close_since = None
@@ -864,9 +947,31 @@ class EmergencyMissionManager(Node):
                 return
         self._calculate_and_assign(request)
 
+    def _on_vision_heartbeat(self, message: Heartbeat) -> None:
+        """비전 노드별 마지막 생존 신호 수신 시각을 기록한다."""
+        self.vision_heartbeat_received[message.sender_id] = time.monotonic()
+
+    def _check_vision_heartbeats(self) -> None:
+        """실행 후 수신된 비전 노드가 멈추면 주기적으로 경고한다."""
+        now = time.monotonic()
+        for sender_id, received_at in self.vision_heartbeat_received.items():
+            age = now - received_at
+            if age > self.vision_heartbeat_timeout:
+                self.get_logger().warning(
+                    f"Vision heartbeat stale: sender={sender_id}, "
+                    f"age={age:.1f}s",
+                    throttle_duration_sec=5.0,
+                )
+
     def _on_emergency_event(self, message: EmergencyEvent) -> None:
         """Start one mission on a YOLO confirmation edge only."""
         if message.status != EmergencyEvent.CONFIRMED:
+            return
+        if not message.location_valid:
+            self.get_logger().error(
+                "Ignoring emergency with unsafe location: "
+                f"event={message.event_id}, source={message.location_source}"
+            )
             return
         event_id = message.event_id.strip()
         if event_id and event_id in self.processed_event_ids:
@@ -967,6 +1072,12 @@ class EmergencyMissionManager(Node):
         self.plan_failures.clear()
         self.planning_targets.clear()
         for robot_id in self.robot_ids:
+            lidar_state = self.lidar_states.get(robot_id, "UNKNOWN")
+            if lidar_state in {"FAULT", "RECOVERING"}:
+                self.plan_failures[robot_id] = (
+                    f"LiDAR unavailable ({lidar_state})"
+                )
+                continue
             try:
                 # 같은 환자 좌표라도 로봇의 현재 위치가 다르므로 standoff goal도 로봇별로 따로 만든다.
                 self.planning_targets[robot_id] = (
@@ -1447,6 +1558,7 @@ class EmergencyMissionManager(Node):
         if status.status == MissionStatus.EN_ROUTE:
             # 실제 Nav2 Goal이 수락되어 주행이 시작된 순간을 ETA actual 측정 시작점으로 저장한다.
             # setdefault라서 EN_ROUTE가 중복 수신되어도 최초 시각을 덮어쓰지 않는다.
+            self.recovery_robots.discard(status.robot_id)
             self.navigation_started_at.setdefault(
                 status.robot_id, time.monotonic()
             )
@@ -1458,7 +1570,32 @@ class EmergencyMissionManager(Node):
             )
             self._publish_status(state, f"{status.robot_id} is moving")
             return
+        if status.status == MissionStatus.RECOVERY_WAIT:
+            self.recovery_robots.add(status.robot_id)
+            state = (
+                "RETURN_RECOVERY_WAIT"
+                if status.robot_id in self.returning_robots
+                else "RECOVERY_WAIT"
+            )
+            self._publish_status(
+                state,
+                status.reason or f"{status.robot_id} LiDAR fallback active",
+            )
+            return
+        if status.status == MissionStatus.RECOVERY_RESUMED:
+            self.recovery_robots.discard(status.robot_id)
+            state = (
+                "RETURNING"
+                if status.robot_id in self.returning_robots
+                else "NAVIGATING"
+            )
+            self._publish_status(
+                state,
+                status.reason or f"{status.robot_id} resumed Nav2",
+            )
+            return
         if status.status in (MissionStatus.ARRIVED, MissionStatus.COMPLETED):
+            self.recovery_robots.discard(status.robot_id)
             if status.robot_id in self.returning_robots:
                 self.returning_robots.discard(status.robot_id)
                 self.navigation_started_at.pop(status.robot_id, None)
@@ -1496,7 +1633,44 @@ class EmergencyMissionManager(Node):
         }:
             return
 
+        if (
+            status.status == MissionStatus.CANCELED
+            and status.robot_id in self.recovery_robots
+        ):
+            self.get_logger().info(
+                f"Ignoring Nav2 CANCELED from {status.robot_id}: "
+                "LiDAR fallback owns motion"
+            )
+            return
+        self.recovery_robots.discard(status.robot_id)
         self._handle_navigation_failure(status.robot_id, status.reason)
+
+    def _on_fallback_state(self, robot_id: str, message: String) -> None:
+        """Track cmd_vel ownership before Nav2 cancellation reaches us."""
+        state = message.data.strip().upper()
+        self.fallback_states[robot_id] = state
+        if state in {"STARTING", "ACTIVE", "BLOCKED", "RECOVERING"}:
+            self.recovery_robots.add(robot_id)
+        elif state in {"IDLE", "RESUMED", "SUCCEEDED", "FAILED"}:
+            if self.lidar_states.get(robot_id) not in {
+                "FAULT",
+                "RECOVERING",
+            }:
+                self.recovery_robots.discard(robot_id)
+
+    def _on_lidar_state(self, robot_id: str, message: String) -> None:
+        """Prevent dispatch and cancellation races while LiDAR is faulty."""
+        state = message.data.strip().upper()
+        self.lidar_states[robot_id] = state
+        if state in {"FAULT", "RECOVERING"}:
+            self.recovery_robots.add(robot_id)
+        elif state == "ALIVE" and self.fallback_states.get(robot_id) not in {
+            "STARTING",
+            "ACTIVE",
+            "BLOCKED",
+            "RECOVERING",
+        }:
+            self.recovery_robots.discard(robot_id)
 
     def _return_after_helper_handoff(self, status: MissionStatus) -> None:
         """Send the arrived AED robot back after helper handoff completes."""
@@ -1673,6 +1847,7 @@ class EmergencyMissionManager(Node):
             or not self.navigation_active
             or self.planning_active
             or self.dual_dispatch_active
+            or bool(self.recovery_robots)
             or self.live_reassignment_done
             or now < self.live_replan_next_at
         ):
@@ -1880,7 +2055,11 @@ class EmergencyMissionManager(Node):
         self.live_replan_active = False
         now = time.monotonic()
         self.live_replan_next_at = now + self.live_replan_interval
-        if not self.navigation_active or self.dual_dispatch_active:
+        if (
+            not self.navigation_active
+            or self.dual_dispatch_active
+            or self.recovery_robots
+        ):
             return
         active = [
             robot_id
@@ -1979,6 +2158,7 @@ class EmergencyMissionManager(Node):
             not self.navigation_active
             or not self.dual_dispatch_active
             or self.proximity_return_triggered
+            or bool(self.recovery_robots)
             or self.dual_dispatch_started_at is None
             or now - self.dual_dispatch_started_at
             < self.dual_robot_proximity_grace
@@ -2305,6 +2485,11 @@ class EmergencyMissionManager(Node):
                 "level_name": snapshot.name,
                 "person_count": snapshot.person_count,
                 "raw_level": self.raw_crowd_level,
+                "zone_id": "alley_zone",
+                "polygon": [
+                    {"x": round(x, 4), "y": round(y, 4)}
+                    for x, y in self.crowd_zone_polygon
+                ],
             },
             separators=(",", ":"),
             sort_keys=True,

@@ -10,7 +10,8 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
-from .domain.models import Point2D
+from .domain.enums import MissionState, RobotRole
+from .domain.models import MissionEvent, Point2D
 from .ros.topics import DEFAULT_STREAMS
 from .store.repository import Repository
 from .stream.frames import FrameRegistry
@@ -81,6 +82,9 @@ class Context:
     def on_fallback_state(self, robot_id: str, state: str) -> None:
         self.live.put_fallback_state(robot_id, state)
 
+    def on_crowd_zone(self, crowd_zone) -> None:
+        self.live.put_crowd_zone(crowd_zone)
+
     def on_predicted_eta(self, robot_id: str, seconds: float) -> None:
         """Use the mission manager's ETA as the sole HMI ETA source."""
         mission_id = self._active_eta_mission.get(robot_id)
@@ -115,9 +119,21 @@ class Context:
             self._active_eta_mission.pop(robot_id, None)
         self.live.set_mission_target(
             mission_id, assigned_at, target,
+            role=RobotRole(role),
             initial_eta_seconds=initial_eta,
             current_eta_seconds=initial_eta,
         )
+        # executor의 첫 응답을 기다리는 동안도 배정 사실은 배너에 보여준다.
+        # 실제 MissionStatus가 오면 같은 mission_id의 이 임시 상태를 덮는다.
+        self.live.put_mission(MissionEvent(
+            mission_id=mission_id,
+            event_id=event_id,
+            robot_id=robot_id,
+            assignment_version=version,
+            state=MissionState.ASSIGNED,
+            stamp=assigned_at,
+            reason="executor 응답 대기",
+        ))
         try:
             self.repository.insert_assignment(
                 mission_id, version, event_id, robot_id, role,

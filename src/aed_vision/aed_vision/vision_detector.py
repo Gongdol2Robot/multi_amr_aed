@@ -1,15 +1,33 @@
-"""고정 카메라 영상에서 구조 대상과 선택적으로 골목 혼잡도를 검출한다."""
+"""AED 비전 패키지의 시작점이자 ROS 통신을 담당하는 조정자 노드.
+
+전체 실행 순서는 다음과 같다.
+
+1. YAML에서 들어온 ROS 파라미터를 읽고 모델 파이프라인을 한 번 생성한다.
+2. USB 카메라를 직접 읽거나 ROS Image/CompressedImage 토픽을 구독한다.
+3. 프레임을 ``InferencePipeline.predict``에 넘겨 단일 프레임 후보를 받는다.
+4. 동일 bbox의 정지 지속 시간으로 낙상을 확정하고 호모그래피 위치를 계산한다.
+5. 상태·혼잡도·응급 이벤트·디버그 영상을 각각의 ROS 토픽에 발행한다.
+
+모델 내부 판정은 ``inference_pipeline``에 있고, 이 파일은 입력과 출력 및 상태
+전환을 연결한다. 따라서 코드 흐름을 공부할 때 ``_process_frame``부터 보면 된다.
+"""
 
 from __future__ import annotations
 
 import json
 import os
+from time import monotonic
 from uuid import uuid4
 
 import cv2
 import numpy as np
 import rclpy
-from aed_interfaces.msg import EmergencyEvent, Heartbeat
+from aed_interfaces.msg import (
+    CrowdLevel,
+    DetectionSummary,
+    EmergencyEvent,
+    Heartbeat,
+)
 from geometry_msgs.msg import PointStamped
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage, Image
@@ -18,7 +36,10 @@ from std_msgs.msg import Bool, String, UInt32
 from .camera_source import DirectCameraSource
 from .detection_logic import (
     Box,
+    CrowdStateStabilizer,
+    StationaryFallConfirmation,
     TemporalConfirmation,
+    crowd_metrics,
     update_presence_confirmation,
 )
 from .homography import Homography
@@ -27,6 +48,9 @@ from .qos import CAMERA_QOS
 
 
 PARAMETER_DEFAULTS = (
+    # ROS 2는 노드가 파라미터 이름과 자료형을 먼저 선언해야 YAML 값을 받을 수
+    # 있다. 아래 값은 YAML이 없을 때의 안전 기본값이며 실제 배치값은 config의
+    # 카메라별 YAML이 덮어쓴다. 즉 설정의 주 저장소는 YAML, 여기는 선언 목록이다.
     # 카메라 역할과 입력
     ("camera_id", "camera_open"),
     ("zone_id", "open_zone"),
@@ -34,7 +58,7 @@ PARAMETER_DEFAULTS = (
     ("image_topic", "/camera/image_raw/compressed"),
     ("image_is_compressed", True),
     ("direct_camera", True),
-    ("camera_device", "/dev/video2"),
+    ("camera_device", "auto"),
     ("width", 640),
     ("height", 480),
     ("fps", 15.0),
@@ -51,19 +75,31 @@ PARAMETER_DEFAULTS = (
     ("pose_min_keypoints", 8),
     ("pose_min_box_area", 0.02),
     ("pose_min_torso_keypoints", 3),
+    ("mannequin_bbox_fallback", True),
+    ("mannequin_fallen_aspect_threshold", 1.03),
+    ("posture_classifier_weights", ""),
+    ("run_pose_for_mannequin", True),
     ("detect_people_as_helpers", False),
     ("iou", 0.5),
     ("imgsz", 640),
     ("inference_device", ""),
     # 검출 확정과 혼잡도
-    ("confirmation_window", 10),
-    ("confirmation_hits", 6),
+    ("fall_stationary_seconds", 1.0),
+    ("fall_max_center_motion_ratio", 0.025),
+    ("fall_max_size_change_ratio", 0.25),
+    ("fall_track_match_iou", 0.30),
+    ("fall_detection_gap_tolerance_seconds", 0.25),
+    ("cancellation_timeout_seconds", 2.0),
     ("helper_confirmation_window", 6),
     ("helper_confirmation_hits", 3),
     ("helper_max_distance_ratio", 0.30),
     ("crowd_roi", [0.0, 0.0, 1.0, 1.0]),
-    ("crowded_person_threshold", 3),
     ("fallen_person_overlap_iou", 0.4),
+    ("crowd_worsening_window", 5),
+    ("crowd_worsening_hits", 3),
+    ("crowd_improving_window", 10),
+    ("crowd_improving_hits", 7),
+    ("crowd_minimum_hold_seconds", 3.0),
     # map 좌표와 호모그래피
     ("location_frame_id", "map"),
     ("location_x", 0.0),
@@ -77,12 +113,27 @@ PARAMETER_DEFAULTS = (
 )
 
 
-def raw_image_to_bgr(message: Image) -> np.ndarray:
-    """Convert common 8-bit ROS Image encodings without cv_bridge.
+def helper_configuration_warning(
+    mode: str, detection_backend: str, detect_people_as_helpers: bool
+) -> str | None:
+    """조력자를 찾아야 하는 robot의 비활성 person helper 설정을 설명한다."""
+    if (
+        mode == "robot"
+        and detection_backend == "person_pose"
+        and not detect_people_as_helpers
+    ):
+        return (
+            "robot person_pose backend has detect_people_as_helpers=false; "
+            "helper_count and helper_confirmed will remain empty"
+        )
+    return None
 
-    ROS Humble's cv_bridge extension is built against the system NumPy ABI,
-    while Ultralytics may use a newer user-site NumPy.  Reading the byte
-    buffer directly avoids loading incompatible NumPy ABIs in one process.
+
+def raw_image_to_bgr(message: Image) -> np.ndarray:
+    """일반적인 8비트 ROS Image 메시지를 cv_bridge 없이 BGR 영상으로 변환한다.
+
+    ROS Humble의 cv_bridge와 Ultralytics가 서로 다른 NumPy ABI를 사용할 수
+    있으므로, 메시지의 바이트 버퍼를 직접 읽어 충돌 가능성을 피한다.
     """
     encoding = message.encoding.lower()
     channel_counts = {
@@ -126,7 +177,7 @@ def raw_image_to_bgr(message: Image) -> np.ndarray:
 
 
 class VisionDetector(Node):
-    """압축 영상을 받아 카메라 설치 장소에 맞는 추론 파이프라인을 수행한다.
+    """영상 입력, 시간 기반 확정 상태, ROS 결과 발행을 조율한다.
 
     open 모드는 구조 모델 하나만 실행하고, alley 모드는 같은 프레임에 구조
     모델과 COCO person 모델을 실행한다. 두 역할을 하나의 클래스로 구현해
@@ -134,142 +185,193 @@ class VisionDetector(Node):
     """
 
     def __init__(self) -> None:
-        """파라미터, 모델, ROS publisher/subscriber와 타이머를 초기화한다."""
+        """설정→상태→모델→ROS 입출력 순서로 노드를 초기화한다."""
         super().__init__("vision_detector")
         self._declare_parameters()
 
-        # 카메라 식별자는 토픽 경로와 이벤트 출처에 함께 사용한다.
-        self.camera_id = str(self.get_parameter("camera_id").value)
-        self.zone_id = str(self.get_parameter("zone_id").value)
-        self.mode = str(self.get_parameter("mode").value).lower()
+        self._load_config()
+        self._initialize_state()
+        self._setup_window()
+        self.pipeline = self._create_pipeline()
+        self._create_publishers()
+        self._setup_image_source()
+        self.heartbeat_timer = self.create_timer(1.0, self._publish_heartbeat)
+        self._log_configuration()
+
+    def _param(self, name: str):
+        """선언된 ROS 파라미터의 현재 값을 반환한다."""
+        return self.get_parameter(name).value
+
+    def _load_config(self) -> None:
+        """ROS 파라미터를 검출기가 사용하는 설정값으로 변환한다."""
+        self.camera_id = str(self._param("camera_id"))
+        self.zone_id = str(self._param("zone_id"))
+        self.mode = str(self._param("mode")).lower()
         if self.mode not in ("open", "alley", "robot"):
             raise ValueError("mode must be 'open', 'alley', or 'robot'")
+
+        # 카메라 식별자는 토픽 경로와 이벤트 출처에 함께 사용한다.
         # 인파 모델은 연산량을 줄이기 위해 alley 모드에서만 메모리에 올린다.
         self.enable_crowd = self.mode == "alley"
         self.detect_people_as_helpers = bool(
-            self.get_parameter("detect_people_as_helpers").value
+            self._param("detect_people_as_helpers")
         )
-        self.frame_id = str(self.get_parameter("location_frame_id").value)
-        self.location_x = float(self.get_parameter("location_x").value)
-        self.location_y = float(self.get_parameter("location_y").value)
-        homography_camera_id = str(
-            self.get_parameter("homography_camera_id").value
-        ).strip()
+        self.detection_backend = str(
+            self._param("detection_backend")
+        ).strip().lower()
+        warning = helper_configuration_warning(
+            self.mode,
+            self.detection_backend,
+            self.detect_people_as_helpers,
+        )
+        if warning:
+            self.get_logger().warning(warning)
+        self.frame_id = str(self._param("location_frame_id"))
+        self.location_x = float(self._param("location_x"))
+        self.location_y = float(self._param("location_y"))
+        homography_camera_id = str(self._param("homography_camera_id")).strip()
         self.homography = (
             Homography.load(camera_id=homography_camera_id)
             if homography_camera_id
             else None
         )
-        # EmergencyEvent에 넣을 대표 위치. 호모그래피가 없으면 YAML의
-        # 고정 location_x/y를 그대로 쓰고, 있으면 매 확정마다 갱신된다.
-        self.event_location = (self.location_x, self.location_y)
-        self.homography_margin = float(
-            self.get_parameter("homography_margin_m").value
-        )
+        self.homography_margin = float(self._param("homography_margin_m"))
         if self.homography_margin < 0.0:
             raise ValueError("homography_margin_m must be non-negative")
-        self.crowd_roi = list(self.get_parameter("crowd_roi").value)
-        self.crowded_threshold = int(
-            self.get_parameter("crowded_person_threshold").value
-        )
+        self.crowd_roi = list(self._param("crowd_roi"))
         self.overlap_threshold = float(
-            self.get_parameter("fallen_person_overlap_iou").value
+            self._param("fallen_person_overlap_iou")
         )
-        window = int(self.get_parameter("confirmation_window").value)
-        hits = int(self.get_parameter("confirmation_hits").value)
-        self.confirmation = TemporalConfirmation(window, hits)
-        helper_window = int(
-            self.get_parameter("helper_confirmation_window").value
-        )
-        helper_hits = int(
-            self.get_parameter("helper_confirmation_hits").value
+
+    def _initialize_state(self) -> None:
+        """시간 확정기와 프레임·이벤트 실행 상태를 초기화한다."""
+        self.confirmation = StationaryFallConfirmation(
+            float(self._param("fall_stationary_seconds")),
+            float(self._param("fall_max_center_motion_ratio")),
+            float(self._param("fall_max_size_change_ratio")),
+            float(self._param("fall_track_match_iou")),
+            float(self._param("fall_detection_gap_tolerance_seconds")),
+            float(self._param("cancellation_timeout_seconds")),
         )
         self.helper_confirmation = TemporalConfirmation(
-            helper_window, helper_hits
+            int(self._param("helper_confirmation_window")),
+            int(self._param("helper_confirmation_hits")),
         )
-        # was_confirmed는 매 프레임 이벤트를 반복 발행하지 않고 상태가 바뀔 때만
-        # CONFIRMED/CANCELED 이벤트를 한 번씩 발행하기 위한 이전 상태이다.
+        self.crowd_stabilizer = CrowdStateStabilizer(
+            int(self._param("crowd_worsening_window")),
+            int(self._param("crowd_worsening_hits")),
+            int(self._param("crowd_improving_window")),
+            int(self._param("crowd_improving_hits")),
+            float(self._param("crowd_minimum_hold_seconds")),
+        )
         self.was_confirmed = False
         self.event_id = ""
+        self.event_location = (self.location_x, self.location_y)
+        self.event_location_source = "configured"
+        self.event_location_valid = True
+        self.event_detected_at = None
+        self.event_confidence = 0.0
+        self.event_confirmation_hits = 0
+        self.event_crowd_level = CrowdLevel.NOT_APPLICABLE
         self.sequence = 0
-        self.show_window = bool(self.get_parameter("show_window").value)
+        self.show_window = bool(self._param("show_window"))
         self.window_name = f"AED Vision - {self.camera_id} ({self.mode})"
         self.processed_frames = 0
+        self.received_frames = 0
+        self.dropped_frames = 0
+        self.consecutive_inference_failures = 0
+        self.camera_input_failures = 0
+        self.monitoring_started_at = monotonic()
+        self.last_successful_inference_at = None
         self.first_frame_logged = False
-        # 추론보다 카메라 발행 주기가 빠를 때 콜백이 중첩되지 않게 하는 보호값.
         self.busy = False
 
-        # 첫 YOLO 추론은 CUDA 초기화 때문에 수 초 걸릴 수 있다. 첫 결과를 기다린
-        # 뒤 창을 만들면 실행 여부를 알기 어려우므로 노드 시작 즉시 창을 만든다.
-        if self.show_window:
-            if not os.environ.get("DISPLAY") and not os.environ.get(
-                "WAYLAND_DISPLAY"
-            ):
-                self.get_logger().warning(
-                    "show_window=true but DISPLAY/WAYLAND_DISPLAY is not set; "
-                    "disabling the local window"
-                )
-                self.show_window = False
-            else:
-                cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
-                cv2.resizeWindow(self.window_name, 960, 720)
-                placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
-                cv2.putText(
-                    placeholder,
-                    "Loading YOLO model / waiting for camera...",
-                    (45, 245),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.65,
-                    (0, 255, 255),
-                    2,
-                    cv2.LINE_AA,
-                )
-                cv2.imshow(self.window_name, placeholder)
-                cv2.waitKey(1)
+    def _setup_window(self) -> None:
+        """요청된 경우 모델 로딩 상태를 보여줄 OpenCV 창을 만든다."""
+        if not self.show_window:
+            return
+        has_display = os.environ.get("DISPLAY") or os.environ.get(
+            "WAYLAND_DISPLAY"
+        )
+        if not has_display:
+            self.get_logger().warning(
+                "show_window=true but DISPLAY/WAYLAND_DISPLAY is not set; "
+                "disabling the local window"
+            )
+            self.show_window = False
+            return
 
-        self.pipeline = InferencePipeline(
-            rescue_weights=str(self.get_parameter("rescue_weights").value),
-            person_weights=str(self.get_parameter("person_weights").value),
-            pose_weights=str(self.get_parameter("pose_weights").value),
-            detection_backend=str(
-                self.get_parameter("detection_backend").value
-            ),
+        cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(self.window_name, 960, 720)
+        placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+        cv2.putText(
+            placeholder,
+            "Loading YOLO model / waiting for camera...",
+            (45, 245),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (0, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+        cv2.imshow(self.window_name, placeholder)
+        cv2.waitKey(1)
+
+    def _create_pipeline(self) -> InferencePipeline:
+        """현재 설정에 맞는 추론 파이프라인을 생성한다."""
+        return InferencePipeline(
+            rescue_weights=str(self._param("rescue_weights")),
+            person_weights=str(self._param("person_weights")),
+            pose_weights=str(self._param("pose_weights")),
+            detection_backend=str(self._param("detection_backend")),
             enable_crowd=self.enable_crowd,
             detect_people_as_helpers=self.detect_people_as_helpers,
-            rescue_conf=float(self.get_parameter("rescue_conf").value),
-            person_conf=float(self.get_parameter("person_conf").value),
-            iou=float(self.get_parameter("iou").value),
-            imgsz=int(self.get_parameter("imgsz").value),
-            device=str(self.get_parameter("inference_device").value),
+            rescue_conf=float(self._param("rescue_conf")),
+            person_conf=float(self._param("person_conf")),
+            iou=float(self._param("iou")),
+            imgsz=int(self._param("imgsz")),
+            device=str(self._param("inference_device")),
             crowd_roi=self.crowd_roi,
-            crowded_threshold=self.crowded_threshold,
             overlap_threshold=self.overlap_threshold,
             helper_max_distance_ratio=float(
-                self.get_parameter("helper_max_distance_ratio").value
+                self._param("helper_max_distance_ratio")
             ),
-            pose_keypoint_conf=float(
-                self.get_parameter("pose_keypoint_conf").value
-            ),
-            pose_min_keypoints=int(
-                self.get_parameter("pose_min_keypoints").value
-            ),
-            pose_min_box_area=float(
-                self.get_parameter("pose_min_box_area").value
-            ),
+            pose_keypoint_conf=float(self._param("pose_keypoint_conf")),
+            pose_min_keypoints=int(self._param("pose_min_keypoints")),
+            pose_min_box_area=float(self._param("pose_min_box_area")),
             pose_min_torso_keypoints=int(
-                self.get_parameter("pose_min_torso_keypoints").value
+                self._param("pose_min_torso_keypoints")
+            ),
+            mannequin_bbox_fallback=bool(
+                self._param("mannequin_bbox_fallback")
+            ),
+            mannequin_fallen_aspect_threshold=float(
+                self._param("mannequin_fallen_aspect_threshold")
+            ),
+            posture_classifier_weights=str(
+                self._param("posture_classifier_weights")
+            ),
+            run_pose_for_mannequin=bool(
+                self._param("run_pose_for_mannequin")
             ),
         )
 
-        # 절대 토픽명을 사용해 두 노트북이 같은 ROS_DOMAIN_ID에 있어도
-        # camera_open과 camera_alley 결과가 명확하게 분리되도록 한다.
+    def _create_publishers(self) -> None:
+        """카메라별 namespace 아래에 결과 토픽 publisher를 생성한다.
+
+        status/summary/count는 현재 관측값이고, emergency_event는 확정 상태가
+        바뀔 때만 나가는 사건 메시지다. debug는 사람이 확인하는 JPEG 영상이다.
+        """
         prefix = f"/{self.camera_id}/vision"
         self.event_pub = self.create_publisher(
             EmergencyEvent, f"{prefix}/emergency_event", 10
         )
         self.status_pub = self.create_publisher(String, f"{prefix}/status", 10)
         self.crowd_pub = self.create_publisher(
-            String, f"{prefix}/crowd_level", 10
+            CrowdLevel, f"{prefix}/crowd_level", 10
+        )
+        self.summary_pub = self.create_publisher(
+            DetectionSummary, f"{prefix}/detection_summary", 10
         )
         self.person_count_pub = self.create_publisher(
             UInt32, f"{prefix}/person_count", 10
@@ -289,42 +391,38 @@ class VisionDetector(Node):
         self.debug_pub = self.create_publisher(
             CompressedImage, f"{prefix}/debug/compressed", CAMERA_QOS
         )
-        image_topic = str(self.get_parameter("image_topic").value)
-        self.image_is_compressed = bool(
-            self.get_parameter("image_is_compressed").value
-        )
-        # 우선 구독을 만들어 두고, direct_camera 모드면 바로 아래에서 폐기한다.
-        # (robot 모드처럼 direct_camera=False인 경우에는 이 구독을 그대로 쓴다.)
+
+    def _setup_image_source(self) -> None:
+        """설정에 따라 ROS 토픽 구독과 USB 직접 입력 중 하나만 활성화한다."""
+        self.image_topic = str(self._param("image_topic"))
+        self.image_is_compressed = bool(self._param("image_is_compressed"))
         if self.image_is_compressed:
             self.subscription = self.create_subscription(
                 CompressedImage,
-                image_topic,
+                self.image_topic,
                 self._on_compressed_image,
                 CAMERA_QOS,
             )
         else:
             self.subscription = self.create_subscription(
-                Image, image_topic, self._on_raw_image, CAMERA_QOS
+                Image, self.image_topic, self._on_raw_image, CAMERA_QOS
             )
-        # 기본 실행은 한 노드가 웹캠을 직접 읽는다. 같은 노트북 안에서 영상을
-        # DDS로 왕복시키지 않아 화면 지연과 publisher/subscriber 연결 문제를 없앤다.
-        self.direct_camera = bool(
-            self.get_parameter("direct_camera").value
-        )
+        self.direct_camera = bool(self._param("direct_camera"))
         self.camera_source = None
         if self.direct_camera:
-            # 구독 대신 웹캠을 직접 폴링하는 DirectCameraSource로 대체한다.
-            # image_topic은 그대로 두어 이 노드가 발행하는 원본 영상 토픽 이름으로
-            # 재사용한다(구독은 안 하고 publish만).
+            # 같은 카메라를 구독과 직접 열기로 중복 처리하지 않도록, 먼저 만든
+            # subscription을 제거하고 DirectCameraSource 콜백만 사용한다.
             self.destroy_subscription(self.subscription)
             self.subscription = None
             self.camera_source = DirectCameraSource(
-                self, image_topic, self._process_frame
+                self, self.image_topic, self._process_frame
             )
-        # 영상 유무와 관계없이 중앙 시스템이 노드 생존을 판단할 수 있게 한다.
-        self.heartbeat_timer = self.create_timer(1.0, self._publish_heartbeat)
+
+    def _log_configuration(self) -> None:
+        """시작 시 실제 적용된 주요 설정을 한 줄로 기록한다."""
         self.get_logger().info(
-            f"camera={self.camera_id} mode={self.mode} image={image_topic} "
+            f"camera={self.camera_id} mode={self.mode} "
+            f"image={self.image_topic} "
             f"crowd_detection={self.enable_crowd} "
             f"people_as_helpers={self.detect_people_as_helpers} "
             f"detection_backend={self.pipeline.detection_backend} "
@@ -341,6 +439,7 @@ class VisionDetector(Node):
             np.frombuffer(message.data, dtype=np.uint8), cv2.IMREAD_COLOR
         )
         if frame is None:
+            self.camera_input_failures += 1
             self.get_logger().warning("Failed to decode compressed image")
             return
         self._process_frame(frame, message)
@@ -350,6 +449,7 @@ class VisionDetector(Node):
         try:
             frame = raw_image_to_bgr(message)
         except ValueError as error:
+            self.camera_input_failures += 1
             self.get_logger().warning(
                 f"Failed to convert raw preview image: {error}"
             )
@@ -360,10 +460,16 @@ class VisionDetector(Node):
         self, frame: np.ndarray, source: CompressedImage | Image
     ) -> None:
         """디코딩된 한 프레임의 구조·혼잡 검출과 결과 발행을 수행한다."""
+        # 핵심 흐름:
+        # BGR 프레임 -> 모델 추론 -> 낙상 시간 확정 -> map 위치 계산
+        # -> 프레임별 상태 발행 -> 필요할 때 디버그 영상 발행.
+        # 이 함수는 각 세부 계산을 직접 하지 않고 전담 모듈을 조율한다.
         # 이전 프레임 추론이 아직 안 끝났으면 이번 프레임은 버린다.
         # 카메라 타이머/구독 콜백이 추론 속도보다 빠를 때 콜백이 쌓이는 것을 막는다
         # (콜백 큐잉 대신 여기서 직접 최신 프레임 우선 정책을 구현).
+        self.received_frames += 1
         if self.busy:
+            self.dropped_frames += 1
             return
         self.busy = True
         try:
@@ -373,11 +479,23 @@ class VisionDetector(Node):
                     "starting YOLO warm-up/inference"
                 )
                 self.first_frame_logged = True
+            # 1) 한 프레임의 낙상 후보, 조력자, 사람 수와 혼잡도를 계산한다.
+            # 아직 이 결과는 단일 프레임의 후보이며 응급상황 확정은 아니다.
             result = self.pipeline.predict(frame)
-            # 이번 프레임 단독 검출 여부(result.fallen)를 시간 창에 넣어
+            self.consecutive_inference_failures = 0
+            self.last_successful_inference_at = monotonic()
+
+            # 같은 FALLEN bbox의 위치·크기가 설정 시간 동안 안정적인지 추적해
             # 순간 오검출을 걸러낸 "확정" 여부를 얻는다.
-            confirmed = self.confirmation.update(bool(result.fallen))
+            height, width = frame.shape[:2]
+            confirmed = self.confirmation.update(
+                result.fallen, (width, height), monotonic()
+            )
+
+            # 2) 현재 프레임에서 가장 신뢰도 높은 낙상 후보의 위치를 구한다.
+            # 고정 카메라는 호모그래피, 미설정 카메라는 YAML 대표 좌표를 쓴다.
             target_location = self._target_location(result.fallen, frame.shape)
+
             # 측량 영역 밖(extrapolated)도 발행 대상에 포함— "configured"
             # (호모그래피 자체가 없는 경우)만 제외한다.
             if target_location[2].startswith("homography"):
@@ -390,6 +508,9 @@ class VisionDetector(Node):
                     f"First inference complete: {result.inference_ms:.1f} ms; "
                     f"show_window={self.show_window}"
                 )
+
+            # 3) 프레임별 요약은 항상 발행하고, 응급 이벤트는 확정 상태가
+            # 바뀐 순간에만 발행한다(False->True 또는 True->False).
             self._publish_outputs(
                 source,
                 result.fallen,
@@ -409,14 +530,23 @@ class VisionDetector(Node):
             if publish_debug or self.show_window:
                 self._publish_debug(source, result)
         except Exception as error:  # 카메라 콜백 자체가 죽지 않도록 로그 후 복구
-            self.get_logger().error(f"Vision inference failed: {error}")
+            self.consecutive_inference_failures += 1
+            self.get_logger().error(
+                "Vision inference failed "
+                f"({self.consecutive_inference_failures} consecutive): "
+                f"{error}",
+                throttle_duration_sec=5.0,
+            )
         finally:
             self.busy = False
 
     def _target_location(
         self, fallen: list[Box], frame_shape
     ) -> tuple[float, float, str]:
-        """가장 확실한 쓰러진 사람의 bbox 중심을 map 좌표로 변환한다."""
+        """가장 확실한 쓰러진 사람의 bbox 하단 중심을 map 좌표로 변환한다."""
+        # 반환값의 세 번째 항목은 좌표의 출처다.
+        # configured: YAML 대표 좌표, homography: 측량 내부 변환,
+        # homography_extrapolated: 측량 영역 밖으로 외삽한 변환.
         fallback = (self.location_x, self.location_y)
         if self.homography is None or not fallen:
             return fallback[0], fallback[1], "configured"
@@ -474,6 +604,19 @@ class VisionDetector(Node):
         status는 매 처리 프레임 발행하지만 EmergencyEvent는 False→True일 때
         CONFIRMED, True→False일 때 CANCELED를 한 번만 발행한다.
         """
+        # 이 함수의 출력은 두 종류다.
+        # 1) 관측값: person/helper/crowd/status/summary를 매 프레임 발행
+        # 2) 사건값: CONFIRMED/CANCELED를 상태 전환 때 한 번만 발행
+        # person_count는 현재 프레임의 원본 관측값으로 발행한다. 반면 로봇의
+        # 경로 결정을 바꾸는 혼잡 등급은 시간 안정화를 통과한 값으로 교체한다.
+        observed_crowd_level = crowd_level
+        if crowd_level is not None:
+            crowd_level = self.crowd_stabilizer.update(crowd_level)
+            (
+                _stable_level,
+                crowd_time_multiplier,
+                crowd_traversable,
+            ) = crowd_metrics(crowd_level)
         self.person_count_pub.publish(UInt32(data=person_count))
         helper_count = len(helpers)
         helper_confirmed = update_presence_confirmation(
@@ -481,10 +624,23 @@ class VisionDetector(Node):
         )
         self.helper_count_pub.publish(UInt32(data=helper_count))
         self.helper_confirmed_pub.publish(Bool(data=helper_confirmed))
-        crowd_value = (
-            "NOT_APPLICABLE" if crowd_level is None else str(crowd_level)
+        crowd_message = CrowdLevel()
+        crowd_message.camera_id = self.camera_id
+        crowd_message.zone_id = self.zone_id
+        crowd_message.stamp = source.header.stamp
+        crowd_message.level = (
+            CrowdLevel.NOT_APPLICABLE
+            if crowd_level is None
+            else crowd_level
         )
-        self.crowd_pub.publish(String(data=crowd_value))
+        crowd_message.person_count = person_count
+        crowd_message.time_multiplier = (
+            float("nan")
+            if crowd_time_multiplier is None
+            else crowd_time_multiplier
+        )
+        crowd_message.traversable = crowd_traversable
+        self.crowd_pub.publish(crowd_message)
         payload = {
             "camera_id": self.camera_id,
             "zone_id": self.zone_id,
@@ -501,13 +657,38 @@ class VisionDetector(Node):
             "helper_confirmation_hits": self.helper_confirmation.hit_count,
             "person_count": person_count,
             "crowd_level": crowd_level,
+            "crowd_observed_level": observed_crowd_level,
             "crowd_time_multiplier": crowd_time_multiplier,
             "crowd_traversable": crowd_traversable,
             "confirmation_hits": self.confirmation.hit_count,
+            "fallen_stationary_duration_s": round(
+                self.confirmation.stationary_duration, 3
+            ),
+            "fallen_center_motion_ratio": round(
+                self.confirmation.center_motion_ratio, 5
+            ),
+            "fallen_size_change_ratio": round(
+                self.confirmation.size_change_ratio, 5
+            ),
             "inference_ms": round(inference_ms, 2),
             "location_x": round(target_location[0], 3),
             "location_y": round(target_location[1], 3),
             "location_source": target_location[2],
+            "received_frames": self.received_frames,
+            "processed_frames": self.processed_frames,
+            "dropped_frames": self.dropped_frames,
+            "processed_fps": round(
+                self.processed_frames
+                / max(monotonic() - self.monitoring_started_at, 1e-6),
+                2,
+            ),
+            "consecutive_inference_failures": (
+                self.consecutive_inference_failures
+            ),
+            "camera_input_failures": self.camera_input_failures,
+            "last_successful_inference_age_s": round(
+                monotonic() - self.last_successful_inference_at, 3
+            ) if self.last_successful_inference_at is not None else None,
         }
         fallen_pose = [
             evidence for evidence in pose_evidence
@@ -530,6 +711,9 @@ class VisionDetector(Node):
             }
         )
         self.status_pub.publish(String(data=json.dumps(payload)))
+        self._publish_detection_summary(
+            source, fallen, helpers, person_count, target_location
+        )
         # was_confirmed와 비교해 상태가 "바뀐 프레임"에서만 이벤트를 쏜다.
         # 매 프레임 CONFIRMED를 반복 발행하면 구독 측(mission_manager 등)이
         # 매번 새 사고로 오인하므로, 상승 에지(False→True)/하강 에지(True→False)
@@ -538,10 +722,19 @@ class VisionDetector(Node):
         if confirmed and not self.was_confirmed:
             self.event_id = f"{self.camera_id}-{uuid4().hex[:12]}"
             self.event_location = target_location[:2]
+            self.event_location_source = target_location[2]
+            self.event_location_valid = (
+                target_location[2] != "homography_extrapolated"
+            )
+            self.event_detected_at = source.header.stamp
+            self.event_confidence = max(
+                (box.confidence for box in fallen), default=0.0
+            )
+            self.event_confirmation_hits = self.confirmation.hit_count
+            self.event_crowd_level = crowd_message.level
             self._publish_event(
                 source,
                 EmergencyEvent.CONFIRMED,
-                fallen,
                 self.event_id,
                 self.event_location,
             )
@@ -549,41 +742,70 @@ class VisionDetector(Node):
             self._publish_event(
                 source,
                 EmergencyEvent.CANCELED,
-                fallen,
                 self.event_id,
                 self.event_location,
             )
             self.event_id = ""
+            self.event_detected_at = None
         self.was_confirmed = confirmed
+
+    def _publish_detection_summary(
+        self,
+        source: CompressedImage | Image,
+        fallen: list[Box],
+        helpers: list[Box],
+        person_count: int,
+        target_location: tuple[float, float, str],
+    ) -> None:
+        """문자열 JSON이 아닌 타입 고정 DetectionSummary를 매 프레임 발행한다."""
+        summary = DetectionSummary()
+        summary.camera_id = self.camera_id
+        summary.stamp = source.header.stamp
+        summary.person_count = person_count
+        summary.fallen_count = len(fallen)
+        summary.helper_count = len(helpers)
+        summary.top_fallen_confidence = max(
+            (box.confidence for box in fallen), default=0.0
+        )
+        summary.top_helper_confidence = max(
+            (box.confidence for box in helpers), default=0.0
+        )
+        if fallen:
+            summary.fallen_location.header.stamp = source.header.stamp
+            summary.fallen_location.header.frame_id = self.frame_id
+            summary.fallen_location.point.x = target_location[0]
+            summary.fallen_location.point.y = target_location[1]
+        self.summary_pub.publish(summary)
 
     def _publish_event(
         self,
         source: CompressedImage | Image,
         status: int,
-        fallen: list[Box],
         event_id: str,
         location: tuple[float, float],
     ) -> None:
-        """기존 EmergencyEvent 형식으로 카메라 기반 응급 이벤트를 발행한다.
+        """확정 또는 취소 상태 전환을 EmergencyEvent 한 건으로 발행한다.
 
-        카메라가 고정되어 있으므로 YAML의 대표 map 좌표를 사용한다.
+        고정 카메라는 호모그래피 좌표를 우선하고, 행렬이 없는 카메라는 YAML의
+        대표 map 좌표를 사용한다. 확정과 취소는 같은 ``event_id``를 공유한다.
         """
         event = EmergencyEvent()
         event.event_id = event_id
-        event.detected_at = source.header.stamp
-        event.location.header.stamp = source.header.stamp
+        event.detected_at = self.event_detected_at or source.header.stamp
+        event.location.header.stamp = event.detected_at
         event.location.header.frame_id = self.frame_id
         event.location.point.x = location[0]
         event.location.point.y = location[1]
         event.location.point.z = 0.0
-        event.confidence = max(
-            (box.confidence for box in fallen), default=0.0
-        )
-        event.consecutive_detections = self.confirmation.hit_count
+        event.confidence = self.event_confidence
+        event.consecutive_detections = self.event_confirmation_hits
         event.status = status
         event.source_id = self.get_name()
         event.camera_id = self.camera_id
         event.zone_id = self.zone_id
+        event.crowd_level = self.event_crowd_level
+        event.location_source = self.event_location_source
+        event.location_valid = self.event_location_valid
         self.event_pub.publish(event)
 
     def _publish_debug(

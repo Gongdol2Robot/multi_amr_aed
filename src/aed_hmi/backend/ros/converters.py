@@ -118,6 +118,9 @@ def to_emergency_event(message) -> EmergencyEventSnapshot:
         source_id=message.source_id,
         camera_id=message.camera_id,
         zone_id=message.zone_id,
+        crowd_level=int(message.crowd_level),
+        location_source=str(message.location_source),
+        location_valid=bool(message.location_valid),
     )
 
 

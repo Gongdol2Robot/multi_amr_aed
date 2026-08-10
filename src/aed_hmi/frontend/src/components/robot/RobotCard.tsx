@@ -27,6 +27,10 @@ function recoveryNotice(robot: RobotSnapshot): {
       return { label: 'Depth·cmd_vel 주행 중', tone: 'info' };
     case 'BLOCKED':
       return { label: 'Depth 장애물 감지 · 정지', tone: 'danger' };
+    case 'RECOVERING':
+      return { label: 'LiDAR·위치 복구 확인 중', tone: 'warn' };
+    case 'RESUMED':
+      return { label: 'LiDAR 복구 · Nav2 재개', tone: 'ok' };
     case 'SUCCEEDED':
       return { label: 'Depth fallback 도착', tone: 'ok' };
     case 'FAILED':

@@ -26,8 +26,8 @@ C) 채우기 모드 — survey_point.py로 모아 둔 이미지에서 로봇 바
 기준점은 모두 바닥 평면 위에 있어야 하고, 한 직선 위에 몰리면 안 된다.
 화면에서 넓게 벌어질수록 오차가 작다.
 
-호모그래피는 해상도에 종속된다. 여기서 찍은 해상도와 webcam_publisher가
-발행하는 해상도가 같아야 한다. 기본값은 둘 다 640x480이다.
+호모그래피는 해상도에 종속된다. 여기서 찍은 해상도와 vision_detector가
+사용하는 해상도가 같아야 한다. 기본값은 둘 다 640x480이다.
 
 환경변수: CAM_INDEX(기본 2), CAM_WIDTH(640), CAM_HEIGHT(480)
 결과: tools/survey/points.csv
@@ -326,7 +326,7 @@ def live_mode():
     if (width, height) != (CAM_WIDTH, CAM_HEIGHT):
         print(f"주의: 카메라가 {width}x{height} 로 잡혔습니다 "
               f"(요청 {CAM_WIDTH}x{CAM_HEIGHT}). "
-              f"webcam_publisher도 같은 해상도로 띄워야 합니다.")
+              f"vision_detector도 같은 해상도로 띄워야 합니다.")
 
     os.makedirs(OUT, exist_ok=True)
     frame_path = os.path.join(OUT, "frame.jpg")

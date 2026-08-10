@@ -1,0 +1,28 @@
+/**:
+  ros__parameters:
+    # map.yaml 기준. route_name은 실행 시 straight 또는 wall_corner로 선택한다.
+    straight_route: [0.80, 0.20, 0.80, 2.80]
+    wall_corner_route: [-2.40, 0.50, -1.45, 0.50, -1.45, 1.80]
+
+    # 실제 fallback과 같은 저속/가감속 제한을 사용한다.
+    route_spacing_m: 0.05
+    max_linear_speed: 0.05
+    max_angular_speed: 0.20
+    max_linear_accel: 0.15
+    max_angular_accel: 0.50
+    lookahead_m: 0.30
+    arrival_tolerance_m: 0.15
+    start_tolerance_m: 0.20
+    max_path_deviation_m: 0.50
+
+    # 이 격리 테스트에서는 LiDAR를 끄지 않고 비상 정지에만 사용한다.
+    odom_timeout_sec: 1.0
+    scan_timeout_sec: 1.0
+    minimum_scan_distance_m: 0.35
+    scan_half_angle_deg: 35.0
+    blocked_timeout_sec: 5.0
+    nav2_stop_delay_sec: 1.0
+    control_period_sec: 0.10
+
+    robot_radius_m: 0.20
+    hard_margin_m: 0.05

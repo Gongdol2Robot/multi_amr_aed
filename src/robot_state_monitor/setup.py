@@ -15,6 +15,7 @@ setup(
         ("share/" + package_name, ["package.xml", "README.md"]),
     ],
     install_requires=["setuptools"],
+    extras_require={"test": ["pytest"]},
     zip_safe=True,
     maintainer="multi_amr_aed team",
     maintainer_email="team@example.com",

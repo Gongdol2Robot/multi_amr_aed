@@ -98,7 +98,7 @@ def generate_launch_description() -> LaunchDescription:
                 choices=["true", "false"],
             ),
             DeclareLaunchArgument(
-                "patient_standoff_distance_m", default_value="0.15"
+                "patient_standoff_distance_m", default_value="0.65"
             ),
             DeclareLaunchArgument(
                 "return_after_helper_enabled",
@@ -106,7 +106,7 @@ def generate_launch_description() -> LaunchDescription:
                 choices=["true", "false"],
             ),
             DeclareLaunchArgument(
-                "dual_robot_proximity_threshold_m", default_value="0.40"
+                "dual_robot_proximity_threshold_m", default_value="0.80"
             ),
             DeclareLaunchArgument(
                 "dual_robot_proximity_confirm_sec", default_value="0.50"
@@ -115,6 +115,14 @@ def generate_launch_description() -> LaunchDescription:
                 "dual_robot_proximity_grace_sec", default_value="2.0"
             ),
             DeclareLaunchArgument("planner_id", default_value="GridBased"),
+            DeclareLaunchArgument(
+                "audio_devices",
+                default_value="",
+                description=(
+                    "helper_mission이 로봇별로 쓸 오디오 출력 장치. "
+                    "robot1,robot2 순서의 쉼표 목록이며 비우면 OS 기본 출력."
+                ),
+            ),
             DeclareLaunchArgument(
                 "start_helper_mission",
                 default_value="true",
@@ -126,9 +134,10 @@ def generate_launch_description() -> LaunchDescription:
                 choices=["true", "false"],
             ),
             DeclareLaunchArgument(
-                "robot_vision_target",
-                default_value="person",
-                choices=["person", "mannequin"],
+                "vision_backend",
+                default_value="mannequin",
+                choices=["mannequin", "person_pose"],
+                description="두 로봇 비전 노드의 낙상 판정 backend",
             ),
             DeclareLaunchArgument(
                 "automatic_request",
@@ -327,6 +336,7 @@ def generate_launch_description() -> LaunchDescription:
                 ),
                 launch_arguments={
                     "robot_ids": "robot1,robot2",
+                    "audio_devices": LaunchConfiguration("audio_devices"),
                 }.items(),
             ),
             IncludeLaunchDescription(
@@ -342,7 +352,7 @@ def generate_launch_description() -> LaunchDescription:
                 ),
                 launch_arguments={
                     "robot_id": "robot1",
-                    "target": LaunchConfiguration("robot_vision_target"),
+                    "backend": LaunchConfiguration("vision_backend"),
                 }.items(),
             ),
             IncludeLaunchDescription(
@@ -358,7 +368,7 @@ def generate_launch_description() -> LaunchDescription:
                 ),
                 launch_arguments={
                     "robot_id": "robot2",
-                    "target": LaunchConfiguration("robot_vision_target"),
+                    "backend": LaunchConfiguration("vision_backend"),
                 }.items(),
             ),
         ]

@@ -44,3 +44,28 @@ def parse_robot_ids(raw_robot_ids: str):
             "robot_ids contains duplicates: " + ", ".join(duplicates)
         )
     return robot_ids
+
+
+def parse_audio_devices(raw_audio_devices, robot_ids):
+    """
+    쉼표로 구분한 오디오 출력 장치를 ``robot_ids`` 순서대로 매핑한다.
+
+    로봇마다 블루투스 스피커를 따로 붙이면 로봇별로 다른 sink 이름을 줘야
+    한다. 빈 문자열이면 모든 로봇이 OS 기본 출력을 사용한다. 항목 수가
+    로봇 수와 다르면 어느 로봇이 어느 스피커를 쓰는지 확정할 수 없으므로
+    조용히 잘라내지 않고 시작 시점에 ``ValueError``로 처리한다.
+    """
+    if raw_audio_devices is None:
+        raw_audio_devices = ""
+    if not isinstance(raw_audio_devices, str):
+        raise ValueError("audio_devices must be a comma-separated string")
+    if not raw_audio_devices.strip():
+        return {robot_id: "" for robot_id in robot_ids}
+
+    devices = [item.strip() for item in raw_audio_devices.split(",")]
+    if len(devices) != len(robot_ids):
+        raise ValueError(
+            "audio_devices must list exactly one device per robot: "
+            f"{len(robot_ids)} robots but {len(devices)} devices"
+        )
+    return dict(zip(robot_ids, devices))

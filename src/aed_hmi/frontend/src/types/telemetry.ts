@@ -60,6 +60,8 @@ export type FallbackState =
   | 'STARTING'
   | 'ACTIVE'
   | 'BLOCKED'
+  | 'RECOVERING'
+  | 'RESUMED'
   | 'SUCCEEDED'
   | 'FAILED';
 
@@ -75,6 +77,16 @@ export interface MapMeta {
 export interface Point2D {
   x: number;
   y: number;
+}
+
+export interface CrowdZoneSnapshot {
+  zone_id: string;
+  polygon: Point2D[];
+  level: number;
+  level_name: string;
+  person_count: number;
+  fresh: boolean;
+  age_sec: number | null;
 }
 
 export interface RobotSnapshot {
@@ -115,6 +127,9 @@ export interface EmergencyEventSnapshot {
   source_id: string;
   camera_id: string;
   zone_id: string;
+  crowd_level: number;
+  location_source: string;
+  location_valid: boolean;
 }
 
 export interface MissionSummary {
@@ -128,6 +143,7 @@ export interface MissionSummary {
   final_state: MissionState;
   assignment_version: number;
   reassignment_count: number;
+  role: RobotRole;
   failure_reasons: string[];
   /** 신고에서 AED 도착까지. 도착 못 했으면 null. */
   response_seconds: number | null;
@@ -175,6 +191,7 @@ export interface SystemSnapshot {
   active_event: EmergencyEventSnapshot | null;
   active_missions: MissionSummary[];
   streams: StreamHealth[];
+  crowd_zone: CrowdZoneSnapshot | null;
   ros_connected: boolean;
 }
 

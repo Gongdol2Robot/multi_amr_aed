@@ -18,11 +18,17 @@
 import { useEffect, useState } from 'react';
 
 import { API_BASE, fetchMapMeta, postOperatorReport } from '../../api/http';
-import type { MapMeta, MissionSummary, RobotSnapshot } from '../../types/telemetry';
+import type {
+  CrowdZoneSnapshot,
+  MapMeta,
+  MissionSummary,
+  RobotSnapshot,
+} from '../../types/telemetry';
 
 interface Props {
   robots: RobotSnapshot[];
   missions: MissionSummary[];
+  crowdZone: CrowdZoneSnapshot | null;
 }
 
 /** 그림 안의 백분율 위치 → 지도 좌표(m). 클릭한 자리를 되돌린다. */
@@ -45,7 +51,14 @@ function toPercent(meta: MapMeta, x: number, y: number) {
   };
 }
 
-export function MapView({ robots, missions }: Props) {
+function toPixel(meta: MapMeta, x: number, y: number) {
+  return {
+    x: (x - meta.origin_x) / meta.resolution,
+    y: meta.height - (y - meta.origin_y) / meta.resolution,
+  };
+}
+
+export function MapView({ robots, missions, crowdZone }: Props) {
   const [meta, setMeta] = useState<MapMeta | null>(null);
   const [failed, setFailed] = useState(false);
   // 방금 찍은 자리와 그 결과. 보낸 뒤 잠깐 보여주고 지운다.
@@ -75,7 +88,12 @@ export function MapView({ robots, missions }: Props) {
   }
   if (!meta) return null;
 
-  const target = missions.find((mission) => mission.target.x || mission.target.y);
+  const target = missions.find(
+    (mission) => (
+      mission.role === 'aed_delivery'
+      && (mission.target.x || mission.target.y)
+    ),
+  );
 
   const onPick = async (event: React.MouseEvent<HTMLDivElement>) => {
     if (!meta) return;
@@ -122,6 +140,42 @@ export function MapView({ robots, missions }: Props) {
           src={`${API_BASE}/api/map/image`}
           alt="공용 지도"
         />
+
+        {crowdZone && crowdZone.polygon.length >= 3 && (
+          <>
+            <svg
+              className={`map__crowd map__crowd--${
+                crowdZone.fresh ? crowdZone.level : 'unknown'
+              }`}
+              viewBox={`0 0 ${meta.width} ${meta.height}`}
+              preserveAspectRatio="none"
+              aria-label={`혼잡 구역 ${crowdZone.level_name}`}
+            >
+              <polygon
+                points={crowdZone.polygon
+                  .map((point) => {
+                    const pixel = toPixel(meta, point.x, point.y);
+                    return `${pixel.x},${pixel.y}`;
+                  })
+                  .join(' ')}
+                vectorEffect="non-scaling-stroke"
+              />
+            </svg>
+            <span
+              className="map__crowd-label"
+              style={toPercent(
+                meta,
+                crowdZone.polygon.reduce((sum, point) => sum + point.x, 0)
+                  / crowdZone.polygon.length,
+                crowdZone.polygon.reduce((sum, point) => sum + point.y, 0)
+                  / crowdZone.polygon.length,
+              )}
+            >
+              골목 {crowdZone.fresh ? crowdZone.level_name : 'UNKNOWN'} ·{' '}
+              {crowdZone.person_count}명
+            </span>
+          </>
+        )}
 
         {/* 목표부터 그린다. 로봇 표시가 그 위에 오게 하려는 것이다. */}
         {target && (
