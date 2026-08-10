@@ -1,5 +1,10 @@
 """Drive a predefined map route with fallback control while LiDAR stays on.
 
+[CODE REVIEW]
+실제 LiDAR FAULT 통합 흐름을 만들기 전에 저속 경로 추종만 분리 검증하려고 만든
+대안 시험 노드다. 현재 운영 launch와 fault-cycle 시험에서는 사용하지 않으며,
+이전 실기 시험을 재현할 때만 수동 실행하도록 보존한다.
+
 This is a deliberately isolated real-robot test tool. Nav2 may be used to
 stage the robot at the route start, but after ``start_test`` the node cancels
 Nav2 and publishes the same low-speed odom-based control used by the LiDAR

@@ -401,7 +401,12 @@ def is_stale(last_time: Optional[float], now: float, timeout_sec: float) -> bool
 
 
 def time_regressed(previous_time: Optional[float], new_time: float) -> bool:
-    """True if new_time is earlier than previous_time (clock jump / odom reset)."""
+    """True if new_time is earlier than previous_time (clock jump / odom reset).
+
+    [CODE REVIEW]
+    시간 역행을 별도로 차단하는 대안 판정을 위해 만들었지만 현재 운영 제어
+    경로에서는 호출하지 않는다. 관련 순수 함수 단위 테스트용으로만 보존한다.
+    """
     if previous_time is None:
         return False
     return new_time < previous_time

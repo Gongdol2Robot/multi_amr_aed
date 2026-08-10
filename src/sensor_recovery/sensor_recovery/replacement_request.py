@@ -1,8 +1,15 @@
-"""On LiDAR FAULT: stop this robot's Nav2 goal and publish a replacement
+"""Alternative stop-and-reassign policy for a LiDAR fault.
+
+[CODE REVIEW]
+이 모듈은 LiDAR 장애 로봇이 직접 fallback 주행하는 방식과 비교하기 위해 만든
+대안이다. 현재 운영 경로는 ``lidar_watchdog``과
+``lidar_fallback_controller``(``fallback_path_follower.py``)를 사용하므로 이
+노드는 실행하지 않는다. 정책 비교나 단독 시험을 위해 보존하며, 같은 로봇에서
+fallback controller와 동시에 실행하면 안 된다.
+
+On LiDAR FAULT: stop this robot's Nav2 goal and publish a replacement
 request (with the pending destination) for a human or another system to
-act on. Does not drive the robot itself — see fallback_path_follower.py
-for the (currently set aside) blind cmd_vel-driving alternative. Don't run
-both nodes for the same robot at the same time.
+act on. This node does not drive the robot itself.
 
 On LiDAR ALIVE: clear the replacement request and wait for Mission Manager
 (or an operator) to decide what this robot does next. By default this node
@@ -12,9 +19,6 @@ resuming would risk two robots converging on the same target. Set
 `auto_resume_on_recovery:=true` to get the old standalone behavior back
 (useful for testing without a Mission Manager in the loop).
 
-[CODE REVIEW]
-직접 fallback 주행을 하지 않는 대안 모드다. FAULT 시 정지/취소 후 목적지와
-replacement_needed만 발행하며 fallback_path_follower와 동시에 실행하면 안 된다.
 """
 
 from typing import Optional
@@ -39,8 +43,8 @@ _STATUS_QOS = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
 class ReplacementRequestNode(Node):
     """Stop-and-signal LiDAR-fault response: no driving, just ask for help."""
 
-    # [CODE REVIEW] 이 노드는 "현재 로봇이 계속 간다"가 아니라
-    # "즉시 멈추고 다른 로봇이 이어받는다"는 정책을 선택할 때 사용한다.
+    # [CODE REVIEW] 현재 운영에서는 생성되지 않는다. "현재 로봇이 계속 간다"가
+    # 아니라 "즉시 멈추고 다른 로봇이 이어받는다"는 대안 정책 시험용이다.
 
     def __init__(self) -> None:
         super().__init__("replacement_request")

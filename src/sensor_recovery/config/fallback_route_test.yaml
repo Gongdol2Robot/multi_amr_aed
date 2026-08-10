@@ -1,3 +1,5 @@
+# [CODE REVIEW] 실제 FAULT 통합시험 전의 대안 경로추종 시험 설정이다. 현재 운영
+# launch에서는 사용하지 않으며 fallback_route_test를 수동 재현할 때만 읽는다.
 /**:
   ros__parameters:
     # map.yaml 기준. route_name은 실행 시 straight 또는 wall_corner로 선택한다.

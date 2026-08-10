@@ -1,3 +1,5 @@
+# [CODE REVIEW] 경로 추출 방식의 대안 템플릿이다. 현재 launch/시험에서는
+# 참조하지 않으며 수동 경로를 새로 기록할 때 복사해서 쓰도록 보존한다.
 route:
   ready: false
   source_log: "나중에 받은 mapnav_robot1_*.log"

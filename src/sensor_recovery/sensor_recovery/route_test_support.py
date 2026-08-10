@@ -1,4 +1,9 @@
-"""ROS-free helpers for controlled fallback route-following tests."""
+"""ROS-free helpers for the preserved fallback-route alternative test.
+
+[CODE REVIEW]
+현재 운영 fallback에서는 사용하지 않는다. 지금은 실행하지 않는
+``fallback_route_test.py``와 해당 단위 테스트를 재현하기 위해 보존한 코드다.
+"""
 
 import math
 from typing import List, Sequence, Tuple

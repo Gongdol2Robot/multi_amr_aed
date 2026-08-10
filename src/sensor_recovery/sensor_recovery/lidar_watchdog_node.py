@@ -162,10 +162,20 @@ class LidarWatchdogNode(Node):
             self._publish_state(robot_name, watch.monitor.state)
 
     def handle_lidar_fault(self, robot_name: str) -> None:
-        """Extension point: Nav2 goal cancel / Mission Manager fault report."""
+        """Unused extension alternative for an in-node fault response.
+
+        [CODE REVIEW]
+        watchdog 안에서 직접 후속 조치를 하는 대안용 hook이다. 현재는 별도
+        fallback controller가 처리하므로 구현하거나 override하지 않는다.
+        """
 
     def handle_lidar_recovery(self, robot_name: str) -> None:
-        """Extension point: Mission Manager recovery report."""
+        """Unused extension alternative for an in-node recovery response.
+
+        [CODE REVIEW]
+        watchdog 안에서 직접 복구를 처리하는 대안용 hook이다. 현재 운영에서는
+        호출돼도 아무 동작을 하지 않으며 fallback controller가 복구를 처리한다.
+        """
 
 
 def main(args=None) -> None:
