@@ -194,12 +194,14 @@ central() {
   local target_time=${2:-30.0}
   local trigger_ratio=${3:-0.85}
   local dual_dispatch=${4:-true}
+  local vision_backend=${5:-${AED_VISION_BACKEND:-mannequin}}
   local audio_devices=${AED_AUDIO_DEVICES:-}
   local launch_args=(
     dispatch_enabled:="$dispatch"
     target_arrival_time_sec:="$target_time"
     dual_dispatch_trigger_ratio:="$trigger_ratio"
     dual_dispatch_enabled:="$dual_dispatch"
+    vision_backend:="$vision_backend"
   )
 
   if [[ -n "$audio_devices" ]]; then
@@ -208,6 +210,38 @@ central() {
 
   aedenv
   ros2 launch aed_bringup server_runtime.launch.py "${launch_args[@]}"
+}
+
+# 비전 backend별 통합 런타임 단축어. 첫 번째 선택 인자는 실제 출동 여부다.
+centralperson() {
+  central "${1:-false}" 30.0 0.85 true person_pose
+}
+
+centralmannequin() {
+  central "${1:-false}" 30.0 0.85 true mannequin
+}
+
+# mannequin이 기본이므로 목각인형 모드는 기존 central을 그대로 사용한다.
+# 실제 사람 Pose 모드만 짧게 구분한다.
+centralp() {
+  centralperson "${1:-false}"
+}
+
+centralm() {
+  centralmannequin "${1:-false}"
+}
+
+# 고정 USB 카메라만 시험할 때 사용한다. 선택 인자는 카메라 번호(기본 1)다.
+visionperson() {
+  aedenv
+  ros2 launch aed_vision camera_vision.launch.py \
+    camera:="${1:-1}" backend:=person_pose
+}
+
+visionmannequin() {
+  aedenv
+  ros2 launch aed_vision camera_vision.launch.py \
+    camera:="${1:-1}" backend:=mannequin
 }
 
 executor() {
@@ -243,5 +277,9 @@ bagrec() {
 }
 
 alias detect='vision'
+alias cperson='centralperson'
+alias cmannequin='centralmannequin'
+alias vperson='visionperson'
+alias vmannequin='visionmannequin'
 alias mstate='ros2 topic echo /aed/robot_state'
 alias estate='ros2 topic echo /aed/emergency_event'

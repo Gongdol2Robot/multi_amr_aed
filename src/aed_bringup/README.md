@@ -47,6 +47,48 @@ Nav2 두 대와 골목 카메라를 제외한 중앙 노트북 프로세스는 �
 ros2 launch aed_bringup server_runtime.launch.py
 ```
 
+### 비전 backend 선택
+
+통합 런타임의 비전 backend는 최상위 `vision_backend` 인자 하나로 정합니다.
+이 값은 개방구역 고정 카메라와 robot1·robot2 비전 노드에 함께 전달됩니다.
+기본값은 목각인형을 검출하는 `mannequin`입니다.
+
+실제 사람 모드에서는 Pose 모델이 쓰러진 사람의 자세를 판정하고, 별도 COCO
+person 모델이 같은 프레임의 다른 사람을 찾아 `helping_person` 후보로 사용합니다.
+
+```bash
+ros2 launch aed_bringup server_runtime.launch.py \
+  vision_backend:=person_pose
+```
+
+목각인형 모드는 파인튜닝 구조 모델과 목각인형 자세 분류기를 사용합니다.
+
+```bash
+ros2 launch aed_bringup server_runtime.launch.py \
+  vision_backend:=mannequin
+```
+
+고정 카메라 없이 중앙 배차와 두 로봇 비전만 직접 실행할 때도 같은 이름의
+인자를 사용합니다.
+
+```bash
+ros2 launch multi_robot_emergency central_dispatch.launch.py \
+  vision_backend:=person_pose
+
+ros2 launch multi_robot_emergency central_dispatch.launch.py \
+  vision_backend:=mannequin
+```
+
+고정 USB 카메라만 개별 시험할 때는 하위 launch의 인자명이 `backend`입니다.
+
+```bash
+ros2 launch aed_vision camera_vision.launch.py \
+  camera:=1 backend:=person_pose
+
+ros2 launch aed_vision camera_vision.launch.py \
+  camera:=1 backend:=mannequin
+```
+
 기본값은 실제 출동을 막아 둡니다. 실제 주행 시에만 명시적으로 켭니다.
 
 ```bash
@@ -59,6 +101,30 @@ ros2 launch aed_bringup server_runtime.launch.py dispatch_enabled:=true
 
 ```bash
 central true
+```
+
+`central`은 HMI를 포함한 중앙 PC 통합 런타임 명령입니다. 첫 번째 인자
+`true/false`는 HMI 실행 여부가 아니라 실제 로봇 출동 허용 여부입니다.
+목각인형이 기본 backend이므로 기존 명령을 그대로 사용합니다. 실제 사람
+Pose 모드만 `centralp`로 구분합니다.
+
+```bash
+central false           # HMI 포함 전체 런타임, 목각인형, 출동 비활성
+central true            # HMI 포함 전체 런타임, 목각인형, 실제 출동
+centralp false          # HMI 포함 전체 런타임, 실제 사람, 출동 비활성
+centralp true           # HMI 포함 전체 런타임, 실제 사람, 실제 출동
+
+visionperson 1          # 고정 카메라 1만 실제 사람 모드로 실행
+visionmannequin 1       # 고정 카메라 1만 목각인형 모드로 실행
+```
+
+기존 호환 단축어 `centralperson`, `centralmannequin`, `cperson`,
+`cmannequin`도 유지합니다. 고정 카메라는 `vperson`, `vmannequin`으로 더
+짧게 실행할 수 있습니다. `central` 명령은 다섯 번째 인자로 backend를 받을
+수 있으며, 생략 시 `mannequin`을 사용합니다.
+
+```bash
+central false 30.0 0.85 true person_pose
 ```
 
 같은 PC에서 이 launch를 두 번 실행하면 두 번째 실행은 노드를 만들기 전에

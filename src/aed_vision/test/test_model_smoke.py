@@ -57,6 +57,10 @@ def test_local_model_pipeline_predicts_and_renders(backend: str) -> None:
     frame = cv2.imread(str(IMAGE))
     assert frame is not None
     pipeline = _pipeline(backend)
+    if backend == "person_pose":
+        # 낙상은 Pose, 동시 조력자는 별도 COCO person 모델이 담당해야 한다.
+        assert pipeline.pose_model is not None
+        assert pipeline.person_model is not None
 
     output = pipeline.predict(frame)
     assert isinstance(output, InferenceOutput)
