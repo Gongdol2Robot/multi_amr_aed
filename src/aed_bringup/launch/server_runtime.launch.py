@@ -3,6 +3,7 @@
 import fcntl
 import os
 from pathlib import Path
+import subprocess
 
 from launch import LaunchDescription
 from launch.actions import (
@@ -10,9 +11,11 @@ from launch.actions import (
     ExecuteProcess,
     IncludeLaunchDescription,
     OpaqueFunction,
+    RegisterEventHandler,
     TimerAction,
 )
 from launch.conditions import IfCondition
+from launch.event_handlers import OnShutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
     EnvironmentVariable,
@@ -20,7 +23,7 @@ from launch.substitutions import (
     LaunchConfiguration,
     PathJoinSubstitution,
 )
-from launch_ros.substitutions import FindPackageShare
+from launch_ros.substitutions import FindPackagePrefix, FindPackageShare
 
 
 _RUNTIME_LOCK = None
@@ -57,6 +60,31 @@ def _include(package: str, launch_file: str, *, condition=None, arguments=None):
         condition=condition,
         launch_arguments=(arguments or {}).items(),
     )
+
+
+def _stop_all_local_processes(context):
+    """launch 종료 이벤트 안에서 AED 프로세스 정리가 끝날 때까지 기다린다."""
+    cleanup_path = context.perform_substitution(
+        PathJoinSubstitution(
+            [
+                FindPackagePrefix("aed_bringup"),
+                "lib",
+                "aed_bringup",
+                "stop_aed_processes.sh",
+            ]
+        )
+    )
+    cleanup_environment = os.environ.copy()
+    cleanup_environment.pop("AED_WS", None)
+    completed = subprocess.run(
+        [cleanup_path], check=False, env=cleanup_environment
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "AED process cleanup failed with exit code "
+            f"{completed.returncode}"
+        )
+    return []
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -117,10 +145,18 @@ def generate_launch_description() -> LaunchDescription:
         condition=IfCondition(start_frontend),
         output="screen",
     )
+    shutdown_cleanup = RegisterEventHandler(
+        OnShutdown(
+            on_shutdown=[
+                OpaqueFunction(function=_stop_all_local_processes)
+            ]
+        )
+    )
 
     return LaunchDescription(
         [
             OpaqueFunction(function=_acquire_runtime_lock),
+            shutdown_cleanup,
             DeclareLaunchArgument(
                 "dispatch_enabled",
                 default_value="true",

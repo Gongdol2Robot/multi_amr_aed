@@ -53,6 +53,18 @@ ros2 topic echo /emergency/selected_robot
 ros2 launch aed_bringup server_runtime.launch.py
 ```
 
+원본 `ros2 launch`와 `tools/aliases.sh`의 `central` 모두 Ctrl+C, 터미널 닫기,
+launch 오류 등 종료 경로에서 `stop_aed_processes.sh`를 자동 실행합니다. launch
+부모보다 늦게 끝나는 HMI 손자 프로세스와 중복 ROS 노드까지 다시 수집한 뒤
+TERM, 필요하면 KILL 순서로 정리합니다. 수동으로 전체 로컬 프로세스를 정리할
+때는 다음 명령을 사용합니다.
+
+```bash
+aedstop
+# 기존 이름도 동일하게 동작
+roskill
+```
+
 ### 비전 검출기 분리 실행
 
 비전 backend는 중앙 PC가 아니라 각 `vision_detector`를 실행하는 노트북에서

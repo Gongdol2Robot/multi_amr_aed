@@ -29,20 +29,12 @@ aedbuild() {
 }
 
 roskill() {
-  local uid workspace_pattern
-  uid="$(id -u)"
-  workspace_pattern="$AED_WS/install/.*/lib/"
-  echo "ROS2/Nav2/AED 프로세스 종료 중..."
-  timeout 5 ros2 daemon stop >/dev/null 2>&1 || true
-  pkill -TERM -u "$uid" -f '(/usr/bin/python3 )?/opt/ros/humble/bin/ros2([[:space:]]|$)' 2>/dev/null || true
-  pkill -TERM -u "$uid" -f '/opt/ros/humble/lib/' 2>/dev/null || true
-  pkill -TERM -u "$uid" -f "$workspace_pattern" 2>/dev/null || true
-  pkill -TERM -u "$uid" -f 'ros2cli\.daemon\.daemonize' 2>/dev/null || true
-  sleep 3
-  pkill -KILL -u "$uid" -f '/opt/ros/humble/lib/' 2>/dev/null || true
-  pkill -KILL -u "$uid" -f "$workspace_pattern" 2>/dev/null || true
-  pkill -KILL -u "$uid" -f 'ros2cli\.daemon\.daemonize' 2>/dev/null || true
-  echo "종료 완료."
+  "$AED_WS/tools/stop_aed_processes.sh"
+}
+
+# 의미가 분명한 새 이름. 기존 roskill도 동일한 종료기를 사용한다.
+aedstop() {
+  roskill
 }
 
 robotstart() {
@@ -196,7 +188,24 @@ fallback() {
 # 강제하지 않도록 기본값은 비워 두며, 그 경우 OS 기본 출력으로 재생한다.
 #   export AED_AUDIO_DEVICES="bluez_sink.<robot1_MAC>.a2dp_sink,bluez_sink.<robot2_MAC>.a2dp_sink"
 #   pactl list short sinks | grep bluez   # sink 이름 확인
-central() {
+central() (
+  # Ctrl+C, 터미널 닫기, launch 오류 등 어떤 경로로 끝나도 고아 프로세스를
+  # 남기지 않는다. 서브셸 안의 trap이라 호출한 사용자 셸에는 영향을 주지 않는다.
+  _central_cleanup() {
+    local launch_status=$? cleanup_status
+    trap - EXIT INT TERM HUP
+    "$AED_WS/tools/stop_aed_processes.sh"
+    cleanup_status=$?
+    if (( cleanup_status != 0 )); then
+      exit "$cleanup_status"
+    fi
+    exit "$launch_status"
+  }
+  trap _central_cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap 'exit 129' HUP
+
   local dispatch=${1:-true}
   local target_time=${2:-30.0}
   local trigger_ratio=${3:-0.85}
@@ -216,7 +225,7 @@ central() {
   export AED_HMI_STREAM_CAMERA_OPEN="${AED_HMI_STREAM_CAMERA_OPEN:-/camera_open/vision/debug/compressed}"
   aedenv
   ros2 launch aed_bringup server_runtime.launch.py "${launch_args[@]}"
-}
+)
 
 # 기존 이름 호환용 단축어. 비전 backend는 원격 비전 노트북에서 선택한다.
 # 첫 번째 선택 인자는 실제 출동 여부다.
