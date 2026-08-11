@@ -176,6 +176,10 @@ class MissionExecutor(Node):
 
         self.assignment = None   # 현재 적용 중인 최신 MissionAssignment
         self.goal_handle = None  # Nav2가 수락한 현재 NavigateToPose goal handle
+        # send_goal_async 요청 후 수락 응답을 기다리는 동안에는 goal_handle이
+        # 아직 None이다. 이 상태를 따로 기억하지 않으면 반복 수신되는 LiDAR
+        # ALIVE/recovery_ready가 같은 목표를 계속 제출한다.
+        self.goal_request_pending = False
         self.goal_serial = 0     # 늦게 도착한 과거 callback을 구분하는 로컬 세대 번호
         self.pending_pose = None # 아직 Nav2가 수락하지 않은 재시도 대상 pose
         self.retry_deadline = 0.0
@@ -225,6 +229,9 @@ class MissionExecutor(Node):
 
         # 여기부터는 새 배정으로 확정한다. 이후 비동기 callback은 이 serial을 기준으로 유효성을 확인한다.
         self.goal_serial += 1
+        # 이전 serial의 goal 응답은 callback에서 무시된다. 새 배정은 자신의
+        # 요청 상태를 독립적으로 시작한다.
+        self.goal_request_pending = False
         self.assignment = assignment
         self._cancel_retry_timer()
         # Nav2 server가 아직 준비되지 않았을 수 있으므로 target을 pending_pose에 보관한다.
@@ -296,6 +303,8 @@ class MissionExecutor(Node):
                 MissionStatus.NAVIGATION_ERROR, "target frame_id is empty"
             )
             return
+        if self.goal_request_pending:
+            return
         # Nav2 bringup 직후 Action server가 아직 준비되지 않았으면 바로 포기하지 않고 재시도한다.
         if not self.action_client.wait_for_server(timeout_sec=0.2):
             self._retry_or_fail(serial, "Nav2 action unavailable")
@@ -306,6 +315,7 @@ class MissionExecutor(Node):
         goal.pose = pose
         goal.pose.header.stamp = self.get_clock().now().to_msg()
         # 이 future는 "Goal 수락 여부"에 대한 응답이다. 실제 주행 완료 Result는 이후 별도로 받는다.
+        self.goal_request_pending = True
         future = self.action_client.send_goal_async(
             goal,
             feedback_callback=lambda feedback: self._on_feedback(
@@ -318,6 +328,8 @@ class MissionExecutor(Node):
 
     def _goal_response(self, future, serial: int) -> None:
         # [CODE REVIEW] Goal 수락 후 최종 Result는 별도로 받아 도착/실패를 판단한다.
+        if serial == self.goal_serial:
+            self.goal_request_pending = False
         try:
             handle = future.result()
         except Exception as error:
@@ -490,7 +502,9 @@ class MissionExecutor(Node):
             return
         if self._goal_blocked_for_recovery():
             return
-        if self.goal_handle is not None:
+        # goal_handle은 Nav2가 goal을 수락한 뒤에만 채워진다. 수락 응답을
+        # 기다리는 중에도 재개 콜백이 같은 goal을 다시 보내지 않게 막는다.
+        if self.goal_handle is not None or self.goal_request_pending:
             return
         if self.fallback_resume_requested and self.pending_pose is None:
             self.pending_pose = deepcopy(self.assignment.target)

@@ -30,6 +30,9 @@ class Settings:
     cors_origins: tuple[str, ...] = (
         "http://localhost:5173", "http://127.0.0.1:5173",
     )
+    # Vite를 host=true로 열어 관제 PC의 LAN IP로 접속하는 경우도 허용한다.
+    # 포트는 개발 화면(5173)으로 제한하고, 임의 웹사이트에는 열지 않는다.
+    cors_origin_regex: str = r"https?://[^/:]+:5173"
 
 
 class Context:

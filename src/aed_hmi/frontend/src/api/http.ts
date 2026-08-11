@@ -16,8 +16,15 @@ import type {
   ResponseTimeStats,
 } from '../types/telemetry';
 
-export const API_BASE =
-  import.meta.env.VITE_API_BASE ?? 'http://127.0.0.1:8000';
+/**
+ * 별도 설정이 없으면 화면을 연 호스트의 8000번 포트에 붙는다.
+ *
+ * 127.0.0.1로 고정하면 관제 PC의 IP로 화면을 열었을 때 API 요청이 브라우저를
+ * 실행한 장비 자신을 향한다. localhost로 열든 LAN IP로 열든 같은 중앙 PC를
+ * 가리키도록 현재 페이지의 hostname을 사용한다.
+ */
+export const API_BASE = import.meta.env.VITE_API_BASE
+  ?? `${window.location.protocol}//${window.location.hostname}:8000`;
 
 export const WS_URL = API_BASE.replace(/^http/, 'ws') + '/ws/live';
 

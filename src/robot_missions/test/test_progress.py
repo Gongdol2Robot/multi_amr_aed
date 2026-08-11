@@ -1,8 +1,10 @@
 import math
+from types import SimpleNamespace
 
 import pytest
 
 from robot_missions.mission_executor import (
+    MissionExecutor,
     angle_distance,
     fallback_takes_ownership,
     lidar_blocks_nav2,
@@ -69,3 +71,21 @@ def test_lidar_fault_or_unready_recovery_holds_nav2() -> None:
     assert lidar_blocks_nav2("FAULT", True)
     assert lidar_blocks_nav2("ALIVE", False)
     assert not lidar_blocks_nav2("ALIVE", True)
+
+
+def test_recovery_update_does_not_resubmit_pending_goal() -> None:
+    sent_goals = []
+    executor = SimpleNamespace(
+        assignment=SimpleNamespace(target=object()),
+        fallback_terminal_reported=False,
+        goal_handle=None,
+        goal_request_pending=True,
+        pending_pose=object(),
+        fallback_resume_requested=False,
+        _goal_blocked_for_recovery=lambda: False,
+        _send_goal=lambda pose, serial: sent_goals.append((pose, serial)),
+    )
+
+    MissionExecutor._maybe_resume_after_recovery(executor)
+
+    assert sent_goals == []
