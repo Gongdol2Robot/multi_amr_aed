@@ -11,7 +11,7 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description() -> LaunchDescription:
-    """Start central control, helper behavior, and robot Vision processes."""
+    """Start central control and helper behavior; consume remote Vision data."""
     crowd_config = PathJoinSubstitution(
         [
             FindPackageShare("multi_robot_emergency"),
@@ -127,17 +127,6 @@ def generate_launch_description() -> LaunchDescription:
                 "start_helper_mission",
                 default_value="true",
                 choices=["true", "false"],
-            ),
-            DeclareLaunchArgument(
-                "start_robot_vision",
-                default_value="true",
-                choices=["true", "false"],
-            ),
-            DeclareLaunchArgument(
-                "vision_backend",
-                default_value="mannequin",
-                choices=["mannequin", "person_pose"],
-                description="두 로봇 비전 노드의 낙상 판정 backend",
             ),
             DeclareLaunchArgument(
                 "automatic_request",
@@ -337,38 +326,6 @@ def generate_launch_description() -> LaunchDescription:
                 launch_arguments={
                     "robot_ids": "robot1,robot2",
                     "audio_devices": LaunchConfiguration("audio_devices"),
-                }.items(),
-            ),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    PathJoinSubstitution([
-                        FindPackageShare("aed_vision"),
-                        "launch",
-                        "robot_vision.launch.py",
-                    ])
-                ),
-                condition=IfCondition(
-                    LaunchConfiguration("start_robot_vision")
-                ),
-                launch_arguments={
-                    "robot_id": "robot1",
-                    "backend": LaunchConfiguration("vision_backend"),
-                }.items(),
-            ),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    PathJoinSubstitution([
-                        FindPackageShare("aed_vision"),
-                        "launch",
-                        "robot_vision.launch.py",
-                    ])
-                ),
-                condition=IfCondition(
-                    LaunchConfiguration("start_robot_vision")
-                ),
-                launch_arguments={
-                    "robot_id": "robot2",
-                    "backend": LaunchConfiguration("vision_backend"),
                 }.items(),
             ),
         ]

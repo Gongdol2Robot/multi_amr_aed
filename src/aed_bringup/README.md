@@ -45,47 +45,18 @@ ros2 topic echo /emergency/selected_robot
 
 ## 중앙 노트북 통합 실행
 
-Nav2 두 대와 골목 카메라를 제외한 중앙 노트북 프로세스는 다음 명령 하나로
-실행합니다. 경보, HMI 백엔드·프론트엔드, 개방구역 카메라, 중앙 미션,
-로봇별 preview Vision과 helper 노드가 포함됩니다.
+중앙 노트북의 경보, HMI 백엔드·프론트엔드, 중앙 미션과 helper 노드는 다음
+명령 하나로 실행합니다. 카메라와 `vision_detector`는 포함하지 않으며, 다른
+노트북이 발행하는 ROS 2 검출 결과와 압축 영상을 구독합니다.
 
 ```bash
 ros2 launch aed_bringup server_runtime.launch.py
 ```
 
-### 비전 backend 선택
+### 비전 검출기 분리 실행
 
-통합 런타임의 비전 backend는 최상위 `vision_backend` 인자 하나로 정합니다.
-이 값은 개방구역 고정 카메라와 robot1·robot2 비전 노드에 함께 전달됩니다.
-기본값은 목각인형을 검출하는 `mannequin`입니다.
-
-실제 사람 모드에서는 Pose 모델이 쓰러진 사람의 자세를 판정하고, 별도 COCO
-person 모델이 같은 프레임의 다른 사람을 찾아 `helping_person` 후보로 사용합니다.
-
-```bash
-ros2 launch aed_bringup server_runtime.launch.py \
-  vision_backend:=person_pose
-```
-
-목각인형 모드는 파인튜닝 구조 모델과 목각인형 자세 분류기를 사용합니다.
-
-```bash
-ros2 launch aed_bringup server_runtime.launch.py \
-  vision_backend:=mannequin
-```
-
-고정 카메라 없이 중앙 배차와 두 로봇 비전만 직접 실행할 때도 같은 이름의
-인자를 사용합니다.
-
-```bash
-ros2 launch multi_robot_emergency central_dispatch.launch.py \
-  vision_backend:=person_pose
-
-ros2 launch multi_robot_emergency central_dispatch.launch.py \
-  vision_backend:=mannequin
-```
-
-고정 USB 카메라만 개별 시험할 때는 하위 launch의 인자명이 `backend`입니다.
+비전 backend는 중앙 PC가 아니라 각 `vision_detector`를 실행하는 노트북에서
+선택합니다. 고정 카메라 노트북에서는 다음 중 하나를 실행합니다.
 
 ```bash
 ros2 launch aed_vision camera_vision.launch.py \
@@ -94,6 +65,18 @@ ros2 launch aed_vision camera_vision.launch.py \
 ros2 launch aed_vision camera_vision.launch.py \
   camera:=1 backend:=mannequin
 ```
+
+robot1·robot2 검출기도 별도 비전 노트북에서 필요 항목만 실행합니다.
+
+```bash
+ros2 launch aed_vision robot_vision.launch.py \
+  robot_id:=robot1 backend:=person_pose
+
+ros2 launch aed_vision robot_vision.launch.py \
+  robot_id:=robot2 backend:=person_pose
+```
+
+모든 노트북은 같은 `ROS_DOMAIN_ID`와 discovery server를 사용해야 합니다.
 
 통합 런타임은 현재 실제 출동이 기본으로 활성화되어 있습니다. 화면과 비전만
 시험할 때는 명시적으로 끕니다.
@@ -112,51 +95,50 @@ central true
 
 `central`은 HMI를 포함한 중앙 PC 통합 런타임 명령입니다. 첫 번째 인자
 `true/false`는 HMI 실행 여부가 아니라 실제 로봇 출동 허용 여부입니다.
-목각인형이 기본 backend이므로 기존 명령을 그대로 사용합니다. 실제 사람
-Pose 모드만 `centralp`로 구분합니다.
+비전 backend는 원격 비전 노트북에서 선택하므로 `central`의 인자가 아닙니다.
+`centralp`, `centralm`은 기존 사용법 호환을 위해 남아 있지만 중앙에서는
+동일하게 동작합니다.
 
 인자 없이 `central`, `centralp`, `centralm`을 실행하면 실제 출동이
 활성화됩니다. 비주행 시험에서는 반드시 첫 번째 인자로 `false`를 줍니다.
 
 ```bash
-central false           # HMI 포함 전체 런타임, 목각인형, 출동 비활성
-central true            # HMI 포함 전체 런타임, 목각인형, 실제 출동
-centralp false          # HMI 포함 전체 런타임, 실제 사람, 출동 비활성
-centralp true           # HMI 포함 전체 런타임, 실제 사람, 실제 출동
+central false           # HMI 포함 중앙 런타임, 출동 비활성
+central true            # HMI 포함 중앙 런타임, 실제 출동
+centralp false          # central false와 동일한 호환 명령
+centralm true           # central true와 동일한 호환 명령
 
 visionperson 1          # 고정 카메라 1만 실제 사람 모드로 실행
 visionmannequin 1       # 고정 카메라 1만 목각인형 모드로 실행
 ```
 
-`central`은 중앙 PC의 USB 카메라를 열지 않고, 같은 Wi-Fi/ROS 2 도메인에서
-카메라 1 노트북이 발행하는 압축 검출 영상을 HMI로 받습니다.
+`central`은 중앙 PC에서 USB 카메라와 robot1·robot2 `vision_detector`를 모두
+실행하지 않습니다. 같은 Wi-Fi/ROS 2 도메인의 비전 노트북이 발행하는 압축
+검출 영상을 HMI로 받습니다.
 
 ```text
 /camera_open/vision/debug/compressed
+/camera_alley/vision/debug/compressed
+/robot1/vision/debug/compressed
+/robot2/vision/debug/compressed
 ```
 
 카메라 1 노트북에서는 `visionmannequin 1` 또는 `visionperson 1`을 실행해야
 하며, 중앙 PC와 같은 `ROS_DOMAIN_ID`와 discovery server를 사용해야 합니다.
 
 기존 호환 단축어 `centralperson`, `centralmannequin`, `cperson`,
-`cmannequin`도 유지합니다. 고정 카메라는 `vperson`, `vmannequin`으로 더
-짧게 실행할 수 있습니다. `central` 명령은 다섯 번째 인자로 backend를 받을
-수 있으며, 생략 시 `mannequin`을 사용합니다.
-
-```bash
-central false 30.0 0.85 true person_pose
-```
+`cmannequin`도 유지합니다. 고정 카메라는 비전 노트북에서 `vperson`,
+`vmannequin`으로 더 짧게 실행할 수 있습니다.
 
 같은 PC에서 이 launch를 두 번 실행하면 두 번째 실행은 노드를 만들기 전에
 종료됩니다. 기존 개별 launch와 함께 실행하면 잠금으로 잡을 수 없으므로,
-통합 launch를 사용할 때는 HMI·경보·카메라·중앙 launch를 따로 실행하지
-않습니다.
+통합 launch를 사용할 때는 HMI·경보·중앙 launch를 따로 실행하지 않습니다.
 
-필요한 구성만 끌 수도 있습니다.
+프론트엔드처럼 중앙 구성 일부만 끌 수도 있습니다. 비전 검출기는 중앙 launch의
+구성 항목이 아니므로 `camera_vision.launch.py`나 `robot_vision.launch.py`로
+다른 노트북에서 별도 실행합니다.
 
 ```bash
 ros2 launch aed_bringup server_runtime.launch.py \
-  start_frontend:=false \
-  start_open_camera:=false \
-  start_robot_vision:=false
+  start_frontend:=false
 ```

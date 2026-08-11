@@ -60,12 +60,10 @@ def _include(package: str, launch_file: str, *, condition=None, arguments=None):
 
 
 def generate_launch_description() -> LaunchDescription:
-    """Nav2와 골목 카메라를 제외한 중앙 노트북 구성을 실행한다."""
+    """로컬 비전 검출기를 제외한 중앙 노트북 구성을 실행한다."""
     start_alert = LaunchConfiguration("start_alert")
     start_hmi = LaunchConfiguration("start_hmi")
     start_frontend = LaunchConfiguration("start_frontend")
-    start_open_camera = LaunchConfiguration("start_open_camera")
-    start_robot_vision = LaunchConfiguration("start_robot_vision")
     start_helper_mission = LaunchConfiguration("start_helper_mission")
 
     alert = _include(
@@ -86,15 +84,6 @@ def generate_launch_description() -> LaunchDescription:
             "backend_port": LaunchConfiguration("backend_port"),
         },
     )
-    open_camera = _include(
-        "aed_vision",
-        "camera_vision.launch.py",
-        condition=IfCondition(start_open_camera),
-        arguments={
-            "camera": "1",
-            "backend": LaunchConfiguration("vision_backend"),
-        },
-    )
     central = _include(
         "multi_robot_emergency",
         "central_dispatch.launch.py",
@@ -109,8 +98,6 @@ def generate_launch_description() -> LaunchDescription:
             "dual_dispatch_enabled": LaunchConfiguration(
                 "dual_dispatch_enabled"
             ),
-            "start_robot_vision": start_robot_vision,
-            "vision_backend": LaunchConfiguration("vision_backend"),
             "start_helper_mission": start_helper_mission,
             "audio_devices": LaunchConfiguration("audio_devices"),
         },
@@ -196,22 +183,6 @@ def generate_launch_description() -> LaunchDescription:
                 ),
             ),
             DeclareLaunchArgument(
-                "start_open_camera", default_value="true",
-                choices=("true", "false"),
-            ),
-            DeclareLaunchArgument(
-                "vision_backend",
-                default_value="mannequin",
-                choices=("mannequin", "person_pose"),
-                description=(
-                    "고정 카메라와 로봇 카메라에 공통 적용할 낙상 판정 backend"
-                ),
-            ),
-            DeclareLaunchArgument(
-                "start_robot_vision", default_value="true",
-                choices=("true", "false"),
-            ),
-            DeclareLaunchArgument(
                 "start_helper_mission", default_value="true",
                 choices=("true", "false"),
             ),
@@ -220,7 +191,6 @@ def generate_launch_description() -> LaunchDescription:
             ),
             alert,
             hmi,
-            open_camera,
             frontend,
             # MissionStatus는 VOLATILE이라 경보 구독자가 먼저 준비되도록 한다.
             TimerAction(

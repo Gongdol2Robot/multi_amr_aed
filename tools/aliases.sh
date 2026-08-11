@@ -201,17 +201,12 @@ central() {
   local target_time=${2:-30.0}
   local trigger_ratio=${3:-0.85}
   local dual_dispatch=${4:-true}
-  local vision_backend=${5:-${AED_VISION_BACKEND:-mannequin}}
   local audio_devices=${AED_AUDIO_DEVICES:-}
   local launch_args=(
     dispatch_enabled:="$dispatch"
     target_arrival_time_sec:="$target_time"
     dual_dispatch_trigger_ratio:="$trigger_ratio"
     dual_dispatch_enabled:="$dual_dispatch"
-    vision_backend:="$vision_backend"
-    # 카메라 1은 같은 Wi-Fi의 camera_open 노드가 발행한다. 중앙 PC에서
-    # USB 카메라를 중복으로 열지 않고 HMI가 원격 압축 토픽을 구독한다.
-    start_open_camera:=false
   )
 
   if [[ -n "$audio_devices" ]]; then
@@ -223,17 +218,17 @@ central() {
   ros2 launch aed_bringup server_runtime.launch.py "${launch_args[@]}"
 }
 
-# 비전 backend별 통합 런타임 단축어. 첫 번째 선택 인자는 실제 출동 여부다.
+# 기존 이름 호환용 단축어. 비전 backend는 원격 비전 노트북에서 선택한다.
+# 첫 번째 선택 인자는 실제 출동 여부다.
 centralperson() {
-  central "${1:-true}" 30.0 0.85 true person_pose
+  central "${1:-true}"
 }
 
 centralmannequin() {
-  central "${1:-true}" 30.0 0.85 true mannequin
+  central "${1:-true}"
 }
 
-# mannequin이 기본이므로 목각인형 모드는 기존 central을 그대로 사용한다.
-# 실제 사람 Pose 모드만 짧게 구분한다.
+# centralp/centralm도 중앙 런타임만 실행하며 원격 detector 설정은 바꾸지 않는다.
 centralp() {
   centralperson "${1:-true}"
 }
