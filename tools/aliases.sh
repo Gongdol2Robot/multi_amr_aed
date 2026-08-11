@@ -209,12 +209,16 @@ central() {
     dual_dispatch_trigger_ratio:="$trigger_ratio"
     dual_dispatch_enabled:="$dual_dispatch"
     vision_backend:="$vision_backend"
+    # 카메라 1은 같은 Wi-Fi의 camera_open 노드가 발행한다. 중앙 PC에서
+    # USB 카메라를 중복으로 열지 않고 HMI가 원격 압축 토픽을 구독한다.
+    start_open_camera:=false
   )
 
   if [[ -n "$audio_devices" ]]; then
     launch_args+=(audio_devices:="$audio_devices")
   fi
 
+  export AED_HMI_STREAM_CAMERA_OPEN="${AED_HMI_STREAM_CAMERA_OPEN:-/camera_open/vision/debug/compressed}"
   aedenv
   ros2 launch aed_bringup server_runtime.launch.py "${launch_args[@]}"
 }

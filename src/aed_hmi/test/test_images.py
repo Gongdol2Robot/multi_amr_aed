@@ -8,6 +8,15 @@ from backend.ros.images import raw_image_to_jpeg
 from backend.ros.topics import DEFAULT_STREAMS
 
 
+def test_camera1_stream_uses_network_compressed_vision() -> None:
+    streams = {source.stream_id: source for source in DEFAULT_STREAMS}
+
+    assert streams["camera_open"].topic == (
+        "/camera_open/vision/debug/compressed"
+    )
+    assert streams["camera_open"].compressed is True
+
+
 def test_robot_streams_use_compressed_vision_preview() -> None:
     robots = {source.stream_id: source for source in DEFAULT_STREAMS
               if source.kind == "robot"}

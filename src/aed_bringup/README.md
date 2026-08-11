@@ -128,6 +128,16 @@ visionperson 1          # 고정 카메라 1만 실제 사람 모드로 실행
 visionmannequin 1       # 고정 카메라 1만 목각인형 모드로 실행
 ```
 
+`central`은 중앙 PC의 USB 카메라를 열지 않고, 같은 Wi-Fi/ROS 2 도메인에서
+카메라 1 노트북이 발행하는 압축 검출 영상을 HMI로 받습니다.
+
+```text
+/camera_open/vision/debug/compressed
+```
+
+카메라 1 노트북에서는 `visionmannequin 1` 또는 `visionperson 1`을 실행해야
+하며, 중앙 PC와 같은 `ROS_DOMAIN_ID`와 discovery server를 사용해야 합니다.
+
 기존 호환 단축어 `centralperson`, `centralmannequin`, `cperson`,
 `cmannequin`도 유지합니다. 고정 카메라는 `vperson`, `vmannequin`으로 더
 짧게 실행할 수 있습니다. `central` 명령은 다섯 번째 인자로 backend를 받을
