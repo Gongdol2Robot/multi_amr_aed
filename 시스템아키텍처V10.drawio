@@ -1,6 +1,6 @@
-<mxfile host="app.diagrams.net" agent="codex-rebased-on-file2-all24-samepage-links" pages="8">
-  <diagram name="메인 시스템 플로우 아키텍처 v5 · Vision·Interface 정리본" id="main-flow-v5-vision-refined">
-    <mxGraphModel dx="9920" dy="6420" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="25840" pageHeight="22000" math="0" shadow="0">
+<mxfile host="app.diagrams.net" agent="codex-v9-union-v8-search-and-detect" pages="8">
+  <diagram name="메인 시스템 플로우 아키텍처 v5 · Vision·Interface·SearchAndDetect 통합본" id="main-flow-v5-vision-refined">
+    <mxGraphModel dx="7070" dy="3630" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="25840" pageHeight="22000" math="0" shadow="0">
       <root>
         <mxCell id="0" style="html=1;" value="" />
         <mxCell id="1" parent="0" style="html=1;" value="" />
@@ -36,13 +36,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="e_c_db0_c_idle" edge="1" parent="1" source="c_hist" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=7;fontColor=#154360;endArrow=blockThin;endFill=1;jettySize=18;orthogonalLoop=1;sourcePerimeterSpacing=5;targetPerimeterSpacing=5;jumpStyle=arc;jumpSize=8;labelBackgroundColor=#FFFFFF;fontStyle=0;" target="c_idle" value=" ">
-          <mxGeometry relative="1" y="-8" as="geometry">
-            <Array as="points">
-              <mxPoint x="1385.03" y="1931.39" />
-              <mxPoint x="1174.06" y="1931.39" />
-              <mxPoint x="1174.06" y="521.03" />
-            </Array>
-          </mxGeometry>
+          <mxGeometry relative="1" y="-8" as="geometry" />
         </mxCell>
         <mxCell id="t1" parent="1" style="text;html=1;fontSize=14;fontStyle=1;fontColor=#1B2631;align=left;" value="메인 시스템 플로우 아키텍처 v5 — 실제 중앙 1대 ETA 배정 · Vision 2-Camera · HMI SysMon · LiDAR Fallback" vertex="1">
           <mxGeometry height="34" width="4540" x="40" y="12.5" as="geometry" />
@@ -195,64 +189,67 @@
           </mxCell>
         </object>
         <mxCell id="sg_vis" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#B9770E;dashed=1;dashPattern=6 6;verticalAlign=top;align=left;spacingLeft=8;spacingTop=4;fontSize=11;fontStyle=1;fontColor=#B9770E;" value="감지 · 좌표 변환" vertex="1">
-          <mxGeometry height="2000" width="379" x="312" y="812.5" as="geometry" />
+          <mxGeometry height="2209.5" width="379" x="312" y="603" as="geometry" />
         </mxCell>
-        <object label="&lt;b&gt;D01 카메라 frame&lt;/b&gt;&lt;br&gt;고정 USB / robotN OAK-D preview" link="data:action/json,{&quot;actions&quot;:[{&quot;scroll&quot;:{&quot;cells&quot;:[&quot;same_ref_d01_c0&quot;],&quot;border&quot;:120,&quot;smooth&quot;:true}},{&quot;highlight&quot;:{&quot;cells&quot;:[&quot;same_ref_d01_c0&quot;,&quot;same_ref_d01_c1&quot;,&quot;same_ref_d01_c2&quot;,&quot;same_ref_d01_c3&quot;],&quot;color&quot;:&quot;#FF3B30&quot;,&quot;duration&quot;:1800,&quot;opacity&quot;:1}}]}" tooltip="D01 영상 입력" id="v_yolo">
+        <object label="&lt;b&gt;D01 카메라 frame&lt;/b&gt;&lt;br&gt;고정 USB direct / robotN OAK-D JPEG compressed" link="data:action/json,{&quot;actions&quot;:[{&quot;scroll&quot;:{&quot;cells&quot;:[&quot;same_ref_d01_c0&quot;],&quot;border&quot;:120,&quot;smooth&quot;:true}},{&quot;highlight&quot;:{&quot;cells&quot;:[&quot;same_ref_d01_c0&quot;,&quot;same_ref_d01_c1&quot;,&quot;same_ref_d01_c2&quot;,&quot;same_ref_d01_c3&quot;],&quot;color&quot;:&quot;#FF3B30&quot;,&quot;duration&quot;:1800,&quot;opacity&quot;:1}}]}" tooltip="D01 영상 입력" id="v_yolo">
           <mxCell parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D1F2EB;strokeColor=#117864;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=center;verticalAlign=middle;" vertex="1">
-            <mxGeometry height="42" width="352" x="324" y="852.5" as="geometry" />
+            <mxGeometry height="42" width="352" x="324" y="641" as="geometry" />
           </mxCell>
         </object>
-        <mxCell id="main_v_backend" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.5;fontSize=7;align=center;verticalAlign=middle;" value="ROS param detection_backend&lt;br&gt;(YAML/launch 설정)&lt;br&gt;mannequin_detect / person_pose?" vertex="1">
-          <mxGeometry height="58" width="150" x="425" y="910" as="geometry" />
+        <mxCell id="main_v_backend" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.5;fontSize=6;align=center;verticalAlign=middle;" value="base_camera + 장소/robot profile&lt;br&gt;+ backend profile&lt;br&gt;launch backend=mannequin / person_pose?" vertex="1">
+          <mxGeometry height="58" width="150" x="425" y="796" as="geometry" />
         </mxCell>
         <mxCell id="main_v_rescue" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2471A3;strokeWidth=1.5;fontSize=7;align=center;verticalAlign=middle;" value="mannequin_detect&lt;br&gt;rescue2_yolo11n.pt&lt;br&gt;mannequin / helping_person bbox" vertex="1">
-          <mxGeometry height="48" width="160" x="324" y="985" as="geometry" />
+          <mxGeometry height="48" width="160" x="324" y="886" as="geometry" />
         </mxCell>
         <mxCell id="main_v_person_pose" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2471A3;strokeWidth=1.5;fontSize=7;align=center;verticalAlign=middle;" value="person_pose&lt;br&gt;전체 frame Pose" vertex="1">
-          <mxGeometry height="48" width="160" x="516" y="985" as="geometry" />
+          <mxGeometry height="48" width="160" x="516" y="886" as="geometry" />
         </mxCell>
         <mxCell id="main_v_crop_pose" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FCF3CF;strokeColor=#B7950B;strokeWidth=1.8;fontSize=6;align=center;verticalAlign=middle;" value="bbox 35% padding crop&lt;br&gt;64×64 gray+equalizeHist+HOG&lt;br&gt;SVM + yolo11n-pose 병렬" vertex="1">
-          <mxGeometry height="48" width="160" x="324" y="1050" as="geometry" />
+          <mxGeometry height="48" width="160" x="324" y="951" as="geometry" />
         </mxCell>
-        <mxCell id="main_v_coco_person" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2471A3;strokeWidth=1.5;fontSize=6;align=center;verticalAlign=middle;" value="mode=alley일 때만&lt;br&gt;혼잡도 집계 전용&lt;br&gt;coco_yolo11n person bbox" vertex="1">
-          <mxGeometry height="65" width="78" x="598" y="1115" as="geometry" />
+        <mxCell id="main_v_coco_person" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2471A3;strokeWidth=1.5;fontSize=6;align=center;verticalAlign=middle;" value="mode=alley일 때만&lt;br&gt;ROI 내 person 혼잡도 집계&lt;br&gt;FALLEN 동일 환자 bbox 제외&lt;br&gt;(IoU+작은 bbox 겹침+상호 중심)" vertex="1">
+          <mxGeometry height="65" width="78" x="575" y="968" as="geometry" />
         </mxCell>
         <mxCell id="main_v_quality" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.5;fontSize=6;align=center;verticalAlign=middle;" value="입력 품질 통과?&lt;br&gt;mannequin: bbox/frame≥0.005 + crop 유효&lt;br&gt;person_pose: bbox/frame≥0.02 · conf≥0.30 keypoint≥8 · 몸통점≥3" vertex="1">
-          <mxGeometry height="48" width="266" x="324" y="1132" as="geometry" />
+          <mxGeometry height="48" width="266" x="324" y="1033" as="geometry" />
         </mxCell>
         <mxCell id="main_v_reject" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#922B21;strokeWidth=1.5;fontSize=7;align=center;verticalAlign=middle;" value="False → 후보 제외" vertex="1">
-          <mxGeometry height="38" width="130" x="324" y="1200" as="geometry" />
+          <mxGeometry height="38" width="130" x="324" y="1101" as="geometry" />
         </mxCell>
         <mxCell id="main_v_posture" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;strokeWidth=1.8;fontSize=6;align=center;verticalAlign=middle;" value="mannequin: HOG+SVM이 최종 판정&lt;br&gt;Pose는 골격 시각화만(역전 불가)&lt;br&gt;SVM 없으면 bbox AR≥1.03 / Pose fallback" vertex="1">
-          <mxGeometry height="48" width="205" x="471" y="1195" as="geometry" />
+          <mxGeometry height="48" width="205" x="471" y="1096" as="geometry" />
         </mxCell>
         <mxCell id="main_v_fallen_q" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.5;fontSize=7;align=center;verticalAlign=middle;" value="최종 판정 == FALLEN?&lt;br&gt;SVM 우선" vertex="1">
-          <mxGeometry height="58" width="145" x="428" y="1260" as="geometry" />
+          <mxGeometry height="58" width="145" x="428" y="1161" as="geometry" />
         </mxCell>
-        <mxCell id="main_v_nonfallen" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EAEDED;strokeColor=#566573;strokeWidth=1.5;fontSize=7;align=center;verticalAlign=middle;" value="False → 상태만 발행" vertex="1">
-          <mxGeometry height="38" width="135" x="324" y="1335" as="geometry" />
+        <mxCell id="main_v_nonfallen" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EAEDED;strokeColor=#566573;strokeWidth=1.5;fontSize=5;align=center;verticalAlign=middle;" value="False → 상태+진단 발행&lt;br&gt;received/processed/dropped FPS&lt;br&gt;입력·연속추론실패·마지막 성공 age" vertex="1">
+          <mxGeometry height="38" width="135" x="324" y="1236" as="geometry" />
         </mxCell>
         <mxCell id="main_v_fallen_candidate" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#922B21;strokeWidth=1.5;fontSize=8;fontStyle=1;align=center;verticalAlign=middle;" value="True → FALLEN candidate · D02" vertex="1">
-          <mxGeometry height="38" width="195" x="481" y="1335" as="geometry" />
+          <mxGeometry height="38" width="195" x="481" y="1236" as="geometry" />
         </mxCell>
         <mxCell id="main_v_e0" edge="1" parent="1" source="v_yolo" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;" target="main_v_backend">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="main_v_e1" edge="1" parent="1" source="main_v_backend" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;" target="main_v_rescue" value="mannequin_detect">
-          <mxGeometry relative="1" as="geometry">
+        <mxCell id="main_v_e1" edge="1" parent="1" source="main_v_backend" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" target="main_v_rescue" value="mannequin_detect">
+          <mxGeometry relative="1" x="0.0007" as="geometry">
+            <mxPoint as="offset" />
             <Array as="points">
-              <mxPoint x="500" y="975" />
-              <mxPoint x="404" y="975" />
+              <mxPoint x="500" y="876" />
+              <mxPoint x="404" y="876" />
             </Array>
+            <mxPoint x="500" y="755" as="sourcePoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="main_v_e2" edge="1" parent="1" source="main_v_backend" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;" target="main_v_person_pose" value="person_pose">
+        <mxCell id="main_v_e2" edge="1" parent="1" source="main_v_backend" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" target="main_v_person_pose" value="person_pose">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="500" y="974.42" />
-              <mxPoint x="585" y="974.42" />
-              <mxPoint x="596" y="975" />
+              <mxPoint x="500" y="875.43" />
+              <mxPoint x="585.01" y="875.43" />
+              <mxPoint x="596" y="876" />
             </Array>
+            <mxPoint x="500" y="755" as="sourcePoint" />
           </mxGeometry>
         </mxCell>
         <mxCell id="main_v_e3" edge="1" parent="1" source="main_v_rescue" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;" target="main_v_crop_pose">
@@ -277,48 +274,81 @@
           <mxGeometry relative="1" x="-0.0556" y="3" as="geometry">
             <mxPoint as="offset" />
             <Array as="points">
-              <mxPoint x="500.5" y="1325" />
-              <mxPoint x="391.5" y="1325" />
+              <mxPoint x="500.5" y="1223.33" />
+              <mxPoint x="391.5" y="1223.33" />
             </Array>
           </mxGeometry>
         </mxCell>
         <mxCell id="main_v_e10" edge="1" parent="1" source="main_v_fallen_q" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;" target="main_v_fallen_candidate" value="True">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="500.5" y="1326.06" />
-              <mxPoint x="578.5" y="1326.06" />
+              <mxPoint x="500.5" y="1224.17" />
+              <mxPoint x="578.5" y="1224.17" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="main_v_coco_input" edge="1" parent="1" source="v_yolo" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2471A3;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="main_v_coco_person" value="mode == alley">
+        <mxCell id="main_v_coco_input" edge="1" parent="1" source="v_yolo" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2471A3;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.25;entryDx=0;entryDy=0;" target="main_v_coco_person" value="mode == alley">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="685" y="873.5" />
-              <mxPoint x="685" y="1147.5" />
+              <mxPoint x="685" y="662" />
+              <mxPoint x="685" y="984.26" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="v_q" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#D1F2EB;strokeColor=#117864;fontSize=9;fontColor=#1B2631;" value="최근 12프레임 중&lt;br&gt;&lt;b&gt;fallen ≥4회?&lt;/b&gt;&lt;div&gt;&lt;br/&gt;&lt;/div&gt;" vertex="1">
-          <mxGeometry height="67" width="106" x="542" y="1395" as="geometry" />
+        <mxCell id="main_v_track" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2471A3;strokeWidth=1.5;fontSize=6;align=center;verticalAlign=middle;" value="동일 bbox 추적&lt;br&gt;track match IoU≥0.30&lt;br&gt;gap≤0.25s 허용" vertex="1">
+          <mxGeometry height="62" width="150" x="516" y="1306" as="geometry" />
         </mxCell>
-        <object label="&lt;b&gt;응급 감지 확정&lt;/b&gt;&lt;br&gt;&lt;b&gt;WHEN&lt;/b&gt; 배포 YAML 기준 최근 12프레임 중 fallen≥4&lt;br&gt;&lt;b&gt;DATA&lt;/b&gt; &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D02&lt;/b&gt;&lt;/u&gt;&lt;/font&gt;+D47&lt;br&gt;&lt;b&gt;VIA&lt;/b&gt; in-process decision&lt;br&gt;&lt;b&gt;FROM→TO&lt;/b&gt; 대상 검출→위치/이벤트 생성" link="data:action/json,{&quot;actions&quot;:[{&quot;scroll&quot;:{&quot;cells&quot;:[&quot;same_ref_d02_c0&quot;],&quot;border&quot;:120,&quot;smooth&quot;:true}},{&quot;highlight&quot;:{&quot;cells&quot;:[&quot;same_ref_d02_c0&quot;,&quot;same_ref_d02_c1&quot;,&quot;same_ref_d02_c2&quot;,&quot;same_ref_d02_c3&quot;],&quot;color&quot;:&quot;#FF3B30&quot;,&quot;duration&quot;:1800,&quot;opacity&quot;:1}}]}" tooltip="밑줄 D02 참조표로 이동" id="E1">
+        <mxCell id="v_q" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#D1F2EB;strokeColor=#117864;fontSize=6;fontColor=#1B2631;" value="정지 조건 통과?&lt;br&gt;중심이동≤0.025&lt;br&gt;크기변화≤0.25&lt;br&gt;&lt;b&gt;1.0s 지속&lt;/b&gt;" vertex="1">
+          <mxGeometry height="72" width="150" x="516" y="1395" as="geometry" />
+        </mxCell>
+        <object label="&lt;b&gt;응급 감지 확정&lt;/b&gt;&lt;br&gt;&lt;b&gt;WHEN&lt;/b&gt; 동일 bbox IoU≥0.30 추적 + 중심이동≤0.025 + 크기변화≤0.25 + gap≤0.25s + 1.0s 정지 · 확정 후 2.0s 완전 미검출 시 CANCELED&lt;br&gt;&lt;b&gt;DATA&lt;/b&gt; &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D02&lt;/b&gt;&lt;/u&gt;&lt;/font&gt;+D47&lt;br&gt;&lt;b&gt;VIA&lt;/b&gt; in-process decision&lt;br&gt;&lt;b&gt;FROM→TO&lt;/b&gt; 대상 검출→위치/이벤트 생성" link="data:action/json,{&quot;actions&quot;:[{&quot;scroll&quot;:{&quot;cells&quot;:[&quot;same_ref_d02_c0&quot;],&quot;border&quot;:120,&quot;smooth&quot;:true}},{&quot;highlight&quot;:{&quot;cells&quot;:[&quot;same_ref_d02_c0&quot;,&quot;same_ref_d02_c1&quot;,&quot;same_ref_d02_c2&quot;,&quot;same_ref_d02_c3&quot;],&quot;color&quot;:&quot;#FF3B30&quot;,&quot;duration&quot;:1800,&quot;opacity&quot;:1}}]}" tooltip="밑줄 D02 참조표로 이동" id="E1">
           <mxCell parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#E8DAEF;strokeColor=#6C3483;strokeWidth=2;fontSize=10;fontStyle=1;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=30;spacingRight=30;spacingTop=5;spacingBottom=5;lineHeight=1.15;" vertex="1">
-            <mxGeometry height="75" width="240" x="380" y="1500" as="geometry" />
+            <mxGeometry height="106" width="240" x="433" y="1497" as="geometry" />
           </mxCell>
         </object>
+        <mxCell id="main_v_wait" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EAEDED;strokeColor=#566573;strokeWidth=1.5;fontSize=6;align=center;verticalAlign=middle;" value="False&lt;br&gt;anchor/timer 재설정&lt;br&gt;후보 상태만 발행" vertex="1">
+          <mxGeometry height="65" width="105" x="359" y="1398.5" as="geometry" />
+        </mxCell>
+        <mxCell id="main_v_missing" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;strokeWidth=1.5;fontSize=6;align=center;verticalAlign=middle;" value="CONFIRMED 후&lt;br&gt;FALLEN 완전 미검출&lt;br&gt;monotonic timer" vertex="1">
+          <mxGeometry height="65" width="91" x="341" y="1623" as="geometry" />
+        </mxCell>
+        <mxCell id="main_v_cancel_q" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.5;fontSize=6;align=center;verticalAlign=middle;" value="미검출&lt;br&gt;2.0s 지속?" vertex="1">
+          <mxGeometry height="65" width="105" x="466" y="1623" as="geometry" />
+        </mxCell>
+        <mxCell id="main_v_canceled" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#922B21;strokeWidth=1.5;fontSize=6;fontStyle=1;align=center;verticalAlign=middle;" value="True → CANCELED&lt;br&gt;track/timer clear" vertex="1">
+          <mxGeometry height="55" width="68" x="602" y="1628" as="geometry" />
+        </mxCell>
         <mxCell id="v_homo" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D1F2EB;strokeColor=#117864;strokeWidth=1.5;fontSize=7;fontColor=#1B2631;align=center;verticalAlign=middle;" value="확정 FALLEN bbox&lt;br&gt;하단 중앙점 (u,v)" vertex="1">
-          <mxGeometry height="58" width="105" x="324" y="1600" as="geometry" />
+          <mxGeometry height="58" width="105" x="324" y="1700" as="geometry" />
         </mxCell>
         <mxCell id="main_v_h_matrix" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D1F2EB;strokeColor=#117864;strokeWidth=1.5;fontSize=7;fontColor=#1B2631;align=center;verticalAlign=middle;" value="camera_id별 H&lt;br&gt;H × [u,v,1]" vertex="1">
-          <mxGeometry height="58" width="105" x="448" y="1600" as="geometry" />
+          <mxGeometry height="58" width="105" x="448" y="1700" as="geometry" />
         </mxCell>
-        <mxCell id="main_v_map_xy" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D1F2EB;strokeColor=#117864;strokeWidth=1.5;fontSize=7;fontColor=#1B2631;align=center;verticalAlign=middle;" value="정규화 → map(x,y)&lt;br&gt;D48 · D03 location" vertex="1">
-          <mxGeometry height="58" width="105" x="571" y="1600" as="geometry" />
+        <mxCell id="main_v_map_xy" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D1F2EB;strokeColor=#117864;strokeWidth=1.5;fontSize=6;fontColor=#1B2631;align=center;verticalAlign=middle;" value="정규화 → map(x,y)&lt;br&gt;source+valid 함께 발행&lt;br&gt;extrapolated면 valid=false&lt;br&gt;자동 이동 목표 사용 차단" vertex="1">
+          <mxGeometry height="58" width="95" x="571" y="1700" as="geometry" />
         </mxCell>
         <mxCell id="main_v_coord_e1" edge="1" parent="1" source="v_homo" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;" target="main_v_h_matrix">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="main_v_coord_e2" edge="1" parent="1" source="main_v_h_matrix" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;" target="main_v_map_xy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="main_v_track_edge" edge="1" parent="1" source="main_v_track" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=6;" target="v_q" value="same track">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="main_v_wait_edge" edge="1" parent="1" source="v_q" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=6;" target="main_v_wait" value="False">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="main_v_missing_edge" edge="1" parent="1" source="E1" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=6;" target="main_v_missing" value="monitor">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="main_v_cancel_check_edge" edge="1" parent="1" source="main_v_missing" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;" target="main_v_cancel_q">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="main_v_canceled_edge" edge="1" parent="1" source="main_v_cancel_q" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=6;" target="main_v_canceled" value="True">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="main_v_diag_edge" edge="1" parent="1" source="v_yolo" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6C3483;dashed=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=6;" target="main_v_diag" value="every frame">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e_click" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5F5E3;strokeColor=#148F77;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b style=&quot;font-size: 9px;&quot;&gt;WHAT&lt;/b&gt;&lt;span style=&quot;font-size: 9px;&quot;&gt; 지도 신고 입력&lt;/span&gt;&lt;br style=&quot;font-size: 9px;&quot;&gt;&lt;b style=&quot;font-size: 9px;&quot;&gt;HOW&lt;/b&gt;&lt;span style=&quot;font-size: 9px;&quot;&gt; 운영자가 환자 위치를 클릭&lt;/span&gt;&lt;br style=&quot;font-size: 9px;&quot;&gt;&lt;b style=&quot;font-size: 9px;&quot;&gt;I/O&lt;/b&gt;&lt;span style=&quot;font-size: 9px;&quot;&gt; POST /api/report&lt;/span&gt; " vertex="1">
@@ -334,12 +364,12 @@
         </object>
         <object label="&lt;b&gt;[TARGET] 카메라 이벤트 통합&lt;/b&gt;&lt;br&gt;&lt;b&gt;WHEN&lt;/b&gt; camera별 &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D03&lt;/b&gt;&lt;/u&gt;&lt;/font&gt; CONFIRMED/RESOLVED&lt;br&gt;&lt;b&gt;DATA&lt;/b&gt; &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D03&lt;/b&gt;&lt;/u&gt;&lt;/font&gt;→D20&lt;br&gt;&lt;b&gt;VIA&lt;/b&gt; camera event→/emergency/request adapter&lt;br&gt;&lt;b&gt;FROM→TO&lt;/b&gt; Vision×2→중앙 배정" link="data:action/json,{&quot;actions&quot;:[{&quot;scroll&quot;:{&quot;cells&quot;:[&quot;same_ref_d03_c0&quot;],&quot;border&quot;:120,&quot;smooth&quot;:true}},{&quot;highlight&quot;:{&quot;cells&quot;:[&quot;same_ref_d03_c0&quot;,&quot;same_ref_d03_c1&quot;,&quot;same_ref_d03_c2&quot;,&quot;same_ref_d03_c3&quot;],&quot;color&quot;:&quot;#FF3B30&quot;,&quot;duration&quot;:1800,&quot;opacity&quot;:1}}]}" tooltip="밑줄 D03 참조표로 이동" id="E2">
           <mxCell parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#E8DAEF;strokeColor=#6C3483;strokeWidth=2;fontSize=10;fontStyle=1;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=30;spacingRight=30;spacingTop=5;spacingBottom=5;lineHeight=1.15;" vertex="1">
-            <mxGeometry height="73.5" width="305" x="347.5" y="1700" as="geometry" />
+            <mxGeometry height="73.5" width="305" x="347.5" y="1800" as="geometry" />
           </mxCell>
         </object>
         <object label="&lt;b&gt;WHAT&lt;/b&gt; 골목 혼잡도 생성 및 중앙 연계&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; COCO person bbox 중심∈crowd_roi ∧ fallen IoU&amp;lt;0.4인 person만 계수 → crowd_level=min(person_count,3) · 0/1/2는 이동 배율 1.0/1.1/1.2 · 3은 이동 불가&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; IN &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D02&lt;/b&gt;&lt;/u&gt;&lt;/font&gt; person/fallen Box · OUT D05 crowd_level:String(0|1|2|3) + person_count:UInt32 + status JSON" link="data:action/json,{&quot;actions&quot;:[{&quot;scroll&quot;:{&quot;cells&quot;:[&quot;same_ref_d02_c0&quot;],&quot;border&quot;:120,&quot;smooth&quot;:true}},{&quot;highlight&quot;:{&quot;cells&quot;:[&quot;same_ref_d02_c0&quot;,&quot;same_ref_d02_c1&quot;,&quot;same_ref_d02_c2&quot;,&quot;same_ref_d02_c3&quot;],&quot;color&quot;:&quot;#FF3B30&quot;,&quot;duration&quot;:1800,&quot;opacity&quot;:1}}]}" tooltip="밑줄 D02 참조표로 이동" id="crowd_level">
           <mxCell parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D1F2EB;strokeColor=#117864;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" vertex="1">
-            <mxGeometry height="112" width="252" x="380" y="1800" as="geometry" />
+            <mxGeometry height="78" width="252" x="380" y="1900" as="geometry" />
           </mxCell>
         </object>
         <object label="&lt;b&gt;WHAT&lt;/b&gt; context.on_* 두 갈래&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; Ⓐ LiveState 메모리→WS 0.25초 · Ⓑ Repository(SQLite)→REST/이력 5초 · 로봇 10Hz 위치는 메모리에서 처리&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; IN &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D03&lt;/b&gt;&lt;/u&gt;&lt;/font&gt;+D06+D31+D32 · OUT D43+D44 live state + D53 SQLite rows" link="data:action/json,{&quot;actions&quot;:[{&quot;scroll&quot;:{&quot;cells&quot;:[&quot;same_ref_d03_c0&quot;],&quot;border&quot;:120,&quot;smooth&quot;:true}},{&quot;highlight&quot;:{&quot;cells&quot;:[&quot;same_ref_d03_c0&quot;,&quot;same_ref_d03_c1&quot;,&quot;same_ref_d03_c2&quot;,&quot;same_ref_d03_c3&quot;],&quot;color&quot;:&quot;#FF3B30&quot;,&quot;duration&quot;:1800,&quot;opacity&quot;:1}}]}" tooltip="밑줄 D03 참조표로 이동" id="c_db1">
@@ -580,29 +610,34 @@
         </object>
         <object label="&lt;b&gt;VIA&lt;/b&gt; [IN-PROC/ROS2 TOPIC · CURRENT] 고정 카메라 frame stream&lt;br&gt;&lt;b&gt;TYPE&lt;/b&gt; &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D01&lt;/b&gt;&lt;/u&gt;&lt;/font&gt; direct frame / sensor_msgs/msg/CompressedImage&lt;br&gt;&lt;b&gt;DATA&lt;/b&gt; &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D01&lt;/b&gt;&lt;/u&gt;&lt;/font&gt; · &lt;b&gt;FLOW&lt;/b&gt; WHAT  고정 카메라 2대 입력→WHAT  대상 검출" link="data:action/json,{&quot;actions&quot;:[{&quot;scroll&quot;:{&quot;cells&quot;:[&quot;same_ref_d01_c0&quot;],&quot;border&quot;:120,&quot;smooth&quot;:true}},{&quot;highlight&quot;:{&quot;cells&quot;:[&quot;same_ref_d01_c0&quot;,&quot;same_ref_d01_c1&quot;,&quot;same_ref_d01_c2&quot;,&quot;same_ref_d01_c3&quot;],&quot;color&quot;:&quot;#FF3B30&quot;,&quot;duration&quot;:1800,&quot;opacity&quot;:1}}]}" tooltip="밑줄 D01 참조표로 이동" id="e_v_idle_v_yolo">
           <mxCell edge="1" parent="1" source="v_idle" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2471A3;fontSize=7;fontColor=#154360;endArrow=blockThin;endFill=1;jettySize=18;orthogonalLoop=1;sourcePerimeterSpacing=5;targetPerimeterSpacing=5;strokeWidth=1.5;jumpStyle=arc;jumpSize=8;labelBackgroundColor=#FFFFFF;fontStyle=0;" target="v_yolo">
-            <mxGeometry relative="1" y="-8" as="geometry" />
-          </mxCell>
-        </object>
-        <object label="D02 · FALLEN candidate" tooltip="D02 FALLEN candidate → D47 시간 판정" id="e_v_yolo_v_q">
-          <mxCell edge="1" parent="1" source="main_v_fallen_candidate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2471A3;fontSize=7;fontColor=#154360;endArrow=blockThin;endFill=1;jettySize=18;strokeWidth=1.5;labelBackgroundColor=#FFFFFF;" target="v_q">
-            <mxGeometry relative="1" x="-0.4447" y="-34" as="geometry">
+            <mxGeometry relative="1" x="-0.5154" as="geometry">
               <mxPoint as="offset" />
             </mxGeometry>
           </mxCell>
         </object>
-        <object label="D47 · 12프레임 중 4회" tooltip="D47 시간 확정" id="e_v_q_E1">
+        <object label="D02 · FALLEN candidate" tooltip="D02 FALLEN candidate → D47 시간 판정" id="e_v_yolo_v_q">
+          <mxCell edge="1" parent="1" source="main_v_fallen_candidate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2471A3;fontSize=7;fontColor=#154360;endArrow=blockThin;endFill=1;jettySize=18;strokeWidth=1.5;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" target="main_v_track">
+            <mxGeometry relative="1" x="-0.015" y="11" as="geometry">
+              <mxPoint as="offset" />
+              <Array as="points">
+                <mxPoint x="578.5" y="1300.97" />
+                <mxPoint x="578.5" y="1300.97" />
+              </Array>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="D47 · 동일 bbox 1s 정지 / 2s 미검출 취소" tooltip="D47 monotonic 시간 확정·해제" id="e_v_q_E1">
           <mxCell edge="1" parent="1" source="v_q" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=7;fontColor=#154360;endArrow=blockThin;endFill=1;jettySize=18;orthogonalLoop=1;sourcePerimeterSpacing=5;targetPerimeterSpacing=5;jumpStyle=arc;jumpSize=8;labelBackgroundColor=#FFFFFF;fontStyle=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" target="E1">
             <mxGeometry relative="1" as="geometry" />
           </mxCell>
         </object>
         <object label="D02 · 현재 FALLEN bbox" tooltip="현재 프레임 FALLEN 후보 좌표변환" id="e_E1_v_homo">
-          <mxCell edge="1" parent="1" source="main_v_fallen_candidate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=7;fontColor=#154360;endArrow=blockThin;endFill=1;jettySize=18;orthogonalLoop=1;sourcePerimeterSpacing=5;targetPerimeterSpacing=5;jumpStyle=arc;jumpSize=8;labelBackgroundColor=#FFFFFF;fontStyle=0;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="v_homo">
-            <mxGeometry relative="1" as="geometry">
+          <mxCell edge="1" parent="1" source="E1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=7;fontColor=#154360;endArrow=blockThin;endFill=1;jettySize=18;orthogonalLoop=1;sourcePerimeterSpacing=5;targetPerimeterSpacing=5;jumpStyle=arc;jumpSize=8;labelBackgroundColor=#FFFFFF;fontStyle=0;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="v_homo">
+            <mxGeometry relative="1" x="0.3662" as="geometry">
+              <mxPoint as="offset" />
               <Array as="points">
-                <mxPoint x="466.44" y="1354" />
-                <mxPoint x="466.44" y="1389.77" />
-                <mxPoint x="316" y="1389.77" />
-                <mxPoint x="316" y="1628.99" />
+                <mxPoint x="316.7" y="1550" />
+                <mxPoint x="316.7" y="1729" />
               </Array>
             </mxGeometry>
           </mxCell>
@@ -610,8 +645,8 @@
         <mxCell id="main_v_confirmed_event" edge="1" parent="1" source="E1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6C3483;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="E2" value="D47">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="690" y="1537.5" />
-              <mxPoint x="690" y="1736.75" />
+              <mxPoint x="677.29" y="1550" />
+              <mxPoint x="677.29" y="1836.81" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -663,15 +698,8 @@
             <mxPoint x="1350" y="1132.93" as="sourcePoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="e_E2_m_recv" edge="1" parent="1" source="E2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.5;fontSize=7;fontColor=#154360;endArrow=blockThin;endFill=1;jettySize=18;orthogonalLoop=1;sourcePerimeterSpacing=5;targetPerimeterSpacing=5;jumpStyle=arc;jumpSize=8;labelBackgroundColor=#FFFFFF;fontStyle=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="sas_main_coord_q" value="&lt;b&gt;VIA&lt;/b&gt; [ROS2 TOPIC] /robotN/vision/emergency_event · &lt;b&gt;TYPE&lt;/b&gt; EmergencyEvent · &lt;b&gt;DATA&lt;/b&gt; location,confidence,status">
-          <mxGeometry relative="1" x="0.3483" y="18" as="geometry">
-            <mxPoint as="offset" />
-            <Array as="points">
-              <mxPoint x="654" y="1396.77" />
-              <mxPoint x="752.23" y="1396.77" />
-              <mxPoint x="752.23" y="1312.03" />
-            </Array>
-          </mxGeometry>
+        <mxCell id="e_E2_m_recv" edge="1" parent="1" source="E2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#B7950B;fontSize=7;fontColor=#154360;endArrow=blockThin;endFill=1;jettySize=18;orthogonalLoop=1;sourcePerimeterSpacing=5;targetPerimeterSpacing=5;strokeWidth=1.5;jumpStyle=arc;jumpSize=8;labelBackgroundColor=#FFFFFF;fontStyle=0;dashed=1;dashPattern=6 4;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="sas_main_coord_q" value="&lt;b&gt;VIA&lt;/b&gt; [ROS2 TOPIC · TARGET ADAPTER] /emergency/request · &lt;b&gt;TYPE&lt;/b&gt; EmergencyEvent · &lt;b&gt;DATA&lt;/b&gt; location,confidence,status · &lt;b&gt;OUT&lt;/b&gt; EXACT|AREA">
+          <mxGeometry relative="1" x="0.3483" y="18" as="geometry" />
         </mxCell>
         <mxCell id="e_m_recv_m_av" edge="1" parent="1" source="m_recv" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=7;fontColor=#154360;endArrow=blockThin;endFill=1;jettySize=18;orthogonalLoop=1;sourcePerimeterSpacing=5;targetPerimeterSpacing=5;jumpStyle=arc;jumpSize=8;labelBackgroundColor=#FFFFFF;fontStyle=0;" target="m_av" value="&lt;b&gt;VIA&lt;/b&gt; [IN-PROC] EmergencyRequestSnapshot{target_pose,request_started_at,crowd_snapshot}">
           <mxGeometry relative="1" x="0.4716" as="geometry">
@@ -750,7 +778,8 @@
             <mxGeometry relative="1" x="-0.3062" y="14" as="geometry">
               <mxPoint as="offset" />
               <Array as="points">
-                <mxPoint x="1193.03" y="2040.03" />
+                <mxPoint x="1193" y="2057" />
+                <mxPoint x="247" y="2057" />
               </Array>
             </mxGeometry>
           </mxCell>
@@ -5081,7 +5110,7 @@
             <mxGeometry height="150" width="850" x="100" y="4520" as="geometry" />
           </mxCell>
         </object>
-        <mxCell id="vision_robot_oakd" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2471A3;strokeWidth=1.6;fontSize=8;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=9;spacingRight=8;spacingTop=5;spacingBottom=5;" value="&lt;b&gt;WHAT&lt;/b&gt; robotN OAK-D 비전&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; /robotN/oakd/rgb/preview/image_raw sensor_msgs/Image → person_pose · direct_camera=false · 환자와 같은 프레임의 조력자만 화면 대각선 30% 이내 + 6프레임 중 3회로 확정&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; OUT /robotN/vision/helper_count UInt32 + helper_confirmed Bool&lt;br&gt;&lt;b&gt;STATUS&lt;/b&gt; CURRENT" vertex="1">
+        <mxCell id="vision_robot_oakd" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2471A3;strokeWidth=1.6;fontSize=8;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=9;spacingRight=8;spacingTop=5;spacingBottom=5;" value="&lt;b&gt;WHAT&lt;/b&gt; robotN OAK-D 비전&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; /robotN/oakd/rgb/image_raw/compressed sensor_msgs/CompressedImage 구독 · direct_camera=false · OAK-D 발행 7 FPS · robot profile+선택 backend 조합 · 환자 근접 조력자를 화면 대각선 30% 이내 + 6프레임 중 3회로 확정&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; OUT /robotN/vision/helper_count UInt32 + helper_confirmed Bool&lt;br&gt;&lt;b&gt;STATUS&lt;/b&gt; CURRENT" vertex="1">
           <mxGeometry height="150" width="850" x="100" y="4700" as="geometry" />
         </mxCell>
         <object label="&lt;b&gt;WHAT&lt;/b&gt; YOLO 대상 검출 + 목각인 자세 분류&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; mannequin_detect: rescue2_yolo11n.pt bbox → 35% padding crop → 64×64 gray/equalizeHist/HOG → mannequin_posture_svm.xml FALLEN/NON_FALLEN · yolo11n-pose는 골격 시각화 근거이며 SVM 결과를 뒤집지 않음 · SVM 미설정 시 bbox AR≥1.03/Pose fallback · person_pose: 전체 frame Pose&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; OUT bbox + posture + 17관절 + confidence · &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D02&lt;/b&gt;&lt;/u&gt;&lt;/font&gt;&lt;br&gt;&lt;b&gt;STATUS&lt;/b&gt; CURRENT" link="data:action/json,{&quot;actions&quot;:[{&quot;scroll&quot;:{&quot;cells&quot;:[&quot;same_ref_d02_c0&quot;],&quot;border&quot;:120,&quot;smooth&quot;:true}},{&quot;highlight&quot;:{&quot;cells&quot;:[&quot;same_ref_d02_c0&quot;,&quot;same_ref_d02_c1&quot;,&quot;same_ref_d02_c2&quot;,&quot;same_ref_d02_c3&quot;],&quot;color&quot;:&quot;#FF3B30&quot;,&quot;duration&quot;:1800,&quot;opacity&quot;:1}}]}" tooltip="밑줄 D02 참조표로 이동" id="vision_detect">
@@ -5089,10 +5118,10 @@
             <mxGeometry height="330" width="900" x="1080" y="4340" as="geometry" />
           </mxCell>
         </object>
-        <mxCell id="vision_pose_flow_title" parent="1" style="text;html=1;fontSize=13;fontStyle=1;fontColor=#7D6608;align=left;verticalAlign=middle;" value="Q-1. YOLO backend · HOG+SVM 우선 자세 판정 상세 플로우 (CURRENT)" vertex="1">
+        <mxCell id="vision_pose_flow_title" parent="1" style="text;html=1;fontSize=13;fontStyle=1;fontColor=#7D6608;align=left;verticalAlign=middle;" value="Q-1. base + 장소/robot + backend 프로필 · 자세 판정 상세 플로우 (CURRENT)" vertex="1">
           <mxGeometry height="30" width="3400" x="1080" y="4735" as="geometry" />
         </mxCell>
-        <mxCell id="vp_backend" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.6;fontSize=8;fontColor=#1B2631;" value="ROS param detection_backend?&lt;br&gt;YAML/launch에서 검출 경로 선택&lt;br&gt;mannequin_detect | person_pose" vertex="1">
+        <mxCell id="vp_backend" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.6;fontSize=8;fontColor=#1B2631;" value="launch backend?&lt;br&gt;base_camera + camera profile + backend profile&lt;br&gt;mannequin | person_pose" vertex="1">
           <mxGeometry height="100" width="200" x="890" y="4939" as="geometry" />
         </mxCell>
         <mxCell id="vp_rescue" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2471A3;strokeWidth=1.6;fontSize=8;" value="rescue2_yolo11n.pt&lt;br&gt;mannequin / helping_person bbox" vertex="1">
@@ -5108,7 +5137,7 @@
           <mxGeometry height="110" width="250" x="2276" y="4934" as="geometry" />
         </mxCell>
         <mxCell id="vp_reject" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#922B21;strokeWidth=1.6;fontSize=8;" value="후보 제외&lt;br&gt;fallen 미반영" vertex="1">
-          <mxGeometry height="65" width="220" x="2291" y="5101" as="geometry" />
+          <mxGeometry height="65" width="220" x="2291" y="5138" as="geometry" />
         </mxCell>
         <mxCell id="vp_torso" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.6;fontSize=8;" value="mannequin_detect ∧&lt;br&gt;SVM result 있음?" vertex="1">
           <mxGeometry height="100" width="210" x="2620" y="4895" as="geometry" />
@@ -5117,25 +5146,46 @@
           <mxGeometry height="90" width="190" x="3124" y="4900" as="geometry" />
         </mxCell>
         <mxCell id="vp_fallen_rule" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FCF3CF;strokeColor=#B7950B;strokeWidth=1.8;fontSize=8;" value="HOG+SVM&lt;br&gt;predict == FALLEN?&lt;br&gt;(최종 우선 판정)" vertex="1">
-          <mxGeometry height="100" width="230" x="2917" y="5132" as="geometry" />
+          <mxGeometry height="68" width="230" x="3018" y="5121" as="geometry" />
         </mxCell>
         <mxCell id="vp_sitting_rule" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EAEDED;strokeColor=#566573;strokeWidth=1.6;fontSize=7;" value="SVM = NON_FALLEN&lt;br&gt;Pose는 골격 시각화 근거만&lt;br&gt;SVM 결과를 뒤집지 않음" vertex="1">
-          <mxGeometry height="105" width="230" x="3326" y="5087" as="geometry" />
+          <mxGeometry height="46" width="230" x="3331" y="5132" as="geometry" />
         </mxCell>
         <mxCell id="vp_unknown" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EAEDED;strokeColor=#566573;strokeWidth=1.6;fontSize=7;" value="NON_FALLEN / UNKNOWN&lt;br&gt;후보 미반영" vertex="1">
-          <mxGeometry height="55" width="160" x="3260" y="4770" as="geometry" />
+          <mxGeometry height="55" width="160" x="3139" y="4771" as="geometry" />
         </mxCell>
         <mxCell id="vp_fallen" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#922B21;strokeWidth=1.6;fontSize=8;fontStyle=1;" value="FALLEN" vertex="1">
-          <mxGeometry height="55" width="160" x="3751" y="4966.5" as="geometry" />
+          <mxGeometry height="55" width="160" x="3759" y="4904" as="geometry" />
         </mxCell>
         <mxCell id="vp_sitting" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EAEDED;strokeColor=#566573;strokeWidth=1.6;fontSize=7;fontStyle=1;" value="NON_FALLEN&lt;br&gt;(Pose valid)" vertex="1">
-          <mxGeometry height="55" width="160" x="3751" y="5112" as="geometry" />
+          <mxGeometry height="55" width="160" x="3751" y="5127.5" as="geometry" />
         </mxCell>
         <mxCell id="vp_standing" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EAEDED;strokeColor=#566573;strokeWidth=1.6;fontSize=7;fontStyle=1;" value="NON_FALLEN&lt;br&gt;(Pose invalid도 동일)" vertex="1">
           <mxGeometry height="55" width="160" x="3751" y="5196" as="geometry" />
         </mxCell>
-        <mxCell id="vp_temporal_out" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D1F2EB;strokeColor=#117864;strokeWidth=1.6;fontSize=8;" value="FALLEN candidate&lt;br&gt;D47 응급 확인 블록으로 전달" vertex="1">
-          <mxGeometry height="70" width="260" x="3940" y="4830" as="geometry" />
+        <mxCell id="vp_temporal_out" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#922B21;strokeWidth=1.6;fontSize=7;fontStyle=1;" value="FALLEN candidate&lt;br&gt;bbox + confidence + stamp" vertex="1">
+          <mxGeometry height="58" width="220" x="3970" y="4774" as="geometry" />
+        </mxCell>
+        <mxCell id="vp_track_box" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2471A3;strokeWidth=1.6;fontSize=7;" value="동일 bbox 추적&lt;br&gt;IoU≥0.30 · gap≤0.25s&lt;br&gt;anchor/current bbox 유지" vertex="1">
+          <mxGeometry height="68" width="220" x="3970" y="4895" as="geometry" />
+        </mxCell>
+        <mxCell id="vp_stationary_q" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.6;fontSize=6;" value="중심이동≤0.025&lt;br&gt;크기변화≤0.25&lt;br&gt;1.0s 지속?" vertex="1">
+          <mxGeometry height="80" width="220" x="3970" y="4985" as="geometry" />
+        </mxCell>
+        <mxCell id="vp_track_reset" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EAEDED;strokeColor=#566573;strokeWidth=1.6;fontSize=6;" value="False&lt;br&gt;anchor·정지 timer 재설정&lt;br&gt;미확정 후보 유지" vertex="1">
+          <mxGeometry height="65" width="150" x="3759" y="4992.5" as="geometry" />
+        </mxCell>
+        <mxCell id="vp_confirmed" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D1F2EB;strokeColor=#117864;strokeWidth=1.8;fontSize=7;fontStyle=1;" value="True → CONFIRMED&lt;br&gt;event 위치·source·valid 고정" vertex="1">
+          <mxGeometry height="65" width="220" x="3970" y="5085" as="geometry" />
+        </mxCell>
+        <mxCell id="vp_missing_timer" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;strokeWidth=1.6;fontSize=6;" value="확정 후 FALLEN 완전 미검출&lt;br&gt;monotonic missing timer" vertex="1">
+          <mxGeometry height="65" width="220" x="3970" y="5170" as="geometry" />
+        </mxCell>
+        <mxCell id="vp_cancel_q" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.6;fontSize=6;" value="2.0s 지속?" vertex="1">
+          <mxGeometry height="46" width="110" x="3970" y="5255" as="geometry" />
+        </mxCell>
+        <mxCell id="vp_canceled" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#922B21;strokeWidth=1.6;fontSize=6;fontStyle=1;" value="CANCELED&lt;br&gt;track/timer clear" vertex="1">
+          <mxGeometry height="46" width="76" x="4103" y="5255" as="geometry" />
         </mxCell>
         <mxCell id="vp_alley_coco" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2471A3;strokeWidth=1.6;fontSize=8;" value="alley 병렬 분기&lt;br&gt;coco_yolo11n.pt person → ROI/IoU 혼잡도 플로우" vertex="1">
           <mxGeometry height="70" width="320" x="1290" y="5197" as="geometry" />
@@ -5177,26 +5227,26 @@
         <mxCell id="vpe_8" edge="1" parent="1" source="vp_torso" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;" target="vp_no_torso" value="False · fallback">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="vpe_9" edge="1" parent="1" source="vp_torso" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" target="vp_fallen_rule" value="True · SVM 우선">
+        <mxCell id="vpe_9" edge="1" parent="1" source="vp_torso" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="vp_fallen_rule" value="True · SVM 우선">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="vpe_10" edge="1" parent="1" source="vp_no_torso" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;entryX=0;entryY=0.75;entryDx=0;entryDy=0;" target="vp_fallen" value="True">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="vpe_11" edge="1" parent="1" source="vp_no_torso" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;" target="vp_unknown" value="False">
+        <mxCell id="vpe_11" edge="1" parent="1" source="vp_no_torso" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="vp_unknown" value="False">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="3219" y="4846.6" />
-              <mxPoint x="3340.03" y="4846.6" />
+              <mxPoint x="3219" y="4839.52" />
+              <mxPoint x="3219" y="4839.52" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="vpe_12" edge="1" parent="1" source="vp_fallen_rule" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" target="vp_fallen" value="True">
+        <mxCell id="vpe_12" edge="1" parent="1" source="vp_fallen_rule" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" target="vp_fallen" value="True">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="3032.03" y="5271.52" />
-              <mxPoint x="3597.14" y="5271.52" />
-              <mxPoint x="3597.14" y="4980.28" />
+              <mxPoint x="3133" y="5065.33" />
+              <mxPoint x="3597.08" y="5065.33" />
+              <mxPoint x="3597.08" y="4917.83" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -5212,6 +5262,32 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="vpe_16" edge="1" parent="1" source="vp_fallen" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;" target="vp_temporal_out" value="fallen candidate">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="3817" y="4865.68" />
+              <mxPoint x="4047.8" y="4865.68" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vpe_track" edge="1" parent="1" source="vp_temporal_out" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;" target="vp_track_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="vpe_stationary" edge="1" parent="1" source="vp_track_box" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;" target="vp_stationary_q">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="vpe_reset" edge="1" parent="1" source="vp_stationary_q" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=6;" target="vp_track_reset" value="False">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="vpe_confirmed" edge="1" parent="1" source="vp_stationary_q" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=6;" target="vp_confirmed" value="True">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="vpe_missing" edge="1" parent="1" source="vp_confirmed" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=6;" target="vp_missing_timer" value="no FALLEN">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="vpe_cancel_check" edge="1" parent="1" source="vp_missing_timer" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;" target="vp_cancel_q">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="vpe_canceled" edge="1" parent="1" source="vp_cancel_q" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=6;" target="vp_canceled" value="True">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="vpe_17" edge="1" parent="1" source="vision_detect" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2471A3;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;" target="vp_alley_coco" value="mode=alley">
@@ -5223,12 +5299,12 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <object label="&lt;b&gt;WHAT&lt;/b&gt; 응급 확인&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; 배포 YAML 기준 최근 12프레임 중 fallen≥4 · 비연속 허용 · 미확정 순간 검출은 출동 요청 금지&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; OUT &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D47&lt;/b&gt;&lt;/u&gt;&lt;/font&gt;&lt;br&gt;&lt;b&gt;STATUS&lt;/b&gt; CURRENT" link="data:action/json,{&quot;actions&quot;:[{&quot;scroll&quot;:{&quot;cells&quot;:[&quot;same_ref_d47_c0&quot;],&quot;border&quot;:120,&quot;smooth&quot;:true}},{&quot;highlight&quot;:{&quot;cells&quot;:[&quot;same_ref_d47_c0&quot;,&quot;same_ref_d47_c1&quot;,&quot;same_ref_d47_c2&quot;,&quot;same_ref_d47_c3&quot;],&quot;color&quot;:&quot;#FF3B30&quot;,&quot;duration&quot;:1800,&quot;opacity&quot;:1}}]}" tooltip="밑줄 D47 참조표로 이동" id="vision_temporal">
+        <object label="&lt;b&gt;WHAT&lt;/b&gt; 응급 확인&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; 동일 bbox IoU≥0.30 추적 + 중심이동≤0.025 + 크기변화≤0.25 + gap≤0.25s + 1.0s 정지 · 확정 후 2.0s 완전 미검출 시 CANCELED · 미확정 후보는 출동 요청 금지&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; OUT &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D47&lt;/b&gt;&lt;/u&gt;&lt;/font&gt;&lt;br&gt;&lt;b&gt;STATUS&lt;/b&gt; CURRENT" link="data:action/json,{&quot;actions&quot;:[{&quot;scroll&quot;:{&quot;cells&quot;:[&quot;same_ref_d47_c0&quot;],&quot;border&quot;:120,&quot;smooth&quot;:true}},{&quot;highlight&quot;:{&quot;cells&quot;:[&quot;same_ref_d47_c0&quot;,&quot;same_ref_d47_c1&quot;,&quot;same_ref_d47_c2&quot;,&quot;same_ref_d47_c3&quot;],&quot;color&quot;:&quot;#FF3B30&quot;,&quot;duration&quot;:1800,&quot;opacity&quot;:1}}]}" tooltip="밑줄 D47 참조표로 이동" id="vision_temporal">
           <mxCell parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D1F2EB;strokeColor=#117864;strokeWidth=1.6;fontSize=8;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=9;spacingRight=8;spacingTop=5;spacingBottom=5;" vertex="1">
             <mxGeometry height="170" width="820" x="2110" y="4340" as="geometry" />
           </mxCell>
         </object>
-        <object label="&lt;b&gt;WHAT&lt;/b&gt; FALLEN 환자 좌표 변환&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; SVM 우선 최종 판정(또는 fallback)=FALLEN → 12프레임 중 4회 확정 → 대표 bbox 하단 중앙 → 카메라별 homography → map x,y · 측량 영역 밖 extrapolated 경고&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; IN posture/confidence/bbox · OUT fallen_location PointStamped + EmergencyEvent.location · &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D48&lt;/b&gt;&lt;/u&gt;&lt;/font&gt;&lt;br&gt;&lt;b&gt;STATUS&lt;/b&gt; CURRENT/PARTIAL" link="data:action/json,{&quot;actions&quot;:[{&quot;scroll&quot;:{&quot;cells&quot;:[&quot;same_ref_d48_c0&quot;],&quot;border&quot;:120,&quot;smooth&quot;:true}},{&quot;highlight&quot;:{&quot;cells&quot;:[&quot;same_ref_d48_c0&quot;,&quot;same_ref_d48_c1&quot;,&quot;same_ref_d48_c2&quot;,&quot;same_ref_d48_c3&quot;],&quot;color&quot;:&quot;#FF3B30&quot;,&quot;duration&quot;:1800,&quot;opacity&quot;:1}}]}" tooltip="밑줄 D48 참조표로 이동" id="vision_map">
+        <object label="&lt;b&gt;WHAT&lt;/b&gt; FALLEN 환자 좌표 변환&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; SVM 우선 최종 판정(또는 fallback)=FALLEN → 동일 bbox 1.0s 정지 확정 → 대표 bbox 하단 중앙 → 카메라별 homography → map x,y · 측량 밖 extrapolated는 location_source 기록 + location_valid=false로 자동 이동 차단&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; IN posture/confidence/bbox · OUT fallen_location PointStamped + EmergencyEvent.location · &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D48&lt;/b&gt;&lt;/u&gt;&lt;/font&gt;&lt;br&gt;&lt;b&gt;STATUS&lt;/b&gt; CURRENT/PARTIAL" link="data:action/json,{&quot;actions&quot;:[{&quot;scroll&quot;:{&quot;cells&quot;:[&quot;same_ref_d48_c0&quot;],&quot;border&quot;:120,&quot;smooth&quot;:true}},{&quot;highlight&quot;:{&quot;cells&quot;:[&quot;same_ref_d48_c0&quot;,&quot;same_ref_d48_c1&quot;,&quot;same_ref_d48_c2&quot;,&quot;same_ref_d48_c3&quot;],&quot;color&quot;:&quot;#FF3B30&quot;,&quot;duration&quot;:1800,&quot;opacity&quot;:1}}]}" tooltip="밑줄 D48 참조표로 이동" id="vision_map">
           <mxCell parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D1F2EB;strokeColor=#117864;strokeWidth=1.6;fontSize=8;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=9;spacingRight=8;spacingTop=5;spacingBottom=5;" vertex="1">
             <mxGeometry height="170" width="1420" x="3060" y="4340" as="geometry" />
           </mxCell>
@@ -5248,6 +5324,17 @@
             <mxGeometry height="190" width="1100" x="100" y="5420" as="geometry" />
           </mxCell>
         </object>
+        <mxCell id="vision_diag_metrics" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E8DAEF;strokeColor=#6C3483;strokeWidth=1.6;fontSize=7;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=9;" value="&lt;b&gt;운영 진단 수집&lt;/b&gt;&lt;br&gt;received/processed/dropped + processed_fps · camera_input_failures · consecutive_inference_failures · last_successful_inference_age_s · stationary duration/motion/size" vertex="1">
+          <mxGeometry height="62" width="1100" x="100" y="5335" as="geometry" />
+        </mxCell>
+        <mxCell id="vision_diag_edge" edge="1" parent="1" source="vision_outputs" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6C3483;dashed=1;strokeWidth=1.6;endArrow=blockThin;endFill=1;fontSize=7;" target="vision_diag_metrics" value="status JSON">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="4283" y="5322.6" />
+              <mxPoint x="650" y="5322.6" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
         <mxCell id="vision_hmi" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D1F2EB;strokeColor=#117864;strokeWidth=1.6;fontSize=8;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=9;spacingRight=8;spacingTop=5;spacingBottom=5;" value="&lt;b&gt;WHAT&lt;/b&gt; 관제 표시&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; 원본/검출 영상 · 검출 상태 · 환자 map 위치 · crowd · heartbeat · 운영자가 원본과 검출 결과 비교&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; 내부 판단값; 연결 화살표의 Dxx 참조&lt;br&gt;&lt;b&gt;STATUS&lt;/b&gt; CURRENT/PARTIAL" vertex="1">
           <mxGeometry height="190" width="1400" x="1350" y="5420" as="geometry" />
         </mxCell>
@@ -5264,7 +5351,7 @@
         <mxCell id="vision_policy_gap" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#922B21;strokeWidth=1.6;fontSize=8;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=9;spacingRight=8;spacingTop=5;spacingBottom=5;" value="&lt;b&gt;WHAT&lt;/b&gt; Vision·중앙 혼잡 상태 경계&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; camera_alley crowd_level=0|1|2|3(인원 등급) · camera_open=NOT_APPLICABLE · 3등급은 status JSON에서 crowd_traversable=false/crowd_time_multiplier=null · 중앙 UNKNOWN은 미수신/오래된 입력으로 Vision이 발행하지 않음&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; D05 std_msgs/String + std_msgs/UInt32 + status JSON" vertex="1">
           <mxGeometry height="175" width="2650" x="100" y="5660" as="geometry" />
         </mxCell>
-        <mxCell id="vision_done" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EAEDED;strokeColor=#566573;strokeWidth=1.6;fontSize=8;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=9;spacingRight=8;spacingTop=5;spacingBottom=5;" value="&lt;b&gt;WHAT&lt;/b&gt; 비전 구현 완료 범위&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; 고정 USB 카메라 2대 + robotN OAK-D preview 입력 · person_pose/mannequin_detect backend · fallen/helper/person 검출 · 배포값 12중4 응급 확정 · helper 6중3 확정 · map 위치 · camera별 event/state/crowd/video/heartbeat&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; 내부 판단값; 연결 화살표의 Dxx 참조" vertex="1">
+        <mxCell id="vision_done" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EAEDED;strokeColor=#566573;strokeWidth=1.6;fontSize=8;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=9;spacingRight=8;spacingTop=5;spacingBottom=5;" value="&lt;b&gt;WHAT&lt;/b&gt; 비전 구현 완료 범위&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; 고정 USB 2대 + robotN OAK-D compressed 입력 · base/camera/backend 프로필 · fallen/helper/person 검출 · 동일 bbox 1s 정지 확정/2s 미검출 취소 · helper 6중3 · 환자 person 중복 제거 · map 위치 source/valid 안전 계약 · 처리량/드롭/입력·추론 실패/마지막 성공 진단&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; camera별 event/state/crowd/video/heartbeat + status JSON" vertex="1">
           <mxGeometry height="150" width="2150" x="100" y="5880" as="geometry" />
         </mxCell>
         <mxCell id="vision_todo" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EAEDED;strokeColor=#566573;strokeWidth=1.6;fontSize=8;fontColor=#17202A;align=left;verticalAlign=middle;spacingLeft=9;spacingRight=8;spacingTop=5;spacingBottom=5;" value="&lt;b&gt;WHAT&lt;/b&gt; 비전 추가 구현 범위&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; camera1/2 event 통합 · crowd 등급 adapter · measured/extrapolated 필드 · helper mission 연결 · heartbeat timeout→MM/HMI 연결&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; 내부 판단값; 연결 화살표의 Dxx 참조&lt;br&gt;&lt;b&gt;STATUS&lt;/b&gt; TARGET/PARTIAL" vertex="1">
@@ -5289,18 +5376,22 @@
           </mxCell>
         </object>
         <object label="&lt;b&gt;VIA&lt;/b&gt; [IN-PROC] FALLEN posture + rolling window&lt;br&gt;&lt;b&gt;TYPE&lt;/b&gt; &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D02&lt;/b&gt;&lt;/u&gt;&lt;/font&gt; posture evidence / D47 in-process immutable decision&lt;br&gt;&lt;b&gt;DATA&lt;/b&gt; &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D02&lt;/b&gt;&lt;/u&gt;&lt;/font&gt;+D47 · &lt;b&gt;FLOW&lt;/b&gt; Pose 품질 필터·자세 판정→응급 확인" link="data:action/json,{&quot;actions&quot;:[{&quot;scroll&quot;:{&quot;cells&quot;:[&quot;same_ref_d02_c0&quot;],&quot;border&quot;:120,&quot;smooth&quot;:true}},{&quot;highlight&quot;:{&quot;cells&quot;:[&quot;same_ref_d02_c0&quot;,&quot;same_ref_d02_c1&quot;,&quot;same_ref_d02_c2&quot;,&quot;same_ref_d02_c3&quot;],&quot;color&quot;:&quot;#FF3B30&quot;,&quot;duration&quot;:1800,&quot;opacity&quot;:1}}]}" tooltip="밑줄 D02 참조표로 이동" id="vision_e_detect_temporal">
-          <mxCell edge="1" parent="1" source="vp_temporal_out" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.6;fontSize=7;fontColor=#154360;fontStyle=0;labelBackgroundColor=#FFFFFF;align=left;verticalAlign=middle;spacing=2;endArrow=blockThin;endFill=1;jettySize=28;orthogonalLoop=1;jumpStyle=arc;jumpSize=10;" target="vision_temporal">
+          <mxCell edge="1" parent="1" source="vp_confirmed" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.6;fontSize=7;fontColor=#154360;fontStyle=0;labelBackgroundColor=#FFFFFF;align=left;verticalAlign=middle;spacing=2;endArrow=blockThin;endFill=1;jettySize=28;orthogonalLoop=1;jumpStyle=arc;jumpSize=10;" target="vision_temporal">
             <mxGeometry relative="1" x="0.0791" y="16" as="geometry">
               <mxPoint as="offset" />
+              <Array as="points">
+                <mxPoint x="2020.33" y="5101.25" />
+                <mxPoint x="2020.33" y="4425" />
+              </Array>
             </mxGeometry>
           </mxCell>
         </object>
         <object label="&lt;b&gt;VIA&lt;/b&gt; [IN-PROC] alley ROI persons minus fallen overlap&lt;br&gt;&lt;b&gt;TYPE&lt;/b&gt; &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D02&lt;/b&gt;&lt;/u&gt;&lt;/font&gt; runtime std_msgs/msg/String(JSON); Detectio… / D05 std_msgs/msg/String + std_msgs/msg/UInt32&lt;br&gt;&lt;b&gt;DATA&lt;/b&gt; &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D02&lt;/b&gt;&lt;/u&gt;&lt;/font&gt;+D05 · &lt;b&gt;FLOW&lt;/b&gt; WHAT  대상 검출→WHAT  골목 crowd" link="data:action/json,{&quot;actions&quot;:[{&quot;scroll&quot;:{&quot;cells&quot;:[&quot;same_ref_d02_c0&quot;],&quot;border&quot;:120,&quot;smooth&quot;:true}},{&quot;highlight&quot;:{&quot;cells&quot;:[&quot;same_ref_d02_c0&quot;,&quot;same_ref_d02_c1&quot;,&quot;same_ref_d02_c2&quot;,&quot;same_ref_d02_c3&quot;],&quot;color&quot;:&quot;#FF3B30&quot;,&quot;duration&quot;:1800,&quot;opacity&quot;:1}}]}" tooltip="밑줄 D02 참조표로 이동" id="vision_e_alley_crowd">
-          <mxCell edge="1" parent="1" source="vp_alley_coco" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.6;fontSize=7;fontColor=#154360;fontStyle=0;labelBackgroundColor=#FFFFFF;align=left;verticalAlign=middle;spacing=2;endArrow=blockThin;endFill=1;jettySize=28;orthogonalLoop=1;jumpStyle=arc;jumpSize=10;" target="vision_crowd">
+          <mxCell edge="1" parent="1" source="vp_alley_coco" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.6;fontSize=7;fontColor=#154360;fontStyle=0;labelBackgroundColor=#FFFFFF;align=left;verticalAlign=middle;spacing=2;endArrow=blockThin;endFill=1;jettySize=28;orthogonalLoop=1;jumpStyle=arc;jumpSize=10;entryX=0.128;entryY=0.987;entryDx=0;entryDy=0;entryPerimeter=0;" target="vision_crowd">
             <mxGeometry relative="1" x="-0.8022" y="20" as="geometry">
               <mxPoint as="offset" />
               <Array as="points">
-                <mxPoint x="2040" y="4610" />
+                <mxPoint x="2215" y="5232" />
               </Array>
             </mxGeometry>
           </mxCell>
@@ -5395,8 +5486,8 @@
         <mxCell id="8KN-YlonHuotV6X0dW_6-2" edge="1" parent="1" source="main_v_coco_person" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2471A3;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="crowd_level" value="D05">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="685" y="1147.5" />
-              <mxPoint x="685" y="1856" />
+              <mxPoint x="685" y="1000.52" />
+              <mxPoint x="685" y="1956" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -5451,7 +5542,7 @@
         <mxCell id="62eJRyRBgruQSyMkBE3h-13" edge="1" parent="1" source="62eJRyRBgruQSyMkBE3h-9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="62eJRyRBgruQSyMkBE3h-12" value="/robotX/cmd_vel&#xa;geometry_msgs/msg/Twist">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="62eJRyRBgruQSyMkBE3h-9" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="속도·충돌 안전 처리&#xa;&#xa;Velocity Smoother / Collision Monitor&#xa;&#xa;최대 선속도 ≤ 0.20 m/s&#xa;충돌 위험 시 감속/정지" vertex="1">
+        <mxCell id="62eJRyRBgruQSyMkBE3h-9" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;" value="속도·충돌 안전 처리&#xa;&#xa;Velocity Smoother / Collision Monitor&#xa;&#xa;최대 선속도 ≤ 0.20 m/s&#xa;충돌 위험 시 감속/정지" vertex="1">
           <mxGeometry height="96" width="236" x="1687.5" y="3365" as="geometry" />
         </mxCell>
         <mxCell id="62eJRyRBgruQSyMkBE3h-12" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Create 3 구동SUB /robotX/cmd_velgeometry_msgs/msg/Twist→ Create 3 Drive→ wheel velocity 제어" vertex="1">
@@ -5475,7 +5566,7 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="62eJRyRBgruQSyMkBE3h-16" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="BT Navigator&lt;div&gt;NavigateToPose Goal 처리&lt;/div&gt;" vertex="1">
+        <mxCell id="62eJRyRBgruQSyMkBE3h-16" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=light-dark(#2471A3,#24717B);fillColor=#D6EAF8;" value="BT Navigator&lt;div&gt;NavigateToPose Goal 처리&lt;/div&gt;" vertex="1">
           <mxGeometry height="73.5" width="236" x="1687.5" y="2846" as="geometry" />
         </mxCell>
         <mxCell id="62eJRyRBgruQSyMkBE3h-18" edge="1" parent="1" source="p1_wd" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.998;entryY=0.634;entryDx=0;entryDy=0;entryPerimeter=0;" target="62eJRyRBgruQSyMkBE3h-16" value="NavigateToPose Goal Cancel">
@@ -5499,7 +5590,7 @@
         <mxCell id="62eJRyRBgruQSyMkBE3h-22" edge="1" parent="1" source="62eJRyRBgruQSyMkBE3h-19" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="62eJRyRBgruQSyMkBE3h-16" value="현재 Pose&#xa;">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="62eJRyRBgruQSyMkBE3h-19" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Localization / AMCL&#xa;" vertex="1">
+        <mxCell id="62eJRyRBgruQSyMkBE3h-19" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;" value="Localization / AMCL&#xa;" vertex="1">
           <mxGeometry height="60" width="236" x="1687.5" y="2977.5" as="geometry" />
         </mxCell>
         <mxCell id="62eJRyRBgruQSyMkBE3h-21" edge="1" parent="1" source="62eJRyRBgruQSyMkBE3h-12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.996;entryY=0.594;entryDx=0;entryDy=0;entryPerimeter=0;" target="62eJRyRBgruQSyMkBE3h-19" value="&lt;pre class=&quot;overflow-visible! px-0!&quot; data-start=&quot;386&quot; data-end=&quot;430&quot;&gt;&lt;div class=&quot;relative w-full mt-4 mb-1&quot;&gt;&lt;div class=&quot;&quot;&gt;&lt;div class=&quot;contents&quot;&gt;&lt;div class=&quot;relative&quot;&gt;&lt;div class=&quot;h-full min-h-0 min-w-0&quot;&gt;&lt;div class=&quot;h-full min-h-0 min-w-0&quot;&gt;&lt;div class=&quot;border border-token-border-light border-radius-3xl corner-superellipse/1.1 rounded-3xl&quot;&gt;&lt;div class=&quot;h-full w-full border-radius-3xl bg-(--code-block-surface) corner-superellipse/1.1 overflow-clip rounded-3xl [--code-block-surface:var(--bg-elevated-secondary)] dark:[--code-block-surface:var(--composer-surface-primary)] lxnfua_clipPathFallback&quot;&gt;&lt;div class=&quot;relative&quot;&gt;&lt;div class=&quot;pe-11 pt-3&quot;&gt;&lt;div class=&quot;relative z-0 flex max-w-full&quot;&gt;&lt;div id=&quot;code-block-viewer&quot; dir=&quot;ltr&quot; class=&quot;q9tKkq_viewer cm-editor z-10 light:cm-light dark:cm-light flex h-full w-full flex-col items-stretch ͼd ͼr&quot;&gt;&lt;div class=&quot;cm-scroller&quot;&gt;&lt;pre class=&quot;cm-content q9tKkq_readonly m-0 PDq2pG_selectionAnchorContainer&quot;&gt;&lt;code&gt;/robotX/odom + TF odom→base_link&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;/pre&gt;&lt;p data-start=&quot;432&quot; data-end=&quot;520&quot; class=&quot;&quot;&gt;&lt;/p&gt;">
@@ -5520,29 +5611,33 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="62eJRyRBgruQSyMkBE3h-25" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="LiDAR&lt;div&gt;/robotX/scansensor_msgs/msg/LaserScan&lt;/div&gt;" vertex="1">
+        <mxCell id="62eJRyRBgruQSyMkBE3h-25" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D6EAF8;" value="LiDAR&lt;div&gt;/robotX/scansensor_msgs/msg/LaserScan&lt;/div&gt;" vertex="1">
           <mxGeometry height="73.5" width="230" x="2065" y="3074" as="geometry" />
         </mxCell>
         <mxCell id="LbjaxsiV1d7XSCHf2_L--16" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=center;verticalAlign=middle;" value="point_inside_normalized_roi(&lt;br&gt;person.center, frame_size, crowd_roi)?" vertex="1">
-          <mxGeometry height="47" width="145" x="477" y="1963" as="geometry" />
+          <mxGeometry height="47" width="145" x="432" y="1998" as="geometry" />
         </mxCell>
         <mxCell id="LbjaxsiV1d7XSCHf2_L--17" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=center;verticalAlign=middle;" value="any(IoU(person, fallen_person)&lt;br&gt;≥ 0.4)?" vertex="1">
-          <mxGeometry height="47" width="148" x="475" y="2052" as="geometry" />
+          <mxGeometry height="47" width="148" x="484" y="2112" as="geometry" />
         </mxCell>
         <mxCell id="LbjaxsiV1d7XSCHf2_L--18" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#C0392B;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=center;verticalAlign=middle;" value="해당 person 제외(continue)&lt;br&gt;person_count 유지" vertex="1">
-          <mxGeometry height="42" width="101" x="315" y="2052" as="geometry" />
+          <mxGeometry height="42" width="101" x="328.5" y="2114" as="geometry" />
         </mxCell>
         <mxCell id="LbjaxsiV1d7XSCHf2_L--20" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=center;verticalAlign=middle;" value="다음 person이&lt;br&gt;있는가?" vertex="1">
-          <mxGeometry height="61" width="173" x="420.5" y="2242" as="geometry" />
+          <mxGeometry height="61" width="173" x="385" y="2299.5" as="geometry" />
         </mxCell>
         <mxCell id="LbjaxsiV1d7XSCHf2_L--21" edge="1" parent="1" source="crowd_level" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.5;fontSize=7;fontColor=#154360;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="LbjaxsiV1d7XSCHf2_L--16" value="D02 person/fallen bbox → ROI 판정">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="LbjaxsiV1d7XSCHf2_L--22" edge="1" parent="1" source="LbjaxsiV1d7XSCHf2_L--16" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=8;labelBackgroundColor=#FFFFFF;" target="LbjaxsiV1d7XSCHf2_L--17" value="True">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="LbjaxsiV1d7XSCHf2_L--22" edge="1" parent="1" source="LbjaxsiV1d7XSCHf2_L--16" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=8;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" target="LbjaxsiV1d7XSCHf2_L--17" value="True">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="436" y="2059.9999999999995" as="sourcePoint" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="LbjaxsiV1d7XSCHf2_L--23" edge="1" parent="1" source="LbjaxsiV1d7XSCHf2_L--16" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=8;labelBackgroundColor=#FFFFFF;" target="LbjaxsiV1d7XSCHf2_L--18" value="False">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="LbjaxsiV1d7XSCHf2_L--23" edge="1" parent="1" source="LbjaxsiV1d7XSCHf2_L--16" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=8;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" target="LbjaxsiV1d7XSCHf2_L--18" value="False">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="436" y="2059.9999999999995" as="sourcePoint" />
+          </mxGeometry>
         </mxCell>
         <mxCell id="LbjaxsiV1d7XSCHf2_L--24" edge="1" parent="1" source="LbjaxsiV1d7XSCHf2_L--17" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=8;labelBackgroundColor=#FFFFFF;" target="LbjaxsiV1d7XSCHf2_L--18" value="True">
           <mxGeometry relative="1" as="geometry" />
@@ -5550,28 +5645,30 @@
         <mxCell id="LbjaxsiV1d7XSCHf2_L--25" edge="1" parent="1" source="LbjaxsiV1d7XSCHf2_L--17" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=8;labelBackgroundColor=#FFFFFF;" target="LbjaxsiV1d7XSCHf2_L--19" value="False">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="LbjaxsiV1d7XSCHf2_L--26" edge="1" parent="1" source="LbjaxsiV1d7XSCHf2_L--18" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;" target="LbjaxsiV1d7XSCHf2_L--20" value="">
+        <mxCell id="LbjaxsiV1d7XSCHf2_L--26" edge="1" parent="1" source="LbjaxsiV1d7XSCHf2_L--18" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" value="">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="365.49" y="2196.31" />
-              <mxPoint x="507.03" y="2196.31" />
+              <mxPoint x="379" y="2250.33" />
+              <mxPoint x="471.52" y="2250.33" />
             </Array>
+            <mxPoint x="471.5" y="2298" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="LbjaxsiV1d7XSCHf2_L--27" edge="1" parent="1" source="LbjaxsiV1d7XSCHf2_L--19" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;" target="LbjaxsiV1d7XSCHf2_L--20" value="">
+        <mxCell id="LbjaxsiV1d7XSCHf2_L--27" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" value="">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="549.03" y="2197.06" />
-              <mxPoint x="507.03" y="2197.06" />
+              <mxPoint x="558" y="2251.06" />
+              <mxPoint x="471.5" y="2251.06" />
             </Array>
+            <mxPoint x="558.0238095238094" y="2221" as="sourcePoint" />
+            <mxPoint x="471.5" y="2298" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="LbjaxsiV1d7XSCHf2_L--28" edge="1" parent="1" source="LbjaxsiV1d7XSCHf2_L--20" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=8;labelBackgroundColor=#FFFFFF;" target="LbjaxsiV1d7XSCHf2_L--16" value="True · next person">
+        <mxCell id="LbjaxsiV1d7XSCHf2_L--28" edge="1" parent="1" source="LbjaxsiV1d7XSCHf2_L--20" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=8;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="LbjaxsiV1d7XSCHf2_L--16" value="True · next person">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="507" y="2327.25" />
-              <mxPoint x="670" y="2327.25" />
-              <mxPoint x="670" y="1986.5" />
+              <mxPoint x="670" y="2330" />
+              <mxPoint x="670" y="2021.52" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -5581,16 +5678,16 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="LbjaxsiV1d7XSCHf2_L--19" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5F5E3;strokeColor=#148F77;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=center;verticalAlign=middle;" value="유효 통행 인원&lt;br&gt;person_count += 1" vertex="1">
-          <mxGeometry height="29" width="97" x="500.5" y="2138" as="geometry" />
+          <mxGeometry height="29" width="97" x="488" y="2192" as="geometry" />
         </mxCell>
         <mxCell id="LbjaxsiV1d7XSCHf2_L--32" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=center;verticalAlign=middle;" value="person_count ≥ 3?" vertex="1">
           <mxGeometry height="45" width="151" x="500.5" y="2386" as="geometry" />
         </mxCell>
         <mxCell id="LbjaxsiV1d7XSCHf2_L--33" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5F5E3;strokeColor=#148F77;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=center;verticalAlign=middle;" value="crowd_level=str(person_count)&lt;br&gt;0 | 1 | 2&lt;br&gt;time multiplier 1.0 | 1.1 | 1.2" vertex="1">
-          <mxGeometry height="58" width="150" x="365" y="2482" as="geometry" />
+          <mxGeometry height="58" width="150" x="341" y="2482.5" as="geometry" />
         </mxCell>
         <mxCell id="LbjaxsiV1d7XSCHf2_L--36" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#C0392B;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=center;verticalAlign=middle;" value="crowd_level=&amp;quot;3&amp;quot;&lt;br&gt;crowd_traversable=false&lt;br&gt;time multiplier=null" vertex="1">
-          <mxGeometry height="58" width="160" x="526" y="2482" as="geometry" />
+          <mxGeometry height="58" width="160" x="502" y="2482.5" as="geometry" />
         </mxCell>
         <object label="&lt;b&gt;ROS 2 발행 · &lt;font color=&quot;#1565C0&quot;&gt;&lt;u&gt;&lt;b&gt;D05&lt;/b&gt;&lt;/u&gt;&lt;/font&gt;&lt;/b&gt;&lt;br&gt;/camera_alley/vision/crowd_level : std_msgs/msg/String (&amp;quot;0&amp;quot; | &amp;quot;1&amp;quot; | &amp;quot;2&amp;quot; | &amp;quot;3&amp;quot;)&lt;br&gt;/camera_alley/vision/person_count : std_msgs/msg/UInt32&lt;br&gt;/camera_alley/vision/status JSON : crowd_time_multiplier + crowd_traversable" link="data:action/json,{&quot;actions&quot;:[{&quot;scroll&quot;:{&quot;cells&quot;:[&quot;same_ref_d05_c0&quot;],&quot;border&quot;:120,&quot;smooth&quot;:true}},{&quot;highlight&quot;:{&quot;cells&quot;:[&quot;same_ref_d05_c0&quot;,&quot;same_ref_d05_c1&quot;,&quot;same_ref_d05_c2&quot;,&quot;same_ref_d05_c3&quot;],&quot;color&quot;:&quot;#FF3B30&quot;,&quot;duration&quot;:1800,&quot;opacity&quot;:1}}]}" tooltip="밑줄 D05 참조표로 이동" id="LbjaxsiV1d7XSCHf2_L--37">
           <mxCell parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5F5E3;strokeColor=#148F77;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;" vertex="1">
@@ -7689,65 +7786,25 @@
             <mxGeometry relative="1" x="-0.8315" y="16" as="geometry">
               <mxPoint as="offset" />
               <Array as="points">
-                <mxPoint x="505.49" y="2739.29" />
-                <mxPoint x="728.51" y="2739.29" />
-                <mxPoint x="728.51" y="1577.73" />
+                <mxPoint x="505.52" y="2785.95" />
+                <mxPoint x="728.52" y="2785.95" />
+                <mxPoint x="728.52" y="1577.71" />
               </Array>
               <mxPoint x="685" y="2504.5" as="sourcePoint" />
             </mxGeometry>
           </mxCell>
         </object>
+        <mxCell id="main_v_diag" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E8DAEF;strokeColor=#6C3483;strokeWidth=1.5;fontSize=6;align=left;verticalAlign=middle;spacingLeft=6;" value="운영 진단 블록&lt;br&gt;received / processed / dropped / processed_fps&lt;br&gt;camera_input_failures / consecutive_inference_failures&lt;br&gt;last_successful_inference_age_s" vertex="1">
+          <mxGeometry height="78" width="196" x="111" y="2254" as="geometry" />
+        </mxCell>
         <mxCell id="sas_main_coord_q" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D1F2EB;strokeColor=#117864;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; 환자 좌표 유무 판정&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; EmergencyEvent.location 또는 신고 pose의 map 좌표 유효성 확인&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; OUT EXACT | AREA" vertex="1">
           <mxGeometry height="76" width="244" x="793" y="1042" as="geometry" />
-        </mxCell>
-        <mxCell id="sas_main_partition" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; AREA 수색 구역 지정&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; 공용 map Polygon을 robot1/robot2 구역으로 분할&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; OUT robotN별 Polygon 꼭짓점" vertex="1">
-          <mxGeometry height="73.5" width="299" x="1195.5" y="1155" as="geometry" />
-        </mxCell>
-        <mxCell id="sas_main_r1_search" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDEBD0;strokeColor=#CA6F1E;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; robot1 SearchAndDetectNode&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; goal.poses를 수색 Polygon으로 해석&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; ACTION /robot1/search_and_detect" vertex="1">
-          <mxGeometry height="62" width="275.5" x="1661.5" y="1285" as="geometry" />
-        </mxCell>
-        <mxCell id="sas_main_r1_boustro" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; robot1 coverage 경로 생성·주행&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; Boustrophedon scanline 왕복 waypoint&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; ACTION /robot1/navigate_through_poses" vertex="1">
-          <mxGeometry height="75" width="273" x="1661.5" y="1427" as="geometry" />
-        </mxCell>
-        <mxCell id="sas_main_r1_detect" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#922B21;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; robot1 환자 감지 전환&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; CONFIRMED/DETECTED 수신 시 coverage Goal 취소&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; SUB /robot1/vision/emergency_event" vertex="1">
-          <mxGeometry height="65" width="273" x="1661.5" y="1573" as="geometry" />
-        </mxCell>
-        <mxCell id="sas_main_r1_approach" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDEBD0;strokeColor=#CA6F1E;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; robot1 환자 접근&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; TF2로 환자 0.70m 앞 접근 pose 계산&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; ACTION /robot1/navigate_to_pose · OUT ARRIVED" vertex="1">
-          <mxGeometry height="58" width="267" x="1661.5" y="1719" as="geometry" />
-        </mxCell>
-        <mxCell id="sas_main_r2_search" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDEBD0;strokeColor=#CA6F1E;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; robot2 SearchAndDetectNode&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; goal.poses를 수색 Polygon으로 해석&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; ACTION /robot2/search_and_detect" vertex="1">
-          <mxGeometry height="62" width="275.5" x="2408" y="1285" as="geometry" />
-        </mxCell>
-        <mxCell id="sas_main_r2_boustro" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; robot2 coverage 경로 생성·주행&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; Boustrophedon scanline 왕복 waypoint&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; ACTION /robot2/navigate_through_poses" vertex="1">
-          <mxGeometry height="75" width="273" x="2408" y="1427" as="geometry" />
-        </mxCell>
-        <mxCell id="sas_main_r2_detect" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#922B21;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; robot2 환자 감지 전환&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; CONFIRMED/DETECTED 수신 시 coverage Goal 취소&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; SUB /robot2/vision/emergency_event" vertex="1">
-          <mxGeometry height="65" width="273" x="2408" y="1573" as="geometry" />
-        </mxCell>
-        <mxCell id="sas_main_r2_approach" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDEBD0;strokeColor=#CA6F1E;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; robot2 환자 접근&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; TF2로 환자 0.70m 앞 접근 pose 계산&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; ACTION /robot2/navigate_to_pose · OUT ARRIVED" vertex="1">
-          <mxGeometry height="58" width="267" x="2408" y="1719" as="geometry" />
-        </mxCell>
-        <mxCell id="sas_main_note" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.5;dashed=1;fontSize=7;fontColor=#7D6608;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;" value="&lt;b&gt;STATUS&lt;/b&gt; CURRENT 독립 시험 · Polygon 수동 지정 · Vision location_x/y 고정 좌표 · Mission Manager/search_coordinator/peer cancel 미연결" vertex="1">
-          <mxGeometry height="62" width="320" x="1185" y="1288" as="geometry" />
-        </mxCell>
-        <mxCell id="sas_main_e_yes" edge="1" parent="1" source="sas_main_coord_q" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;fontColor=#154360;jettySize=18;jumpStyle=arc;jumpSize=8;labelBackgroundColor=#FFFFFF;" target="m_recv" value="&lt;b&gt;VIA&lt;/b&gt; [IN-PROC] ModeDecision · &lt;b&gt;DATA&lt;/b&gt; mode=EXACT,target_pose">
-          <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="sas_main_e_no" edge="1" parent="1" source="sas_main_coord_q" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;fontColor=#154360;jettySize=18;jumpStyle=arc;jumpSize=8;labelBackgroundColor=#FFFFFF;" target="sas_main_partition" value="&lt;b&gt;VIA&lt;/b&gt; [IN-PROC] ModeDecision · &lt;b&gt;DATA&lt;/b&gt; mode=AREA,map_polygon">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="sas_main_e_r1" edge="1" parent="1" source="sas_main_partition" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;fontColor=#154360;jettySize=18;jumpStyle=arc;jumpSize=8;labelBackgroundColor=#FFFFFF;" target="sas_main_r1_search" value="&lt;b&gt;VIA&lt;/b&gt; [ROS2 ACTION] /robot1/search_and_detect · &lt;b&gt;TYPE&lt;/b&gt; NavigateThroughPoses.Goal · &lt;b&gt;DATA&lt;/b&gt; poses=Polygon">
           <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="sas_main_e_r2" edge="1" parent="1" source="sas_main_partition" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;fontColor=#154360;jettySize=18;jumpStyle=arc;jumpSize=8;labelBackgroundColor=#FFFFFF;" target="sas_main_r2_search" value="&lt;b&gt;VIA&lt;/b&gt; [ROS2 ACTION] /robot2/search_and_detect · &lt;b&gt;TYPE&lt;/b&gt; NavigateThroughPoses.Goal · &lt;b&gt;DATA&lt;/b&gt; poses=Polygon">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="1471" y="1095" />
-              <mxPoint x="1540" y="1095" />
-              <mxPoint x="1540" y="1205" />
-              <mxPoint x="2560" y="1205" />
-            </Array>
-          </mxGeometry>
         </mxCell>
         <mxCell id="sas_main_e_r1_1" edge="1" parent="1" source="sas_main_r1_search" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;fontColor=#154360;labelBackgroundColor=#FFFFFF;" target="sas_main_r1_boustro" value="&lt;b&gt;VIA&lt;/b&gt; [IN-PROC] BoustrophedonPathPlanner · &lt;b&gt;DATA&lt;/b&gt; Polygon→PoseStamped[]">
           <mxGeometry relative="1" as="geometry" />
@@ -7767,6 +7824,16 @@
             </Array>
           </mxGeometry>
         </mxCell>
+        <mxCell id="sas_main_e_r2" edge="1" parent="1" source="sas_main_partition" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;fontColor=#154360;jettySize=18;jumpStyle=arc;jumpSize=8;labelBackgroundColor=#FFFFFF;" target="sas_main_r2_search" value="&lt;b&gt;VIA&lt;/b&gt; [ROS2 ACTION] /robot2/search_and_detect · &lt;b&gt;TYPE&lt;/b&gt; NavigateThroughPoses.Goal · &lt;b&gt;DATA&lt;/b&gt; poses=Polygon">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1471" y="1095" />
+              <mxPoint x="1540" y="1095" />
+              <mxPoint x="1540" y="1205" />
+              <mxPoint x="2560" y="1205" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
         <mxCell id="sas_main_e_r2_1" edge="1" parent="1" source="sas_main_r2_search" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;fontColor=#154360;labelBackgroundColor=#FFFFFF;" target="sas_main_r2_boustro" value="&lt;b&gt;VIA&lt;/b&gt; [IN-PROC] BoustrophedonPathPlanner · &lt;b&gt;DATA&lt;/b&gt; Polygon→PoseStamped[]">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
@@ -7779,10 +7846,43 @@
         <mxCell id="sas_main_e_r2_done" edge="1" parent="1" source="sas_main_r2_approach" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;fontColor=#154360;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="p2_mon" value="&lt;b&gt;VIA&lt;/b&gt; [ROS2 ACTION RESULT] NavigateToPose · &lt;b&gt;DATA&lt;/b&gt; SUCCEEDED|ABORTED">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="2752" y="1748" />
-              <mxPoint x="2752" y="2269" />
+              <mxPoint x="2760.82" y="1748" />
+              <mxPoint x="2760.82" y="2269.29" />
             </Array>
           </mxGeometry>
+        </mxCell>
+        <mxCell id="sas_main_e_yes" edge="1" parent="1" source="sas_main_coord_q" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;strokeWidth=1.5;endArrow=blockThin;endFill=1;fontSize=7;fontColor=#154360;jettySize=18;jumpStyle=arc;jumpSize=8;labelBackgroundColor=#FFFFFF;" target="m_recv" value="&lt;b&gt;VIA&lt;/b&gt; [IN-PROC] ModeDecision · &lt;b&gt;DATA&lt;/b&gt; mode=EXACT,target_pose">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sas_main_note" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;strokeWidth=1.5;dashed=1;fontSize=7;fontColor=#7D6608;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;" value="&lt;b&gt;STATUS&lt;/b&gt; CURRENT 독립 시험 · Polygon 수동 지정 · Vision location_x/y 고정 좌표 · Mission Manager/search_coordinator/peer cancel 미연결" vertex="1">
+          <mxGeometry height="62" width="320" x="1185" y="1288" as="geometry" />
+        </mxCell>
+        <mxCell id="sas_main_partition" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; AREA 수색 구역 지정&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; 공용 map Polygon을 robot1/robot2 구역으로 분할&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; OUT robotN별 Polygon 꼭짓점" vertex="1">
+          <mxGeometry height="73.5" width="299" x="1195.5" y="1155" as="geometry" />
+        </mxCell>
+        <mxCell id="sas_main_r1_approach" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDEBD0;strokeColor=#CA6F1E;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; robot1 환자 접근&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; TF2로 환자 0.70m 앞 접근 pose 계산&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; ACTION /robot1/navigate_to_pose · OUT ARRIVED" vertex="1">
+          <mxGeometry height="58" width="267" x="1661.5" y="1719" as="geometry" />
+        </mxCell>
+        <mxCell id="sas_main_r1_boustro" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; robot1 coverage 경로 생성·주행&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; Boustrophedon scanline 왕복 waypoint&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; ACTION /robot1/navigate_through_poses" vertex="1">
+          <mxGeometry height="75" width="273" x="1661.5" y="1427" as="geometry" />
+        </mxCell>
+        <mxCell id="sas_main_r1_detect" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#922B21;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; robot1 환자 감지 전환&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; CONFIRMED/DETECTED 수신 시 coverage Goal 취소&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; SUB /robot1/vision/emergency_event" vertex="1">
+          <mxGeometry height="65" width="273" x="1661.5" y="1573" as="geometry" />
+        </mxCell>
+        <mxCell id="sas_main_r1_search" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDEBD0;strokeColor=#CA6F1E;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; robot1 SearchAndDetectNode&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; goal.poses를 수색 Polygon으로 해석&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; ACTION /robot1/search_and_detect" vertex="1">
+          <mxGeometry height="62" width="275.5" x="1661.5" y="1285" as="geometry" />
+        </mxCell>
+        <mxCell id="sas_main_r2_approach" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDEBD0;strokeColor=#CA6F1E;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; robot2 환자 접근&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; TF2로 환자 0.70m 앞 접근 pose 계산&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; ACTION /robot2/navigate_to_pose · OUT ARRIVED" vertex="1">
+          <mxGeometry height="58" width="267" x="2408" y="1719" as="geometry" />
+        </mxCell>
+        <mxCell id="sas_main_r2_boustro" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; robot2 coverage 경로 생성·주행&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; Boustrophedon scanline 왕복 waypoint&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; ACTION /robot2/navigate_through_poses" vertex="1">
+          <mxGeometry height="75" width="273" x="2408" y="1427" as="geometry" />
+        </mxCell>
+        <mxCell id="sas_main_r2_detect" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#922B21;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; robot2 환자 감지 전환&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; CONFIRMED/DETECTED 수신 시 coverage Goal 취소&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; SUB /robot2/vision/emergency_event" vertex="1">
+          <mxGeometry height="65" width="273" x="2408" y="1573" as="geometry" />
+        </mxCell>
+        <mxCell id="sas_main_r2_search" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDEBD0;strokeColor=#CA6F1E;strokeWidth=1.5;fontSize=8;fontColor=#1B2631;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;spacingTop=4;spacingBottom=4;lineHeight=1.15;" value="&lt;b&gt;WHAT&lt;/b&gt; robot2 SearchAndDetectNode&lt;br&gt;&lt;b&gt;HOW&lt;/b&gt; goal.poses를 수색 Polygon으로 해석&lt;br&gt;&lt;b&gt;I/O&lt;/b&gt; ACTION /robot2/search_and_detect" vertex="1">
+          <mxGeometry height="62" width="275.5" x="2408" y="1285" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
@@ -7927,7 +8027,7 @@
         <mxCell id="e_p1_mission_p1_nav2" edge="1" parent="1" source="p1_mission" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;" target="p1_nav2" value="/robot1/navigate_to_pose">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_p1_cam_p1_mission" edge="1" parent="1" source="p1_cam" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" target="p1_mission" value="/robot1/oakd/rgb/preview/image_raw">
+        <mxCell id="e_p1_cam_p1_mission" edge="1" parent="1" source="p1_cam" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" target="p1_mission" value="/robot1/oakd/rgb/image_raw/compressed">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e_p1_nav2_p1_base" edge="1" parent="1" source="p1_nav2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;exitX=1;exitY=0.5;entryX=0;entryY=0.5;startArrow=blockThin;startFill=1;" target="p1_base" value="/robot1/cmd_vel  ↔  /robot1/odom · TF">
@@ -7948,7 +8048,7 @@
         <mxCell id="e_p2_mission_p2_nav2" edge="1" parent="1" source="p2_mission" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;" target="p2_nav2" value="/robot2/navigate_to_pose">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_p2_cam_p2_mission" edge="1" parent="1" source="p2_cam" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" target="p2_mission" value="/robot2/oakd/rgb/preview/image_raw">
+        <mxCell id="e_p2_cam_p2_mission" edge="1" parent="1" source="p2_cam" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" target="p2_mission" value="/robot2/oakd/rgb/image_raw/compressed">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e_p2_nav2_p2_base" edge="1" parent="1" source="p2_nav2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;exitX=1;exitY=0.5;entryX=0;entryY=0.5;startArrow=blockThin;startFill=1;" target="p2_base" value="/robot2/cmd_vel  ↔  /robot2/odom · TF">
@@ -8423,7 +8523,7 @@
         <mxCell id="r1_conF" value="F&lt;br&gt;상태 → PC3" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#E8DAEF;strokeColor=#6C3483;fontSize=11;fontStyle=1;fontColor=#1B2631;" vertex="1" parent="1">
           <mxGeometry x="2710" y="1530" width="130" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="r1_hw_note" value="임무 노드 ↔ 하드웨어 연결&lt;br&gt;· 이동 : /robot1/navigate_to_pose (Nav2 액션)&lt;br&gt;· 영상 : /robot1/oakd/rgb/preview/image_raw&lt;br&gt;· 주행 : /robot1/cmd_vel · /robot1/odom · TF" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;align=left;verticalAlign=top;fontSize=11;spacingLeft=8;spacingTop=4;fontColor=#7D6608;" vertex="1" parent="1">
+        <mxCell id="r1_hw_note" value="임무 노드 ↔ 하드웨어 연결&lt;br&gt;· 이동 : /robot1/navigate_to_pose (Nav2 액션)&lt;br&gt;· 영상 : /robot1/oakd/rgb/image_raw/compressed&lt;br&gt;· 주행 : /robot1/cmd_vel · /robot1/odom · TF" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;align=left;verticalAlign=top;fontSize=11;spacingLeft=8;spacingTop=4;fontColor=#7D6608;" vertex="1" parent="1">
           <mxGeometry x="2440" y="1640" width="510" height="120" as="geometry" />
         </mxCell>
         <mxCell id="e_r1_standby_r1_conA" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;" edge="1" parent="1" source="r1_standby" target="r1_conA">
@@ -8666,7 +8766,7 @@
         <mxCell id="r2_conF" value="F&lt;br&gt;상태 → PC3" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#E8DAEF;strokeColor=#6C3483;fontSize=11;fontStyle=1;fontColor=#1B2631;" vertex="1" parent="1">
           <mxGeometry x="2710" y="2370" width="130" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="r2_hw_note" value="임무 노드 ↔ 하드웨어 연결&lt;br&gt;· 이동 : /robot2/navigate_to_pose (Nav2 액션)&lt;br&gt;· 영상 : /robot2/oakd/rgb/preview/image_raw&lt;br&gt;· 주행 : /robot2/cmd_vel · /robot2/odom · TF" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;align=left;verticalAlign=top;fontSize=11;spacingLeft=8;spacingTop=4;fontColor=#7D6608;" vertex="1" parent="1">
+        <mxCell id="r2_hw_note" value="임무 노드 ↔ 하드웨어 연결&lt;br&gt;· 이동 : /robot2/navigate_to_pose (Nav2 액션)&lt;br&gt;· 영상 : /robot2/oakd/rgb/image_raw/compressed&lt;br&gt;· 주행 : /robot2/cmd_vel · /robot2/odom · TF" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FEF9E7;strokeColor=#B7950B;align=left;verticalAlign=top;fontSize=11;spacingLeft=8;spacingTop=4;fontColor=#7D6608;" vertex="1" parent="1">
           <mxGeometry x="2440" y="2480" width="510" height="120" as="geometry" />
         </mxCell>
         <mxCell id="e_r2_standby_r2_conA" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;" edge="1" parent="1" source="r2_standby" target="r2_conA">
@@ -9088,7 +9188,7 @@
         <mxCell id="e_p1_mission_p1_nav2" value="/robot1/navigate_to_pose" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;" edge="1" parent="1" source="p1_mission" target="p1_nav2">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_p1_cam_p1_mission" value="/robot1/oakd/rgb/preview/image_raw" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="p1_cam" target="p1_mission">
+        <mxCell id="e_p1_cam_p1_mission" value="/robot1/oakd/rgb/image_raw/compressed" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="p1_cam" target="p1_mission">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e_p1_nav2_p1_base" value="/robot1/cmd_vel  ↔  /robot1/odom · TF" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;exitX=1;exitY=0.5;entryX=0;entryY=0.5;startArrow=blockThin;startFill=1;" edge="1" parent="1" source="p1_nav2" target="p1_base">
@@ -9109,7 +9209,7 @@
         <mxCell id="e_p2_mission_p2_nav2" value="/robot2/navigate_to_pose" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;" edge="1" parent="1" source="p2_mission" target="p2_nav2">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_p2_cam_p2_mission" value="/robot2/oakd/rgb/preview/image_raw" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="p2_cam" target="p2_mission">
+        <mxCell id="e_p2_cam_p2_mission" value="/robot2/oakd/rgb/image_raw/compressed" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="p2_cam" target="p2_mission">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e_p2_nav2_p2_base" value="/robot2/cmd_vel  ↔  /robot2/odom · TF" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5D6D7E;fontSize=10;fontColor=#34495E;labelBackgroundColor=#FFFFFF;endArrow=blockThin;endFill=1;jettySize=18;exitX=1;exitY=0.5;entryX=0;entryY=0.5;startArrow=blockThin;startFill=1;" edge="1" parent="1" source="p2_nav2" target="p2_base">
