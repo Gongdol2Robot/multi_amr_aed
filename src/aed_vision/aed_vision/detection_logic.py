@@ -293,6 +293,7 @@ class StationaryFallConfirmation:
             self.clear()
 
     def clear(self) -> None:
+        self._confirmed = False
         self._tracked_box = None
         self._anchor_box = None
         self._stationary_since = None

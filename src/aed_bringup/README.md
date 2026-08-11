@@ -60,21 +60,35 @@ ros2 launch aed_bringup server_runtime.launch.py
 
 ```bash
 ros2 launch aed_vision camera_vision.launch.py \
-  camera:=1 backend:=person_pose
+  camera:=1
 
 ros2 launch aed_vision camera_vision.launch.py \
-  camera:=1 backend:=mannequin
+  camera:=2
 ```
 
-robot1·robot2 검출기도 별도 비전 노트북에서 필요 항목만 실행합니다.
+robot1·robot2 검출기는 서로의 추론을 기다리지 않도록 별도 프로세스로
+실행합니다.
 
 ```bash
 ros2 launch aed_vision robot_vision.launch.py \
-  robot_id:=robot1 backend:=person_pose
+  robot_id:=robot1
 
 ros2 launch aed_vision robot_vision.launch.py \
-  robot_id:=robot2 backend:=person_pose
+  robot_id:=robot2
 ```
+
+위 기본 명령은 USB 웹캠과 OAK-D 모두 `backend:=mannequin`을 적용해
+`rescue2_yolo11n.pt`로 낙상 대상과 helping RC카(`helping_person` class)를
+함께 검출합니다. 필요할 때만 명시적으로 `backend:=person_pose`를 붙여 실제
+사람 자세 인식 경로로 바꿀 수 있습니다. RC카는 같은 프레임에 낙상 대상이
+가까이 있을 때만 확정되며, 로봇의
+`/robotN/vision/helper_confirmed=true`가 helper 인계·복귀 절차를 시작합니다.
+
+로봇용 launch는 시작 직후에는 배정 토픽만 구독합니다. 해당
+`/robotN/mission_assignment`를 받은 뒤에만 OAK-D preview 구독을 생성하므로,
+배정 전에는 로봇 프레임이 비전 노트북으로 전송되거나 추론되지 않습니다.
+배송 도착 뒤 조력자 탐색까지는 추론을 유지하고, 탐색 종료·실패 또는 복귀
+도착 상태를 받으면 이미지 구독을 제거합니다.
 
 모든 노트북은 같은 `ROS_DOMAIN_ID`와 discovery server를 사용해야 합니다.
 

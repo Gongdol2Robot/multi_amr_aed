@@ -103,6 +103,20 @@ def test_stationary_fall_tolerates_short_gap_and_clears_after_timeout() -> None:
     assert not confirmation.update([], (640, 480), now=3.2)
 
 
+def test_stationary_fall_clear_resets_confirmed_state_for_new_mission() -> None:
+    confirmation = _stationary_confirmation()
+    box = Box(20, 20, 100, 80, 0.9)
+
+    for now in (0.0, 0.2, 0.4, 0.6, 0.8):
+        assert not confirmation.update([box], (640, 480), now=now)
+    assert confirmation.update([box], (640, 480), now=1.0)
+
+    confirmation.clear()
+
+    assert not confirmation.update([], (640, 480), now=1.1)
+    assert confirmation.hit_count == 0
+
+
 def test_stationary_fall_rejects_invalid_parameters_and_frame_size() -> None:
     with pytest.raises(ValueError, match="positive"):
         StationaryFallConfirmation(0.0, 0.025, 0.25, 0.3, 0.25, 2.0)

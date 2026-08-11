@@ -34,6 +34,8 @@ from .pose_posture import TORSO_INDEXES, classify_posture
 from .posture_classifier import PostureClassifier
 
 
+# rescue2의 ``helping_person``은 운영 시 helping RC카를 뜻하는 학습 클래스다.
+# 가중치 메타데이터와 정확히 같아야 class 1을 RC카 후보로 안전하게 해석한다.
 RESCUE_CLASS_NAMES = ["mannequin", "helping_person"]
 DETECTION_BACKENDS = ("person_pose", "mannequin_detect")
 POSTURE_COLORS = {
@@ -158,6 +160,7 @@ class InferencePipeline:
         detection_backend: str,
         enable_crowd: bool,
         detect_people_as_helpers: bool,
+        skip_person_without_fallen: bool,
         rescue_conf: float,
         person_conf: float,
         iou: float,
@@ -181,6 +184,7 @@ class InferencePipeline:
 
         self.enable_crowd = enable_crowd
         self.detect_people_as_helpers = detect_people_as_helpers
+        self.skip_person_without_fallen = skip_person_without_fallen
         self.detection_backend = detection_backend.strip().lower()
         if self.detection_backend not in DETECTION_BACKENDS:
             raise ValueError(
@@ -390,7 +394,8 @@ class InferencePipeline:
         if detection_result.boxes is None:
             return fallen, evidence
 
-        # rescue 모델의 class 0은 mannequin, class 1은 helping_person이다.
+        # rescue2의 class 0은 mannequin, class 1은 helping RC카를 의미하는
+        # helping_person이다.
         # 여기서는 자세를 판정해야 하는 mannequin(class 0)만 선택한다.
         selected = detection_result.boxes[detection_result.boxes.cls == 0]
         frame_height, frame_width = frame.shape[:2]
@@ -603,7 +608,9 @@ class InferencePipeline:
         height, width = frame.shape[:2]
         frame_size = (width, height)
 
-        if self.person_model is not None:
+        if self.person_model is not None and not (
+            self.skip_person_without_fallen and not fallen
+        ):
             person_result = self.person_model.predict(
                 frame,
                 conf=self.person_conf,

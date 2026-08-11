@@ -30,8 +30,8 @@
 - 각 노트북의 USB 웹캠을 직접 읽어 같은 프로세스에서 즉시 추론
 - 읽은 원본 영상은 모니터링용 JPEG 압축 토픽으로도 발행
 - 기본 `mannequin_detect` backend는 파인튜닝 YOLO로 목각인형을 찾고,
-  HOG+SVM으로 최종 자세를 판정하며 Pose는 골격 시각화에 사용. SVM이
-  설정되지 않은 경우에만 Pose와 bbox 비율로 낙상 판정을 보완
+  HOG+SVM으로 최종 자세를 판정합니다. 운영 기본값은 객체별 Pose 추가 추론을
+  끄며, SVM이 없을 때는 bbox 비율로 낙상 판정을 보완합니다.
 - 선택 `person_pose` backend는 YOLO11n-Pose의 실제 사람 관절과 bbox로 자세 판정
 - 동일한 낙상 bbox의 위치와 크기가 1초 이상 안정적일 때 응급상황 확정
 - 확정 뒤 2초 동안 낙상 후보가 없을 때만 응급상황 해제
@@ -126,14 +126,10 @@ ros2 launch aed_vision camera_vision.launch.py \
 입력 방식을 담당합니다. 적용 순서는 `Python 안전 기본값 → base_camera.yaml
 → backend YAML → 카메라별 YAML → launch override`입니다.
 
-실제 사람 Pose backend는 기존 명령에 launch 인자를 추가합니다.
-
-```bash
-ros2 launch aed_vision camera_vision.launch.py \
-  camera:=1 backend:=person_pose
-```
-
-두 backend는 다음 두 값만 허용합니다.
+운영 `camera_vision.launch.py`는 인자를 생략하면 helping RC카를 검출하는
+`mannequin_backend.yaml`을 기본으로 사용합니다. 필요할 때만
+`backend:=person_pose`를 명시해 실제 사람 자세 경로로 바꿀 수 있습니다.
+두 backend의 역할은 다음과 같습니다.
 
 - `person_pose`: 실제 사람의 bbox·17관절을 검출하고 종횡비와 몸통 각도로
   `STANDING`, `SITTING`, `FALLEN` 판정
@@ -174,12 +170,12 @@ ros2 launch aed_vision camera_vision.launch.py \
 - `fall_detection_gap_tolerance_seconds`: 추적 중 허용할 짧은 미검출 간격. `0.25`
 - `cancellation_timeout_seconds`: 확정 뒤 해제까지 필요한 연속 미검출 시간. `2.0`
 - `run_pose_for_mannequin`: SVM 판정 뒤 디버그 골격용 Pose를 추가 실행할지 여부.
-  디버그 영상에서 목각인형 관절을 표시하기 위해 기본값은 `true`
+  운영 기본값은 중복 추론을 막는 `false`
 
 CPU에서 `robot_approach.mp4`의 동일한 6개 프레임을 비교했을 때 warm-up 제외
 평균은 Pose 활성 `146.7 ms`(6.8 FPS), 비활성 `63.2 ms`(15.8 FPS)였습니다.
-현재는 관절 시각화를 위해 Pose를 활성화합니다. 두 설정의 프레임별 낙상 개수는
-같았으며, 성능이 부족한 장치에서는 이 옵션을 `false`로 바꿀 수 있습니다.
+현재 운영 설정은 더 빠른 Pose 비활성 경로를 사용합니다. 두 설정의 프레임별
+낙상 개수는 같았으며, 관절 디버깅이 필요할 때만 이 옵션을 `true`로 바꿉니다.
 측정값은 현재 개발 노트북의 참고치이며 배포 장치 성능을 보장하지 않습니다.
 - `location_x`, `location_y`: 해당 고정 카메라 구조 지점의 map 좌표
 - `homography_camera_id`: 카메라별 측량 설정 ID (`cam1` 또는 `cam2`)
@@ -308,11 +304,37 @@ ros2 topic echo /camera_alley/vision/fallen_location
 
 ## 로봇 카메라 구조 인력 검출
 
-AED 도착 뒤 현장 탐색에는 TurtleBot4 OAK-D용 프로필을 사용합니다.
+robot1·robot2는 배정과 추론 지연이 서로 영향을 주지 않도록 각각 별도
+`vision_detector` 프로세스로 실행합니다.
 
 ```bash
-ros2 launch aed_vision robot_vision.launch.py robot_id:=robot2
+ros2 launch aed_vision robot_vision.launch.py \
+  robot_id:=robot1
+
+ros2 launch aed_vision robot_vision.launch.py \
+  robot_id:=robot2
 ```
+
+두 프로세스는 모델도 각각 로드하므로 GPU 메모리는 더 사용하지만, 한 로봇의
+긴 추론이 다른 로봇 콜백을 직렬로 막지 않습니다.
+
+운영용 로봇 Vision은 실행 직후 OAK-D 영상 토픽을 구독하지 않습니다.
+`/<robot_id>/mission_assignment`에서 해당 로봇의 유효한 배정을 받은 순간에만
+`/<robot_id>/oakd/rgb/preview/image_raw` 구독을 생성하고 추론을 시작합니다.
+배정 전에는 Vision heartbeat만 발행합니다. 배송 도착 뒤에는 조력자 탐색을
+위해 추론을 유지하고, 조력자 탐색 종료·실패·취소 또는 복귀 도착 시 이미지
+구독을 제거합니다. 새 배정을 받으면 다시 구독합니다.
+
+```text
+/robot1/mission_assignment 수신
+        ↓
+/robot1/oakd/rgb/preview/image_raw 구독 생성
+        ↓
+vision_detector 추론 시작
+```
+
+`robot_camera_model_test.launch.py`는 배정 게이트를 사용하지 않으므로 모델을
+직접 확인할 때는 기존처럼 즉시 영상 구독과 추론을 시작합니다.
 
 로봇 OAK-D 시점에서 현재 모델의 bbox와 자세 판정을 직접 확인할 때는 운영
 노드 대신 다음 테스트 launch를 실행합니다.
@@ -335,11 +357,16 @@ ros2 run rqt_image_view rqt_image_view \
 테스트 결과 토픽은 `/robot2_test/vision/*`로 분리되어 운영 결과와 충돌하지
 않습니다.
 
-현재 `robot` 프로필은 파인튜닝 구조 모델의 `mannequin`과
-`helping_person`을 함께 검출합니다. `helping_person`의 bbox 하단 중심이 같은
-프레임의 낙상 환자 bbox 중심에서 화면 대각선 길이의 30% 이내일 때만 구조
-인력 후보로 남깁니다. 최근 6프레임 중 3프레임 이상 후보가 있고 현재
-프레임에도 후보가 있으면 다음 로봇 namespace 토픽이 `true`가 됩니다.
+고정 USB 웹캠의 `camera_vision.launch.py`와 로봇 OAK-D의
+`robot_vision.launch.py`는 모두 backend 인자를 생략하면 같은
+`rescue2_yolo11n.pt`를 사용합니다. 이 모델의 `mannequin`은 낙상 대상,
+`helping_person`은 운영 시 helping RC카를 뜻합니다.
+
+RC카만 단독으로 보이면 임무를 끝내지 않습니다. `helping_person` bbox 하단
+중심이 **같은 처리 프레임**의 낙상 환자 bbox 중심에서 화면 대각선 길이의
+30% 이내일 때만 helper 후보로 남깁니다. 최근 6프레임 중 3프레임 이상 이
+동시 조건을 통과하고 현재 프레임에도 두 대상이 함께 있어야 다음 로봇
+namespace 토픽이 `true`가 됩니다.
 
 ```bash
 ros2 topic echo /robot1/vision/helper_count
@@ -350,13 +377,12 @@ ros2 topic echo /robot1/vision/helper_confirmed
 즉시 제자리 회전과 반복 호출음을 중지합니다. 과거 검출이 시간 창에 남아
 있더라도 현재 프레임에 사람이 없으면 `helper_confirmed`는 즉시 `false`가 됩니다.
 
-실제 사람을 환자와 조력자로 시험하려면 `backend:=person_pose`를 사용합니다.
-이 backend 프로필은 `detect_people_as_helpers=true`를 함께 적용합니다. 실행
-경로는 검증했지만 실제 사람 낙상 정확도는 별도 현장 데이터로 아직 검증되지
-않았습니다.
+`backend:=person_pose`는 실제 사람을 환자와 사람 조력자로 인식하는 선택
+경로이며 rescue2의 helping RC카 class는 사용하지 않습니다. 로봇 OAK-D에서
+운영 토픽과 분리해 비교하려면 테스트 launch를 사용합니다.
 
 ```bash
-ros2 launch aed_vision robot_vision.launch.py \
+ros2 launch aed_vision robot_camera_model_test.launch.py \
   robot_id:=robot2 backend:=person_pose
 ```
 

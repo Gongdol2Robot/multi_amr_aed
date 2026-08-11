@@ -34,6 +34,7 @@ def _pipeline(backend: str) -> InferencePipeline:
         detection_backend=backend,
         enable_crowd=backend == "mannequin_detect",
         detect_people_as_helpers=backend == "person_pose",
+        skip_person_without_fallen=False,
         rescue_conf=0.5,
         person_conf=0.5,
         iou=0.5,

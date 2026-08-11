@@ -2,8 +2,16 @@
 
 from types import SimpleNamespace
 
-from aed_interfaces.msg import CrowdLevel, DetectionSummary, EmergencyEvent
+from aed_interfaces.msg import (
+    CrowdLevel,
+    DetectionSummary,
+    EmergencyEvent,
+    MissionAssignment,
+    MissionStatus,
+    RobotState,
+)
 from builtin_interfaces.msg import Time
+from sensor_msgs.msg import Image
 
 from aed_vision.detection_logic import Box
 from aed_vision.vision_detector import (
@@ -18,6 +26,170 @@ class _Publisher:
 
     def publish(self, message) -> None:
         self.messages.append(message)
+
+
+class _Logger:
+    def __init__(self) -> None:
+        self.info_messages = []
+        self.warning_messages = []
+
+    def info(self, message: str) -> None:
+        self.info_messages.append(message)
+
+    def warning(self, message: str) -> None:
+        self.warning_messages.append(message)
+
+
+def _assignment_gated_detector():
+    detector = VisionDetector.__new__(VisionDetector)
+    detector.camera_id = "robot1"
+    detector.wait_for_assignment = True
+    detector.assignment_topic = "/robot1/mission_assignment"
+    detector.mission_status_topic = "/aed/mission_status"
+    parameters = {
+        "image_topic": "/robot1/oakd/rgb/preview/image_raw",
+        "image_is_compressed": False,
+        "direct_camera": False,
+    }
+    detector._param = lambda name: parameters[name]
+    detector.created_subscriptions = []
+    detector.destroyed_subscriptions = []
+    detector.confirmation = SimpleNamespace(clear=lambda: None)
+    detector.helper_confirmation = SimpleNamespace(clear=lambda: None)
+    detector.helper_confirmed_pub = _Publisher()
+    detector.was_confirmed = False
+    detector.event_id = ""
+    detector.event_detected_at = None
+    logger = _Logger()
+    detector.get_logger = lambda: logger
+
+    def create_subscription(message_type, topic, callback, qos):
+        subscription = SimpleNamespace(
+            message_type=message_type,
+            topic=topic,
+            callback=callback,
+            qos=qos,
+        )
+        detector.created_subscriptions.append(subscription)
+        return subscription
+
+    detector.create_subscription = create_subscription
+    detector.destroy_subscription = detector.destroyed_subscriptions.append
+    return detector
+
+
+def test_robot_image_subscription_waits_for_matching_assignment() -> None:
+    detector = _assignment_gated_detector()
+    detector._prepare_image_source()
+
+    assert [item.topic for item in detector.created_subscriptions] == [
+        "/robot1/mission_assignment",
+        "/aed/mission_status",
+    ]
+    assert detector.subscription is None
+
+    wrong_robot = MissionAssignment()
+    wrong_robot.robot_id = "robot2"
+    wrong_robot.mission_id = "event-1-aed-robot2"
+    detector._on_mission_assignment(wrong_robot)
+    assert detector.subscription is None
+
+    assignment = MissionAssignment()
+    assignment.robot_id = "robot1"
+    assignment.mission_id = "event-1-aed-robot1"
+    assignment.event_id = "event-1"
+    assignment.assignment_version = 1
+    assignment.role = RobotState.ROLE_AED_DELIVERY
+    detector._on_mission_assignment(assignment)
+
+    assert detector.subscription.message_type is Image
+    assert detector.subscription.topic == (
+        "/robot1/oakd/rgb/preview/image_raw"
+    )
+
+
+def test_duplicate_assignment_does_not_create_second_image_subscription() -> None:
+    detector = _assignment_gated_detector()
+    detector._prepare_image_source()
+    assignment = MissionAssignment()
+    assignment.robot_id = "robot1"
+    assignment.mission_id = "event-1-aed-robot1"
+    assignment.event_id = "event-1"
+    assignment.assignment_version = 1
+    assignment.role = RobotState.ROLE_AED_DELIVERY
+
+    detector._on_mission_assignment(assignment)
+    detector._on_mission_assignment(assignment)
+
+    image_subscriptions = [
+        item for item in detector.created_subscriptions
+        if item.message_type is Image
+    ]
+    assert len(image_subscriptions) == 1
+
+
+def test_delivery_arrival_keeps_vision_until_helper_finishes() -> None:
+    detector = _assignment_gated_detector()
+    detector._prepare_image_source()
+    assignment = MissionAssignment()
+    assignment.robot_id = "robot1"
+    assignment.mission_id = "event-1-aed-robot1"
+    assignment.event_id = "event-1"
+    assignment.assignment_version = 1
+    assignment.role = RobotState.ROLE_AED_DELIVERY
+    detector._on_mission_assignment(assignment)
+
+    arrived = MissionStatus()
+    arrived.robot_id = "robot1"
+    arrived.mission_id = assignment.mission_id
+    arrived.event_id = assignment.event_id
+    arrived.assignment_version = assignment.assignment_version
+    arrived.status = MissionStatus.ARRIVED
+    detector._on_mission_status(arrived)
+    assert detector.subscription is not None
+
+    helper_finished = MissionStatus()
+    helper_finished.robot_id = "robot1"
+    helper_finished.mission_id = "event-1-helper-scan"
+    helper_finished.event_id = "event-1"
+    helper_finished.assignment_version = 2
+    helper_finished.status = MissionStatus.HELPER_ARRIVED
+    detector._on_mission_status(helper_finished)
+
+    assert detector.subscription is None
+    assert len(detector.destroyed_subscriptions) == 1
+    assert detector.helper_confirmed_pub.messages[-1].data is False
+
+    return_assignment = MissionAssignment()
+    return_assignment.robot_id = "robot1"
+    return_assignment.mission_id = "event-1-helper-return-robot1"
+    return_assignment.event_id = "event-1"
+    return_assignment.assignment_version = 3
+    return_assignment.role = RobotState.ROLE_RETURN
+    detector._on_mission_assignment(return_assignment)
+    assert detector.subscription is not None
+
+
+def test_return_arrival_deactivates_robot_image_subscription() -> None:
+    detector = _assignment_gated_detector()
+    detector._prepare_image_source()
+    assignment = MissionAssignment()
+    assignment.robot_id = "robot1"
+    assignment.mission_id = "event-1-helper-return-robot1"
+    assignment.event_id = "event-1"
+    assignment.assignment_version = 3
+    assignment.role = RobotState.ROLE_RETURN
+    detector._on_mission_assignment(assignment)
+
+    arrived = MissionStatus()
+    arrived.robot_id = "robot1"
+    arrived.mission_id = assignment.mission_id
+    arrived.event_id = assignment.event_id
+    arrived.assignment_version = assignment.assignment_version
+    arrived.status = MissionStatus.ARRIVED
+    detector._on_mission_status(arrived)
+
+    assert detector.subscription is None
 
 
 def test_crowd_level_constants_match_four_stage_protocol() -> None:

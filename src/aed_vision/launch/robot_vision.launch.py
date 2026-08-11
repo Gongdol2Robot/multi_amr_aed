@@ -40,6 +40,12 @@ def _create_robot_vision(context):
                     ),
                     "image_is_compressed": False,
                     "frame_id": f"{robot_id}/oakd_rgb_camera_optical_frame",
+                    # 운영 노드는 배정 전 OAK-D 영상 구독 자체를 만들지 않는다.
+                    "wait_for_assignment": True,
+                    "assignment_topic": f"/{robot_id}/mission_assignment",
+                    # 낙상 후보가 없으면 조력자 후보도 성립하지 않으므로
+                    # 별도 COCO person 전체 프레임 추론을 생략한다.
+                    "skip_person_without_fallen": True,
                 },
             ],
             output="screen",

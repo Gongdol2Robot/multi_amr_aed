@@ -27,6 +27,9 @@ from aed_interfaces.msg import (
     DetectionSummary,
     EmergencyEvent,
     Heartbeat,
+    MissionAssignment,
+    MissionStatus,
+    RobotState,
 )
 from geometry_msgs.msg import PointStamped
 from rclpy.node import Node
@@ -64,6 +67,10 @@ PARAMETER_DEFAULTS = (
     ("fps", 15.0),
     ("frame_id", "aed_camera_optical_frame"),
     ("jpeg_quality", 85),
+    # 로봇 영상은 배정 전 네트워크 전송과 추론을 모두 막을 수 있다.
+    ("wait_for_assignment", False),
+    ("assignment_topic", "mission_assignment"),
+    ("mission_status_topic", "/aed/mission_status"),
     # 모델과 추론
     ("detection_backend", "person_pose"),
     ("rescue_weights", ""),
@@ -80,6 +87,7 @@ PARAMETER_DEFAULTS = (
     ("posture_classifier_weights", ""),
     ("run_pose_for_mannequin", True),
     ("detect_people_as_helpers", False),
+    ("skip_person_without_fallen", False),
     ("iou", 0.5),
     ("imgsz", 640),
     ("inference_device", ""),
@@ -192,9 +200,11 @@ class VisionDetector(Node):
         self._load_config()
         self._initialize_state()
         self._setup_window()
+        self._prepare_image_source()
         self.pipeline = self._create_pipeline()
         self._create_publishers()
-        self._setup_image_source()
+        if not self.wait_for_assignment:
+            self._activate_image_source()
         self.heartbeat_timer = self.create_timer(1.0, self._publish_heartbeat)
         self._log_configuration()
 
@@ -209,12 +219,31 @@ class VisionDetector(Node):
         self.mode = str(self._param("mode")).lower()
         if self.mode not in ("open", "alley", "robot"):
             raise ValueError("mode must be 'open', 'alley', or 'robot'")
+        self.wait_for_assignment = bool(self._param("wait_for_assignment"))
+        self.assignment_topic = str(self._param("assignment_topic")).strip()
+        self.mission_status_topic = str(
+            self._param("mission_status_topic")
+        ).strip()
+        if self.wait_for_assignment and self.mode != "robot":
+            raise ValueError("wait_for_assignment is only valid in robot mode")
+        if self.wait_for_assignment and not self.assignment_topic:
+            raise ValueError(
+                "assignment_topic is required when wait_for_assignment=true"
+            )
+        if self.wait_for_assignment and not self.mission_status_topic:
+            raise ValueError(
+                "mission_status_topic is required when "
+                "wait_for_assignment=true"
+            )
 
         # 카메라 식별자는 토픽 경로와 이벤트 출처에 함께 사용한다.
         # 인파 모델은 연산량을 줄이기 위해 alley 모드에서만 메모리에 올린다.
         self.enable_crowd = self.mode == "alley"
         self.detect_people_as_helpers = bool(
             self._param("detect_people_as_helpers")
+        )
+        self.skip_person_without_fallen = bool(
+            self._param("skip_person_without_fallen")
         )
         self.detection_backend = str(
             self._param("detection_backend")
@@ -326,6 +355,7 @@ class VisionDetector(Node):
             detection_backend=str(self._param("detection_backend")),
             enable_crowd=self.enable_crowd,
             detect_people_as_helpers=self.detect_people_as_helpers,
+            skip_person_without_fallen=self.skip_person_without_fallen,
             rescue_conf=float(self._param("rescue_conf")),
             person_conf=float(self._param("person_conf")),
             iou=float(self._param("iou")),
@@ -392,10 +422,47 @@ class VisionDetector(Node):
             CompressedImage, f"{prefix}/debug/compressed", CAMERA_QOS
         )
 
-    def _setup_image_source(self) -> None:
-        """설정에 따라 ROS 토픽 구독과 USB 직접 입력 중 하나만 활성화한다."""
+    def _prepare_image_source(self) -> None:
+        """영상 입력 설정을 준비하고 필요하면 배정 토픽만 먼저 구독한다."""
         self.image_topic = str(self._param("image_topic"))
         self.image_is_compressed = bool(self._param("image_is_compressed"))
+        self.direct_camera = bool(self._param("direct_camera"))
+        self.subscription = None
+        self.camera_source = None
+        self.assignment_subscription = None
+        self.mission_status_subscription = None
+        self.active_mission_id = ""
+        self.active_event_id = ""
+        self.active_assignment_version = 0
+        self.active_assignment_role = RobotState.ROLE_NONE
+        if not self.wait_for_assignment:
+            return
+        self.assignment_subscription = self.create_subscription(
+            MissionAssignment,
+            self.assignment_topic,
+            self._on_mission_assignment,
+            10,
+        )
+        self.mission_status_subscription = self.create_subscription(
+            MissionStatus,
+            self.mission_status_topic,
+            self._on_mission_status,
+            20,
+        )
+        self.get_logger().info(
+            f"Waiting for assignment on {self.assignment_topic}; "
+            f"image topic {self.image_topic} is not subscribed yet"
+        )
+
+    def _activate_image_source(self) -> None:
+        """배정이 확인된 뒤 영상 구독 또는 USB 직접 입력을 한 번만 시작한다."""
+        if self.subscription is not None or self.camera_source is not None:
+            return
+        if self.direct_camera:
+            self.camera_source = DirectCameraSource(
+                self, self.image_topic, self._process_frame
+            )
+            return
         if self.image_is_compressed:
             self.subscription = self.create_subscription(
                 CompressedImage,
@@ -407,16 +474,95 @@ class VisionDetector(Node):
             self.subscription = self.create_subscription(
                 Image, self.image_topic, self._on_raw_image, CAMERA_QOS
             )
-        self.direct_camera = bool(self._param("direct_camera"))
-        self.camera_source = None
-        if self.direct_camera:
-            # 같은 카메라를 구독과 직접 열기로 중복 처리하지 않도록, 먼저 만든
-            # subscription을 제거하고 DirectCameraSource 콜백만 사용한다.
+        self.get_logger().info(f"Image subscription active: {self.image_topic}")
+
+    def _on_mission_assignment(self, assignment: MissionAssignment) -> None:
+        """이 노드의 로봇에 유효한 배정이 왔을 때만 영상 구독을 시작한다."""
+        if assignment.robot_id != self.camera_id:
+            return
+        if not assignment.mission_id or not assignment.event_id:
+            self.get_logger().warning(
+                "Ignoring vision activation assignment without mission/event id"
+            )
+            return
+        if (
+            assignment.event_id == self.active_event_id
+            and assignment.assignment_version
+            < self.active_assignment_version
+        ):
+            self.get_logger().warning(
+                "Ignoring stale vision assignment "
+                f"v{assignment.assignment_version}"
+            )
+            return
+        self.active_mission_id = assignment.mission_id
+        self.active_event_id = assignment.event_id
+        self.active_assignment_version = assignment.assignment_version
+        self.active_assignment_role = assignment.role
+        was_active = (
+            self.subscription is not None or self.camera_source is not None
+        )
+        self._activate_image_source()
+        if not was_active:
+            self.get_logger().info(
+                f"Vision activated by assignment {assignment.mission_id} "
+                f"for {assignment.robot_id}"
+            )
+
+    def _on_mission_status(self, status: MissionStatus) -> None:
+        """현재 배정이 끝난 상태에서 영상 구독과 추론 상태를 정리한다."""
+        if (
+            status.robot_id != self.camera_id
+            or not self.active_event_id
+            or status.event_id != self.active_event_id
+            or status.assignment_version < self.active_assignment_version
+        ):
+            return
+        terminal_failure = status.status in {
+            MissionStatus.CANCELED,
+            MissionStatus.BLOCKED,
+            MissionStatus.NETWORK_LOST,
+            MissionStatus.NAVIGATION_ERROR,
+        }
+        return_arrived = (
+            status.status == MissionStatus.ARRIVED
+            and self.active_assignment_role == RobotState.ROLE_RETURN
+            and status.mission_id == self.active_mission_id
+        )
+        helper_finished = (
+            status.status == MissionStatus.HELPER_ARRIVED
+            and self.active_assignment_role != RobotState.ROLE_RETURN
+        )
+        if not (
+            terminal_failure
+            or return_arrived
+            or helper_finished
+            or status.status == MissionStatus.COMPLETED
+        ):
+            return
+        self._deactivate_image_source(
+            f"mission status={status.status} mission={status.mission_id}"
+        )
+
+    def _deactivate_image_source(self, reason: str) -> None:
+        """운영 로봇의 이미지 구독을 제거하고 시간 누적 상태를 초기화한다."""
+        if self.subscription is not None:
             self.destroy_subscription(self.subscription)
             self.subscription = None
-            self.camera_source = DirectCameraSource(
-                self, self.image_topic, self._process_frame
-            )
+        if self.camera_source is not None:
+            self.camera_source.close()
+            self.camera_source = None
+        self.confirmation.clear()
+        self.helper_confirmation.clear()
+        self.was_confirmed = False
+        self.event_id = ""
+        self.event_detected_at = None
+        self.helper_confirmed_pub.publish(Bool(data=False))
+        self.active_mission_id = ""
+        self.active_event_id = ""
+        self.active_assignment_version = 0
+        self.active_assignment_role = RobotState.ROLE_NONE
+        self.get_logger().info(f"Vision deactivated: {reason}")
 
     def _log_configuration(self) -> None:
         """시작 시 실제 적용된 주요 설정을 한 줄로 기록한다."""
@@ -426,6 +572,7 @@ class VisionDetector(Node):
             f"crowd_detection={self.enable_crowd} "
             f"people_as_helpers={self.detect_people_as_helpers} "
             f"detection_backend={self.pipeline.detection_backend} "
+            f"wait_for_assignment={self.wait_for_assignment} "
             f"input={'compressed' if self.image_is_compressed else 'raw'}"
         )
 
