@@ -12,6 +12,9 @@
     fps: 7.0
     jpeg_quality: 85
     mode: robot
+    # 배정으로 비전을 켠 직후 첫 프레임이 이 시간 동안 없을 때만 OAK-D
+    # 구독을 다시 만든다. 첫 프레임 수신 뒤에는 watchdog이 개입하지 않는다.
+    image_first_frame_timeout_seconds: 3.0
 
     # 모델 종류는 launch가 mannequin_backend.yaml 또는
     # person_pose_backend.yaml에서 별도로 불러온다.

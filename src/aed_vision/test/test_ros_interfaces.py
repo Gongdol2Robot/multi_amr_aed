@@ -1,6 +1,7 @@
 """비전 노드가 채우는 공식 ROS 인터페이스의 회귀 테스트."""
 
 from types import SimpleNamespace
+from time import monotonic
 
 from aed_interfaces.msg import (
     CrowdLevel,
@@ -60,6 +61,12 @@ def _assignment_gated_detector():
     detector.was_confirmed = False
     detector.event_id = ""
     detector.event_detected_at = None
+    detector.first_frame_logged = True
+    detector.last_successful_inference_at = 1.0
+    detector.image_first_frame_timeout = 3.0
+    detector.image_source_started_at = None
+    detector.last_frame_received_at = None
+    detector.image_restart_count = 0
     logger = _Logger()
     detector.get_logger = lambda: logger
 
@@ -126,6 +133,68 @@ def test_duplicate_assignment_does_not_create_second_image_subscription() -> Non
         if item.message_type is Image
     ]
     assert len(image_subscriptions) == 1
+
+
+def test_reassignment_restarts_first_frame_monitoring() -> None:
+    detector = _assignment_gated_detector()
+    detector._prepare_image_source()
+    assignment = MissionAssignment()
+    assignment.robot_id = "robot1"
+    assignment.mission_id = "event-1-aed-robot1"
+    assignment.event_id = "event-1"
+    assignment.assignment_version = 4
+    assignment.role = RobotState.ROLE_AED_DELIVERY
+
+    detector._on_mission_assignment(assignment)
+
+    assert detector.first_frame_logged is False
+    assert detector.last_successful_inference_at is None
+    assert detector.image_source_started_at is not None
+    assert detector.last_frame_received_at is None
+
+
+def test_image_watchdog_recreates_subscription_without_losing_assignment() -> None:
+    detector = _assignment_gated_detector()
+    detector._prepare_image_source()
+    assignment = MissionAssignment()
+    assignment.robot_id = "robot1"
+    assignment.mission_id = "event-1-aed-robot1"
+    assignment.event_id = "event-1"
+    assignment.assignment_version = 4
+    assignment.role = RobotState.ROLE_AED_DELIVERY
+    detector._on_mission_assignment(assignment)
+    first_subscription = detector.subscription
+    detector.image_source_started_at = monotonic() - 4.0
+
+    detector._monitor_image_source()
+
+    assert detector.subscription is not first_subscription
+    assert first_subscription in detector.destroyed_subscriptions
+    assert detector.active_event_id == "event-1"
+    assert detector.active_assignment_version == 4
+    assert detector.image_restart_count == 1
+    assert detector.helper_confirmed_pub.messages[-1].data is False
+    assert "no first frame" in detector.get_logger().warning_messages[-1]
+
+
+def test_image_watchdog_stops_after_first_frame() -> None:
+    detector = _assignment_gated_detector()
+    detector._prepare_image_source()
+    assignment = MissionAssignment()
+    assignment.robot_id = "robot1"
+    assignment.mission_id = "event-1-aed-robot1"
+    assignment.event_id = "event-1"
+    assignment.assignment_version = 1
+    assignment.role = RobotState.ROLE_AED_DELIVERY
+    detector._on_mission_assignment(assignment)
+    subscription = detector.subscription
+    # 첫 프레임 이후 시간이 오래 지났더라도 주행 중 구독에는 개입하지 않는다.
+    detector.last_frame_received_at = monotonic() - 30.0
+
+    detector._monitor_image_source()
+
+    assert detector.subscription is subscription
+    assert detector.image_restart_count == 0
 
 
 def test_delivery_arrival_keeps_vision_until_helper_finishes() -> None:

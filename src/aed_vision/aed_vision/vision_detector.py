@@ -71,6 +71,8 @@ PARAMETER_DEFAULTS = (
     ("wait_for_assignment", False),
     ("assignment_topic", "mission_assignment"),
     ("mission_status_topic", "/aed/mission_status"),
+    # 배정으로 구독을 연 직후 첫 OAK-D 프레임이 오지 않을 때만 재구독한다.
+    ("image_first_frame_timeout_seconds", 3.0),
     # 모델과 추론
     ("detection_backend", "person_pose"),
     ("rescue_weights", ""),
@@ -206,6 +208,12 @@ class VisionDetector(Node):
         if not self.wait_for_assignment:
             self._activate_image_source()
         self.heartbeat_timer = self.create_timer(1.0, self._publish_heartbeat)
+        self.image_watchdog_timer = None
+        if self.wait_for_assignment:
+            self.image_watchdog_timer = self.create_timer(
+                min(1.0, self.image_first_frame_timeout / 2.0),
+                self._monitor_image_source,
+            )
         self._log_configuration()
 
     def _param(self, name: str):
@@ -224,6 +232,9 @@ class VisionDetector(Node):
         self.mission_status_topic = str(
             self._param("mission_status_topic")
         ).strip()
+        self.image_first_frame_timeout = float(
+            self._param("image_first_frame_timeout_seconds")
+        )
         if self.wait_for_assignment and self.mode != "robot":
             raise ValueError("wait_for_assignment is only valid in robot mode")
         if self.wait_for_assignment and not self.assignment_topic:
@@ -234,6 +245,10 @@ class VisionDetector(Node):
             raise ValueError(
                 "mission_status_topic is required when "
                 "wait_for_assignment=true"
+            )
+        if self.image_first_frame_timeout <= 0.0:
+            raise ValueError(
+                "image_first_frame_timeout_seconds must be positive"
             )
 
         # 카메라 식별자는 토픽 경로와 이벤트 출처에 함께 사용한다.
@@ -313,6 +328,9 @@ class VisionDetector(Node):
         self.monitoring_started_at = monotonic()
         self.last_successful_inference_at = None
         self.first_frame_logged = False
+        self.image_source_started_at = None
+        self.last_frame_received_at = None
+        self.image_restart_count = 0
         self.busy = False
 
     def _setup_window(self) -> None:
@@ -435,6 +453,9 @@ class VisionDetector(Node):
         self.active_event_id = ""
         self.active_assignment_version = 0
         self.active_assignment_role = RobotState.ROLE_NONE
+        self.image_source_started_at = None
+        self.last_frame_received_at = None
+        self.image_restart_count = 0
         if not self.wait_for_assignment:
             return
         self.assignment_subscription = self.create_subscription(
@@ -458,6 +479,8 @@ class VisionDetector(Node):
         """배정이 확인된 뒤 영상 구독 또는 USB 직접 입력을 한 번만 시작한다."""
         if self.subscription is not None or self.camera_source is not None:
             return
+        self.image_source_started_at = monotonic()
+        self.last_frame_received_at = None
         if self.direct_camera:
             self.camera_source = DirectCameraSource(
                 self, self.image_topic, self._process_frame
@@ -475,6 +498,50 @@ class VisionDetector(Node):
                 Image, self.image_topic, self._on_raw_image, CAMERA_QOS
             )
         self.get_logger().info(f"Image subscription active: {self.image_topic}")
+
+    def _destroy_image_source(self) -> None:
+        """현재 영상 입력만 제거하고 활성 임무 식별자는 보존한다."""
+        if self.subscription is not None:
+            self.destroy_subscription(self.subscription)
+            self.subscription = None
+        if self.camera_source is not None:
+            self.camera_source.close()
+            self.camera_source = None
+        self.image_source_started_at = None
+        self.last_frame_received_at = None
+
+    def _restart_image_source(self, reason: str) -> None:
+        """활성 임무를 유지한 채 끊긴 카메라 구독을 새로 만든다."""
+        self._destroy_image_source()
+        self.confirmation.clear()
+        self.helper_confirmation.clear()
+        self.helper_confirmed_pub.publish(Bool(data=False))
+        self.image_restart_count += 1
+        self.get_logger().warning(
+            f"Restarting image subscription ({reason}); "
+            f"attempt={self.image_restart_count} topic={self.image_topic}"
+        )
+        self._activate_image_source()
+
+    def _monitor_image_source(self) -> None:
+        """배정으로 구독을 연 직후 첫 프레임이 없을 때만 자동 복구한다."""
+        if (
+            not self.wait_for_assignment
+            or not self.active_event_id
+            or (self.subscription is None and self.camera_source is None)
+            or self.image_source_started_at is None
+            # 첫 프레임을 한 번 받았으면 이번 활성화의 watchdog 역할은 끝난다.
+            or self.last_frame_received_at is not None
+        ):
+            return
+        now = monotonic()
+        age = now - self.image_source_started_at
+        if age < self.image_first_frame_timeout:
+            return
+        self._restart_image_source(
+            f"no first frame for {age:.1f}s after assignment "
+            f"v{self.active_assignment_version}"
+        )
 
     def _on_mission_assignment(self, assignment: MissionAssignment) -> None:
         """이 노드의 로봇에 유효한 배정이 왔을 때만 영상 구독을 시작한다."""
@@ -502,6 +569,11 @@ class VisionDetector(Node):
         was_active = (
             self.subscription is not None or self.camera_source is not None
         )
+        if not was_active:
+            # 재배정으로 다시 켜질 때도 첫 프레임을 새로 확인하고 로그로 남긴다.
+            self.first_frame_logged = False
+            self.last_successful_inference_at = None
+            self.image_restart_count = 0
         self._activate_image_source()
         if not was_active:
             self.get_logger().info(
@@ -546,12 +618,7 @@ class VisionDetector(Node):
 
     def _deactivate_image_source(self, reason: str) -> None:
         """운영 로봇의 이미지 구독을 제거하고 시간 누적 상태를 초기화한다."""
-        if self.subscription is not None:
-            self.destroy_subscription(self.subscription)
-            self.subscription = None
-        if self.camera_source is not None:
-            self.camera_source.close()
-            self.camera_source = None
+        self._destroy_image_source()
         self.confirmation.clear()
         self.helper_confirmation.clear()
         self.was_confirmed = False
@@ -562,6 +629,9 @@ class VisionDetector(Node):
         self.active_event_id = ""
         self.active_assignment_version = 0
         self.active_assignment_role = RobotState.ROLE_NONE
+        self.first_frame_logged = False
+        self.last_successful_inference_at = None
+        self.image_restart_count = 0
         self.get_logger().info(f"Vision deactivated: {reason}")
 
     def _log_configuration(self) -> None:
@@ -614,6 +684,7 @@ class VisionDetector(Node):
         # 이전 프레임 추론이 아직 안 끝났으면 이번 프레임은 버린다.
         # 카메라 타이머/구독 콜백이 추론 속도보다 빠를 때 콜백이 쌓이는 것을 막는다
         # (콜백 큐잉 대신 여기서 직접 최신 프레임 우선 정책을 구현).
+        self.last_frame_received_at = monotonic()
         self.received_frames += 1
         if self.busy:
             self.dropped_frames += 1
@@ -833,6 +904,7 @@ class VisionDetector(Node):
                 self.consecutive_inference_failures
             ),
             "camera_input_failures": self.camera_input_failures,
+            "image_restart_count": self.image_restart_count,
             "last_successful_inference_age_s": round(
                 monotonic() - self.last_successful_inference_at, 3
             ) if self.last_successful_inference_at is not None else None,
