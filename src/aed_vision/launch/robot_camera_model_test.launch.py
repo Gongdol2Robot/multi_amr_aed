@@ -27,8 +27,11 @@ def _create_test_node(context):
 
     requested_topic = LaunchConfiguration("image_topic").perform(context)
     image_topic = requested_topic.strip() or (
-        f"/{robot_id}/oakd/rgb/preview/image_raw"
+        f"/{robot_id}/oakd/rgb/image_raw/compressed"
     )
+    # 운영 launch와 같은 이유로 압축 스트림이 기본값이다. 다른 raw Image
+    # 토픽을 시험할 수 있도록 토픽 이름으로 입력 형식을 판별한다.
+    image_is_compressed = image_topic.endswith("/compressed")
     show_window = _as_bool(
         LaunchConfiguration("show_window").perform(context)
     )
@@ -53,7 +56,7 @@ def _create_test_node(context):
                     "camera_id": test_camera_id,
                     "zone_id": f"{robot_id}_camera_test",
                     "image_topic": image_topic,
-                    "image_is_compressed": False,
+                    "image_is_compressed": image_is_compressed,
                     "direct_camera": False,
                     "frame_id": f"{robot_id}/oakd_rgb_camera_optical_frame",
                     "publish_debug_image": True,
@@ -85,8 +88,9 @@ def generate_launch_description() -> LaunchDescription:
                 "image_topic",
                 default_value="",
                 description=(
-                    "테스트할 sensor_msgs/Image 토픽. 빈 값이면 "
-                    "/<robot_id>/oakd/rgb/preview/image_raw 사용"
+                    "테스트할 영상 토픽. 빈 값이면 "
+                    "/<robot_id>/oakd/rgb/image_raw/compressed 사용. "
+                    "/compressed로 끝나면 CompressedImage로 구독한다"
                 ),
             ),
             DeclareLaunchArgument(

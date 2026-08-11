@@ -1,4 +1,9 @@
-"""로봇 비전 운영 입력이 OAK-D preview로 유지되는지 검증한다."""
+"""로봇 비전 운영 입력이 OAK-D 압축 JPEG 스트림으로 유지되는지 검증한다.
+
+비압축 preview(약 17Mbps)는 로봇 WiFi 실효 대역폭(~6Mbps)을 초과해 프레임
+대부분이 유실되고 로봇 핑이 수백 ms로 튄다. 운영 입력은 로봇 oakd가
+image_transport로 발행하는 image_raw/compressed를 사용해야 한다.
+"""
 
 from pathlib import Path
 
@@ -6,22 +11,22 @@ from pathlib import Path
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_operational_robot_vision_uses_raw_preview() -> None:
+def test_operational_robot_vision_uses_compressed_stream() -> None:
     source = (PACKAGE_ROOT / "launch/robot_vision.launch.py").read_text(
         encoding="utf-8"
     )
 
-    assert "oakd/rgb/preview/image_raw" in source
-    assert '"image_is_compressed": False' in source
-    assert 'f"/{robot_id}/oakd/rgb/image_raw/compressed"' not in source
+    assert 'f"/{robot_id}/oakd/rgb/image_raw/compressed"' in source
+    assert '"image_is_compressed": True' in source
+    assert "oakd/rgb/preview/image_raw" not in source
 
 
-def test_robot_profile_declares_raw_image_input() -> None:
+def test_robot_profile_declares_compressed_image_input() -> None:
     config = (PACKAGE_ROOT / "config/robot_camera.yaml").read_text(
         encoding="utf-8"
     )
 
-    assert "image_is_compressed: false" in config
+    assert "image_is_compressed: true" in config
 
 
 def test_webcam_and_robot_default_to_rescue2_helper_rc_backend() -> None:

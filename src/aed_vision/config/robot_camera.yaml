@@ -1,10 +1,11 @@
 /**/vision_detector:
   ros__parameters:
-    # TurtleBot4 OAK-D의 저해상도 preview Image를 구독하므로 카메라를 직접
+    # TurtleBot4 OAK-D가 발행하는 토픽을 구독하므로 카메라를 직접
     # 열거나 라즈베리파이에 추론을 설치하지 않는다.
     direct_camera: false
-    # 정사각형에 가까운 전체 시야를 유지하도록 preview sensor_msgs/Image를 쓴다.
-    image_is_compressed: false
+    # 비압축 preview(약 17Mbps)는 로봇 WiFi 실효 대역폭을 초과해 핑을
+    # 망가뜨리므로, 로봇이 발행하는 704x704 JPEG(image_raw/compressed)를 쓴다.
+    image_is_compressed: true
     width: 640
     height: 480
     # 실제 발행률은 로봇 OAK-D의 rgb.i_fps=7.0 설정에서 제어한다.
@@ -14,7 +15,7 @@
 
     # 모델 종류는 launch가 mannequin_backend.yaml 또는
     # person_pose_backend.yaml에서 별도로 불러온다.
-    rescue_conf: 0.3
+    rescue_conf: 0.25
     pose_keypoint_conf: 0.3
     pose_min_keypoints: 8
     pose_min_box_area: 0.02

@@ -199,24 +199,26 @@ CPU에서 `robot_approach.mp4`의 동일한 6개 프레임을 비교했을 때 w
 | `/<camera_id>/vision/heartbeat` | `aed_interfaces/Heartbeat` | 초당 노드 생존 신호 |
 | `/<camera_id>/vision/debug/compressed` | `sensor_msgs/CompressedImage` | bbox와 ROI가 표시된 JPEG |
 
-로봇 OAK-D 모드는 로봇에서 이미 발행하는 저해상도 preview 영상을 구독합니다.
-HMI에서도 카메라의 전체 시야를 유지하도록 운영 입력은 아래 토픽으로
-고정합니다.
+로봇 OAK-D 모드는 로봇 oakd 노드가 image_transport로 발행하는 704x704 JPEG
+스트림을 구독합니다. 운영 입력은 아래 토픽으로 고정합니다.
 
 ```text
-/robotN/oakd/rgb/preview/image_raw  (sensor_msgs/Image)
+/robotN/oakd/rgb/image_raw/compressed  (sensor_msgs/CompressedImage)
 ```
 
-노트북에서 preview Image를 BGR로 변환한 뒤 `robot_camera.yaml`에 설정된 추론
+노트북에서 JPEG을 디코딩한 뒤 `robot_camera.yaml`에 설정된 추론
 파이프라인에 입력합니다. HMI는 이 입력을 직접 구독하지 않고 중앙 비전 노드가
 발행한 `/robotN/vision/debug/compressed`만 표시합니다. 로봇 비전의 backend,
 confidence와 조력자 판정 기준은 launch 인자가
 덮어쓰지 않으며 이 YAML을 단일 기준으로 사용합니다.
 라즈베리파이에는 모델이나 추가 추론 프로세스를 설치하지 않습니다.
 
-`preview/image_raw`는 저해상도지만 비압축 `sensor_msgs/Image`이므로 네트워크
-트래픽이 자동으로 줄어드는 것은 아닙니다. 대역폭 절감이 필요하면 로봇에서
-preview 압축 토픽을 별도로 발행한 뒤 중앙 입력을 그 토픽으로 바꿔야 합니다.
+비압축 `preview/image_raw`(320x320 bgr8, 7fps 기준 약 17Mbps)는 로봇 WiFi
+실효 대역폭(~6Mbps)을 초과해 프레임 대부분이 유실되고 로봇 핑이 수백 ms로
+튀므로 운영 입력으로 쓰지 않습니다. 압축 스트림은 지연 발행(lazy publishing)
+이라 구독자가 붙을 때만 로봇이 인코딩과 전송을 시작하며, 실측 기준 프레임당
+약 89KB, 7fps에 약 5Mbps입니다. JPEG 인코딩은 OAK-D 장치 내부에서 수행되어
+(`rgb.i_low_bandwidth`) 라즈베리파이 CPU를 쓰지 않습니다.
 
 로봇의 조력자 후보는 환자와 같은 프레임에 있어야 하며, 조력자 bbox 하단
 중심과 쓰러진 환자 bbox 중심 사이 거리가 화면 대각선의 30% 이내여야 합니다.
@@ -320,7 +322,7 @@ ros2 launch aed_vision robot_vision.launch.py \
 
 운영용 로봇 Vision은 실행 직후 OAK-D 영상 토픽을 구독하지 않습니다.
 `/<robot_id>/mission_assignment`에서 해당 로봇의 유효한 배정을 받은 순간에만
-`/<robot_id>/oakd/rgb/preview/image_raw` 구독을 생성하고 추론을 시작합니다.
+`/<robot_id>/oakd/rgb/image_raw/compressed` 구독을 생성하고 추론을 시작합니다.
 배정 전에는 Vision heartbeat만 발행합니다. 배송 도착 뒤에는 조력자 탐색을
 위해 추론을 유지하고, 조력자 탐색 종료·실패·취소 또는 복귀 도착 시 이미지
 구독을 제거합니다. 새 배정을 받으면 다시 구독합니다.
@@ -328,7 +330,7 @@ ros2 launch aed_vision robot_vision.launch.py \
 ```text
 /robot1/mission_assignment 수신
         ↓
-/robot1/oakd/rgb/preview/image_raw 구독 생성
+/robot1/oakd/rgb/image_raw/compressed 구독 생성
         ↓
 vision_detector 추론 시작
 ```
@@ -352,8 +354,9 @@ ros2 run rqt_image_view rqt_image_view \
   /robot2_test/vision/debug/compressed
 ```
 
-기본 입력은 `/robot2/oakd/rgb/preview/image_raw`이고, 다른 raw Image 카메라
-토픽을 시험하려면 `image_topic:=/원하는/Image/토픽`으로 바꿀 수 있습니다.
+기본 입력은 `/robot2/oakd/rgb/image_raw/compressed`이고, 다른 카메라 토픽을
+시험하려면 `image_topic:=/원하는/토픽`으로 바꿀 수 있습니다. 토픽 이름이
+`/compressed`로 끝나면 CompressedImage로, 아니면 raw Image로 구독합니다.
 테스트 결과 토픽은 `/robot2_test/vision/*`로 분리되어 운영 결과와 충돌하지
 않습니다.
 

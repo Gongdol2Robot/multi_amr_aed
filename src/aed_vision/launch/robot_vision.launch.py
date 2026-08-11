@@ -32,13 +32,14 @@ def _create_robot_vision(context):
                 {
                     "camera_id": robot_id,
                     "zone_id": f"{robot_id}_view",
-                    # HMI에서도 잘리지 않은 전체 시야를 쓰도록 OAK-D의
-                    # 저해상도 preview를 운영 입력으로 사용한다. 이 토픽은
-                    # 비압축 Image라 네트워크 절감 수단으로 간주하지 않는다.
+                    # 로봇 WiFi 실효 대역폭(~6Mbps)에 비압축 preview(약
+                    # 17Mbps)가 들어가지 않아 프레임 대부분이 유실되고 로봇
+                    # 핑이 수백 ms로 튄다. 로봇 oakd가 image_transport로
+                    # 발행하는 704x704 JPEG 스트림을 운영 입력으로 사용한다.
                     "image_topic": (
-                        f"/{robot_id}/oakd/rgb/preview/image_raw"
+                        f"/{robot_id}/oakd/rgb/image_raw/compressed"
                     ),
-                    "image_is_compressed": False,
+                    "image_is_compressed": True,
                     "frame_id": f"{robot_id}/oakd_rgb_camera_optical_frame",
                     # 운영 노드는 배정 전 OAK-D 영상 구독 자체를 만들지 않는다.
                     "wait_for_assignment": True,
