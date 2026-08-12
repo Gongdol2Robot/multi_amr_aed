@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+ <defs>
+  <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#071221"/><stop offset="1" stop-color="#102840"/></linearGradient>
+  <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0L10 5 0 10Z" fill="#ffc857"/></marker>
+  <style>
+   .t{font:700 43px sans-serif;fill:#fff}.s{font:400 21px sans-serif;fill:#bdd0e2}.h{font:700 25px sans-serif;fill:#fff}
+   .bone{stroke:#809bb2;stroke-width:10;stroke-linecap:round;fill:none}.torso{stroke:#ffc857;stroke-width:7;fill:none}
+   .j{fill:#55d6be;stroke:#e4fff9;stroke-width:3}.tj{fill:#ffc857;stroke:#fff1b8;stroke-width:3}.sj{fill:#7aa7ff;stroke:#edf3ff;stroke-width:3}
+   .n{font:700 18px sans-serif;fill:#071221;text-anchor:middle;dominant-baseline:central}.card{fill:#122c46;stroke:#31516e;stroke-width:2}
+   .legend{font:600 19px sans-serif;fill:#eef6ff}
+  </style>
+ </defs>
+ <rect width="1600" height="900" rx="28" fill="url(#bg)"/>
+ <text x="72" y="72" class="t">COCO Pose 전체 17관절과 FALLEN 판정</text>
+ <text x="72" y="112" class="s">Ultralytics 코드 기준 0-based index · 노란색 5·6·11·12가 몸통 기울기 계산점</text>
+
+ <!-- skeleton bones -->
+ <g class="bone">
+  <path d="M385 205L350 218M385 205L420 218M350 218L320 225M420 218L450 225"/>
+  <path d="M330 340L440 340M330 340L285 455L250 565M440 340L485 455L520 565"/>
+  <path d="M330 340L350 555M440 340L420 555M350 555L420 555"/>
+  <path d="M350 555L325 700L305 825M420 555L445 700L465 825"/>
+ </g>
+
+ <!-- all 17 keypoints -->
+ <g>
+  <circle cx="385" cy="205" r="19" class="j"/><text x="385" y="205" class="n">0</text>
+  <circle cx="350" cy="218" r="19" class="j"/><text x="350" y="218" class="n">1</text>
+  <circle cx="420" cy="218" r="19" class="j"/><text x="420" y="218" class="n">2</text>
+  <circle cx="320" cy="225" r="19" class="j"/><text x="320" y="225" class="n">3</text>
+  <circle cx="450" cy="225" r="19" class="j"/><text x="450" y="225" class="n">4</text>
+  <circle cx="330" cy="340" r="22" class="tj"/><text x="330" y="340" class="n">5</text>
+  <circle cx="440" cy="340" r="22" class="tj"/><text x="440" y="340" class="n">6</text>
+  <circle cx="285" cy="455" r="19" class="j"/><text x="285" y="455" class="n">7</text>
+  <circle cx="485" cy="455" r="19" class="j"/><text x="485" y="455" class="n">8</text>
+  <circle cx="250" cy="565" r="19" class="j"/><text x="250" y="565" class="n">9</text>
+  <circle cx="520" cy="565" r="19" class="j"/><text x="520" y="565" class="n">10</text>
+  <circle cx="350" cy="555" r="22" class="tj"/><text x="350" y="555" class="n">11</text>
+  <circle cx="420" cy="555" r="22" class="tj"/><text x="420" y="555" class="n">12</text>
+  <circle cx="325" cy="700" r="21" class="sj"/><text x="325" y="700" class="n">13</text>
+  <circle cx="445" cy="700" r="21" class="sj"/><text x="445" y="700" class="n">14</text>
+  <circle cx="305" cy="825" r="19" class="j"/><text x="305" y="825" class="n">15</text>
+  <circle cx="465" cy="825" r="19" class="j"/><text x="465" y="825" class="n">16</text>
+ </g>
+
+ <!-- center line -->
+ <circle cx="385" cy="340" r="11" class="tj"/><circle cx="385" cy="555" r="11" class="tj"/>
+ <line x1="385" y1="340" x2="385" y2="555" class="torso" marker-end="url(#arrow)"/>
+ <text x="405" y="395" class="s">어깨 중심 S</text><text x="405" y="600" class="s">엉덩이 중심 H</text>
+
+ <!-- complete index list -->
+ <rect x="590" y="155" width="930" height="242" rx="20" class="card"/>
+ <text x="630" y="202" class="h">전체 관절 번호</text>
+ <text x="630" y="244" class="legend">0 코 · 1 왼쪽 눈 · 2 오른쪽 눈 · 3 왼쪽 귀 · 4 오른쪽 귀</text>
+ <text x="630" y="282" class="legend">5 왼쪽 어깨 · 6 오른쪽 어깨 · 7 왼쪽 팔꿈치 · 8 오른쪽 팔꿈치</text>
+ <text x="630" y="320" class="legend">9 왼쪽 손목 · 10 오른쪽 손목 · 11 왼쪽 엉덩이 · 12 오른쪽 엉덩이</text>
+ <text x="630" y="358" class="legend">13 왼쪽 무릎 · 14 오른쪽 무릎 · 15 왼쪽 발목 · 16 오른쪽 발목</text>
+
+ <rect x="590" y="425" width="930" height="190" rx="20" class="card"/>
+ <text x="630" y="472" class="h">몸통 기울기 — 매 프레임 자세 분류</text>
+ <text x="630" y="514" class="s">S = mean(K5, K6) · H = mean(K11, K12)</text>
+ <text x="630" y="552" class="s">θ = atan2(|Hy−Sy|, |Hx−Sx|) · 0° 수평 / 90° 수직</text>
+ <text x="630" y="590" class="s">FALLEN: bbox 비율 ≥ 1.2 AND θ ≤ 40° · 또는 bbox 비율 ≥ 1.35</text>
+
+ <rect x="590" y="645" width="930" height="180" rx="20" class="card"/>
+ <text x="630" y="692" class="h">응급 이벤트 — 실제 시간 기준 확정</text>
+ <text x="630" y="734" class="s">동일 FALLEN bbox의 중심 이동 ≤ 2.5%, 면적 변화 ≤ 25%</text>
+ <text x="630" y="772" class="s">2.0초 안정 → CONFIRMED · 0.25초 누락 허용 · 2.0초 미검출 → CANCELED</text>
+ <text x="630" y="810" class="s">※ 13·14번 무릎은 SITTING 보조 판정에만 사용</text>
+</svg>

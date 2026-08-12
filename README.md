@@ -1,143 +1,102 @@
 # Multi-AMR Emergency AED Response System
 
-서로 다른 Dock에 AED를 탑재하고 대기하는 두 대의 TurtleBot4 중 예상
-이동비용이 가장 작은 로봇 한 대를 우선 출동시키는 ROS 2 프로젝트입니다.
-우선 로봇에 경로 또는 네트워크 장애가 발생하면 다른 로봇으로 임무를 자동
-재할당하여 단일 장애 상황에서도 AED 전달을 지속합니다.
+<p align="center">
+  <img height="24" src="https://img.shields.io/badge/UBUNTU-22.04_LTS-E95420?style=for-the-badge&amp;logo=ubuntu&amp;logoColor=white" alt="Ubuntu 22.04">&nbsp;<img height="24" src="https://img.shields.io/badge/ROS_2-HUMBLE-22314E?style=for-the-badge&amp;logo=ros&amp;logoColor=white" alt="ROS 2 Humble">&nbsp;<img height="24" src="https://img.shields.io/badge/TURTLEBOT_4-×2-2E86C1?style=for-the-badge" alt="TurtleBot 4 x2">&nbsp;<img height="24" src="https://img.shields.io/badge/PYTHON-3.10-3776AB?style=for-the-badge&amp;logo=python&amp;logoColor=white" alt="Python 3.10">&nbsp;<img height="24" src="https://img.shields.io/badge/NAV2-AUTONOMY-2D8A67?style=for-the-badge" alt="Nav2">
+</p>
 
-기획 기준: [기획안 최종 v3.0](https://app.notion.com/p/3b35af693d3581f8a95feaa09b63a4d7)
+두 대의 TurtleBot 4가 공용 지도에서 대기하다가 카메라가 응급 상황을 확정하면,
+Nav2 경로와 ETA를 비교해 AED 로봇을 출동시키는 ROS 2 Humble 프로젝트입니다.
+목표 시간 내 도착이 어렵다고 판단되면 두 대를 함께 출동시킬 수 있고, 주행 중
+경로·LiDAR 장애나 로봇 간 근접 상황에는 취소, 복귀 또는 대체 주행을 수행합니다.
+AED 도착 뒤에는 다른 로봇이 주변 구조 인력을 찾아 환자 위치로 안내할 수 있습니다.
+
+> 실제 로봇을 움직이기 전에는 반드시 `dispatch_enabled:=false`로 전체 데이터
+> 흐름을 확인하고, 로봇 가까이에서 비상 정지를 준비하세요.
+
+## Key features
+
+- 고정 카메라의 YOLO/Pose 낙상 판정과 호모그래피 기반 지도 좌표 생성
+- 두 로봇의 실제 Nav2 경로와 보정 ETA를 비교하는 단일·동시 배차
+- 환자 앞 안전 정지, 주행 중 재계획, 로봇 근접 시 목표 취소와 자동 복귀
+- LiDAR 장애 감지와 Nav2 → odom/OAK-D depth fallback 제어권 인계
+- AED 도착 후 별도 로봇의 구조 인력 호출, 현장 안내와 임무 복귀
+- FastAPI/WebSocket/React 기반 실시간 지도·영상·상태 관제
+
+## System architecture
+
+![Multi-AMR AED system architecture](docs/images/system_architecture.svg)
+
+중앙 PC는 판단과 관제를 담당하고, 각 로봇 PC는 동일한 DDS discovery 환경에서
+Localization, Nav2와 센서 복구를 담당합니다. 파란 실선은 데이터 토픽, 주황
+파선은 명령·Action, 녹색 점선은 상태·텔레메트리 흐름입니다.
+
+## System flow
+
+```text
+고정 카메라(aed_vision)
+  └─ EmergencyEvent / CrowdLevel / DetectionSummary
+       └─ 중앙 배차(multi_robot_emergency)
+            ├─ robot1·robot2 Nav2 경로 및 ETA 비교
+            ├─ MissionAssignment → robot_missions → Nav2 주행
+            ├─ LiDAR 장애 → sensor_recovery fallback 또는 재할당
+            └─ AED 도착 → helper_mission → 구조 인력 호출·안내
+
+RobotState / MissionStatus / 영상 → aed_hmi 웹 관제
+MissionStatus → emergency_alert 음성·경보
+```
+
+기본 배차 정책은 최소 ETA 로봇 한 대를 선택합니다. 가장 빠른 ETA도 목표 시간의
+설정 비율 이상이면 두 로봇을 동시에 보낼 수 있으며, 먼저 도착한 로봇이 생기거나
+두 로봇이 너무 가까워지면 늦은 로봇의 목표를 취소하고 출발 위치로 복귀시킵니다.
+환자 좌표는 기본적으로 환자 앞 `0.65 m` 안전 정지점으로 변환됩니다.
+
+## Packages
+
+| 패키지 | 역할 | 현재 상태 |
+|---|---|---|
+| `aed_interfaces` | 이벤트, 로봇·센서·미션 메시지와 AED 전달·조력자 Action | 인터페이스 구현 |
+| `aed_vision` | 고정/로봇 카메라 입력, YOLO·Pose 판정, 혼잡도, 호모그래피 지도 좌표 | 구현·단위 테스트 |
+| `multi_robot_emergency` | 두 Nav2 경로·ETA 비교, 단일/동시 배차, 재계획·복귀 | 구현·단위 테스트 |
+| `robot_missions` | 배정 version 처리, Nav2 AED 전달, 상태·진행률 발행 | 구현·단위 테스트 |
+| `robot_state_monitor` | 위치·배터리·Nav2 상태 및 진단용 경로비용 발행 | 구현·단위 테스트 |
+| `turtlebot4_map_navigation` | 공용 지도 Localization, 초기 자세, Nav2·RViz 실행 | 구현·설정 테스트 |
+| `sensor_recovery` | LiDAR watchdog, Nav2 제어권 인계, odom/depth fallback | 구현·fault-cycle 절차 제공 |
+| `helper_mission` | 구조 인력 탐색, 호출음·음성 안내, 환자 위치 인계 | 구현·단위 테스트 |
+| `emergency_alert` | MissionStatus 기반 로봇별 부저·음성 경보 | 구현·단위 테스트 |
+| `aed_hmi` | ROS bridge, FastAPI/WebSocket, React 관제 화면과 이력 | 구현·단위 테스트 |
+| `aed_bringup` | 중앙 런타임과 로봇 Nav2/fallback 통합 launch | 구현 |
+| `amr_recovery` | Heartbeat·네트워크·Nav2 복구 관리자 | 실행 가능한 scaffold |
+| `emergency_location_mapper` | 외부 신고/구역 좌표를 지도 좌표로 변환 | 실행 가능한 scaffold |
+| `event_logger` | 이벤트와 미션 전이 영속 저장 | 실행 가능한 scaffold |
+
+`src/mission_manager`는 ROS 패키지 manifest가 없는 과거 코드 디렉터리이며 현재
+배차 진입점이 아닙니다. 운영 배차는 `multi_robot_emergency`를 사용합니다.
 
 ## Repository layout
 
 ```text
 multi_amr_aed/
-├── src/
-│   ├── aed_interfaces/          # 이벤트·상태·Heartbeat·미션 메시지
-│   ├── aed_vision/              # YOLO 검출 및 응급 이벤트 확정
-│   ├── emergency_location_mapper/ # 카메라/구역을 지도 좌표로 변환
-│   ├── multi_robot_emergency/   # 경로·ETA 비교, 배정·재할당
-│   ├── robot_missions/          # Undock, Nav2 AED 전달, 도착 판정
-│   ├── robot_state_monitor/     # 위치·배터리·Localization·Nav2 상태
-│   ├── turtlebot4_map_navigation/ # 공용 지도 Localization·Nav2·RViz 통합
-│   ├── amr_recovery/            # Heartbeat·Nav2·네트워크 복구
-│   ├── sensor_recovery/         # LiDAR 감시·안전 정지·센서 복구
-│   ├── helper_mission/          # AED 도착 후 사람 호출·현장 안내
-│   ├── event_logger/            # 이벤트·장애·재할당 이력 저장
-│   ├── emergency_alert/         # 부저 및 음성 알림
-│   ├── aed_hmi/                 # 웹 관제 및 이벤트 이력
-│   └── aed_bringup/             # 멀티 로봇 launch와 설정
-├── config/
-├── maps/
-├── models/
-├── tools/
-├── docs/
-└── tests/
+├── src/                 # 14개 ROS 2 패키지와 HMI frontend
+├── maps/                # 공용 map.yaml 및 측정 지도
+├── models/              # 배포 모델 위치
+├── vision_training/     # 학습·평가·데이터 준비 도구
+├── tools/               # 환경, preflight, 보정, 장애 주입 스크립트
+├── docs/                # 인터페이스, 복구, 보정 및 검증 문서
+├── config/              # 저장소 공용 설정 확장 위치
+└── tests/               # 저장소 수준 통합 테스트 확장 위치
 ```
 
-## Development policy
+이 저장소 자체가 `src/`를 포함하는 colcon workspace입니다.
+`~/rokey_ws/src/multi_amr_aed`처럼 다른 workspace의 `src` 아래에 중첩해 clone하지
+마세요.
 
-- 로봇은 ROS 2 namespace와 robot ID로 구분합니다.
-- 하나의 응급 이벤트에는 한 대의 로봇만 활성 출동합니다.
-- 재할당은 증가하는 assignment version으로 중복 출동을 방지합니다.
-- AED 도착 전에는 응급 임무를 종료하지 않습니다.
-- 두 로봇이 불가하면 안전 정지·복구 대기 후 가용 로봇에 새 임무를 배정합니다.
-- 소스와 설정만 Git으로 관리하고 `build`, `install`, `log`는 제외합니다.
-- 학습 데이터와 대용량 모델은 저장소에 직접 커밋하지 않습니다.
-- 기존 프로젝트 코드는 기능별로 검토한 뒤 해당 패키지로 이관합니다.
+## Requirements and setup
 
-## Collaboration workflow
-
-팀원은 `main` 브랜치에서 직접 개발하지 않고, 맡은 기능별 브랜치를 만들어
-작업합니다.
-
-```bash
-git switch main
-git pull origin main
-git switch -c feature/<기능명>
-```
-
-기능이 어느 정도 완성되고 로컬 빌드·기본 동작 확인이 끝나면 원격 브랜치에
-푸시하고 Pull Request를 생성합니다.
-
-```bash
-git add <변경한 파일>
-git commit -m "구현 내용 요약"
-git push -u origin feature/<기능명>
-```
-
-PR에는 구현 내용, 확인 방법, 아직 남은 문제를 작성합니다. 다른 팀원의 리뷰와
-충돌 확인을 거친 뒤 `main`에 병합하며, 병합 후 각 팀원은 최신 `main`을 다시
-받아 다음 작업 브랜치를 만듭니다.
-
-- 하나의 브랜치에는 가능한 한 하나의 기능이나 목적만 포함합니다.
-- 빌드되지 않는 코드와 개인 환경 경로는 PR에 올리지 않습니다.
-- 다른 팀원의 담당 파일을 함께 수정했다면 PR 설명에 변경 이유를 남깁니다.
-- 긴급한 수정이 아니라면 `main`에 직접 push하지 않습니다.
-
-## Current migration status
-
-- `aed_vision`: 웹캠 압축 이미지 발행과 호모그래피 좌표 변환 이관 완료
-- `emergency_alert`: TurtleBot4 긴급 부저 이관 완료
-- `aed_interfaces`: 응급 이벤트·로봇 상태·미션 배정 메시지 구현 완료
-- `robot_missions`: typed 상태를 발행하는 단일 AED Nav2 실행기 구현 완료
-- `robot_state_monitor`: 두 Nav2 실제 경로 길이 계산과 이벤트별 RobotState 발행 구현 완료
-- `multi_robot_emergency`: 실제 Nav2 경로·ETA 비교, 우선 배정과 장애 재할당 구현 완료
-- `aed_bringup`: 실기 Nav2 안전 설정과 중앙 dispatch launch 구현 완료
-- `sensor_recovery`: LiDAR watchdog, Nav2-fallback 전환, depth 안전 정지와
-  복구 후 제어권 반환 구현 및 실기 fault-cycle 검증 완료
-- 모든 담당 영역을 `colcon`이 인식하는 ROS 2 패키지로 구성 완료
-- `amr_recovery`, `helper_mission`: 실행 노드 scaffold 구성 완료
-- `event_logger`, `aed_hmi`, `emergency_location_mapper`: 실행 노드 scaffold 구성 완료
-- 담당 모듈별 검증 범위와 실행 절차는 각 패키지 README를 따른다.
-
-## Package maturity
-
-- 기능 구현: `aed_interfaces`, `aed_vision` 일부, `multi_robot_emergency`,
-  `robot_missions` 일부, `emergency_alert`, `aed_bringup`, `sensor_recovery`
-- 실행 가능한 scaffold: `emergency_location_mapper`, `robot_state_monitor`,
-  `amr_recovery`, `helper_mission`, `event_logger`, `aed_hmi`
-
-scaffold 패키지도 `package.xml`, Python 모듈, resource marker, 설치 설정과
-console script를 갖추고 있어 각 담당자가 바로 노드 구현을 시작할 수 있습니다.
-
-## Core scenarios
-
-1. 정상 출동: 유효 경로 중 예상 이동비용이 가장 작은 로봇 한 대를 선택
-2. 경로 장애: 지속적 Nav2 실패를 확정하고 다른 로봇으로 자동 재할당
-3. 네트워크 장애: 양방향 Heartbeat timeout, 기존 로봇 정지, 대체 로봇 출동
-4. 동시 장애: `RECOVERY_WAIT`에서 안전하게 대기하며 복구 즉시 새 version으로 출동
-5. AED 도착 후 주변에 사람이 없으면 다른 AMR이 구조 인력을 호출·안내
-
-## Team ownership
-
-| 담당자 | 영역 | 주 패키지 |
-|---|---|---|
-| 김지훈 | 호모그래피·위치 검증·SLAM 보조 | `emergency_location_mapper`, `aed_vision` |
-| 이현민 | Vision 모델·인터페이스·전체 통합 | `aed_vision`, `aed_interfaces`, `aed_bringup` |
-| 김재엽 | 거리·경로비용 비교와 로봇 선정 | `multi_robot_emergency` |
-| 김영기 | 네트워크·Nav2 장애 복구 | `amr_recovery` |
-| 박재현 | LiDAR 장애 감지와 대처 | `sensor_recovery`, `robot_state_monitor` |
-| 김민성 | 구조 인력 호출과 현장 안내 | `helper_mission`, `emergency_alert` |
-
-세부 산출물과 통합 원칙은 [module ownership](docs/module-ownership.md)을 따릅니다.
-
-## Workspace setup
-
-이 저장소 자체가 `src/`를 포함한 독립적인 colcon workspace입니다. 기존 경로와
-단축어가 꼬이지 않도록 다음 위치를 기본 설치 경로로 사용합니다.
-
-```text
-~/rokey_ws/
-└── multi_amr_aed/       # Git 저장소이자 독립 colcon workspace
-    ├── src/
-    ├── tools/
-    ├── build/
-    ├── install/
-    └── log/
-```
-
-> **주의:** `~/rokey_ws/src/multi_amr_aed`에는 clone하지 마세요. 이 저장소
-> 내부에 이미 `src/`가 있어 workspace가 중첩됩니다.
+- Ubuntu 22.04, ROS 2 Humble
+- TurtleBot 4 ROS/Nav2 패키지와 Discovery Server 환경
+- Python 3.10
+- 비전: Ultralytics, OpenCV, NumPy
+- HMI: FastAPI/Uvicorn 및 Node.js/npm
 
 ```bash
 mkdir -p ~/rokey_ws
@@ -146,63 +105,165 @@ git clone https://github.com/Gongdol2Robot/multi_amr_aed.git
 cd multi_amr_aed
 
 source /opt/ros/humble/setup.bash
+rosdep install --from-paths src --ignore-src -r -y
+python3 -m pip install -r src/aed_vision/requirements.txt
+python3 -m pip install -r src/aed_hmi/requirements.txt
+npm ci --prefix src/aed_hmi/frontend
+
 PYTHONNOUSERSITE=1 colcon build --symlink-install
 source install/setup.bash
 ```
 
-중앙 경로·ETA 비교와 배정은 `multi_robot_emergency`로 통합되었습니다.
-HMI와 비전까지 한 번에 띄우는 최상위 진입점은
-`aed_bringup server_runtime.launch.py`입니다. 아래 중앙 노드는 기본적으로
-최소 ETA 로봇을 보내며, 목표시간 미달 위험이 크면 두 로봇을 동시에 출동시킨
-뒤 먼저 도착한 로봇이 생겼을 때 늦은 로봇을 출발 위치로 복귀시킵니다.
+비전 모델은 실행 backend에 맞게 별도로 준비해야 합니다. 학습과 평가 절차는
+[`vision_training/README.md`](vision_training/README.md), 카메라별 모델·파라미터
+설정은 [`src/aed_vision/README.md`](src/aed_vision/README.md)를 확인하세요.
+
+### Shell helpers
+
+```bash
+echo 'source ~/rokey_ws/multi_amr_aed/tools/aliases.sh' >> ~/.bashrc
+source ~/.bashrc
+
+aed       # workspace 이동 + ROS/overlay source
+aedenv    # TurtleBot 4 discovery + overlay source
+aedbuild  # PYTHONNOUSERSITE=1 colcon build --symlink-install
+aedstop   # 이 프로젝트가 띄운 로컬 프로세스 종료
+```
+
+## Run
+
+각 장비는 같은 소스 revision으로 빌드하고 같은 ROS discovery 환경을 사용해야
+합니다. 기본 지도는 `maps/map.yaml`, Dock 초기 자세는
+`src/aed_bringup/config/dock_poses.yaml`입니다.
+
+### 1. Robot PCs
+
+각 로봇 PC에서 namespace에 맞춰 실행합니다. `robot_runtime.launch.py`는 지도
+Localization, Nav2와 LiDAR fallback을 함께 구성합니다.
+
+```bash
+# robot1 PC
+aedenv
+ros2 launch turtlebot4_map_navigation robot_runtime.launch.py \
+  robot_name:=robot1 rviz:=true
+
+# robot2 PC
+aedenv
+ros2 launch turtlebot4_map_navigation robot_runtime.launch.py \
+  robot_name:=robot2 rviz:=true
+```
+
+단계별 수동 실행이 필요하면 `loc 1`, `initpose 1`, `nav 1`, `rv 1` 순서로
+실행하고 robot2는 숫자만 바꿉니다. Nav2가 올라온 뒤 다른 터미널에서
+`pfboth --nav`를 실행하면 두 로봇의 연결과 필수 ROS 인터페이스를 함께 점검할
+수 있습니다. 기동 전 하드웨어 연결만 확인할 때는 `pfboth`를 사용합니다.
+
+### 2. Vision PC
+
+고정 USB 카메라 검출기는 카메라별로 실행합니다. 중앙 런타임은 원격 detector의
+backend를 바꾸지 않습니다.
+
+```bash
+aedenv
+ros2 launch aed_vision camera_vision.launch.py camera:=1 backend:=person_pose
+# 목각인형 시험: backend:=mannequin
+```
+
+로봇 OAK-D의 구조 인력 검출은 로봇별로 실행합니다.
+
+```bash
+ros2 launch aed_vision robot_vision.launch.py robot_id:=robot1
+ros2 launch aed_vision robot_vision.launch.py robot_id:=robot2
+```
+
+### 3. Central PC
+
+먼저 실제 출동을 막은 상태로 Vision → 배차 → HMI/경보 흐름을 검증합니다.
+
+```bash
+aedenv
+central false
+```
+
+`central`은 `aed_bringup server_runtime.launch.py`를 통해 중앙 배차, 두 mission
+executor, helper mission, 상태 기반 경보, HMI backend와 frontend를 시작합니다.
+중복 실행은 lock으로 차단되며 종료 시 관련 로컬 프로세스를 정리합니다.
+
+검증이 끝난 뒤에만 실제 출동을 허용합니다.
+
+```bash
+central true                 # 기본: 목표 30초, 85%, 동시출동 허용
+central true 40 0.85 true    # 목표시간을 40초로 변경
+```
+
+HMI는 기본적으로 backend `0.0.0.0:8000`과 Vite frontend를 실행합니다. 중앙
+배차만 시험하려면 다음처럼 HMI 없이 dry-run할 수 있습니다.
 
 ```bash
 ros2 launch multi_robot_emergency central_dispatch.launch.py \
   dispatch_enabled:=false
 ```
 
-단축 명령을 사용하려면 다음 한 줄을 등록합니다.
+RViz의 **Publish Point** 또는 `/emergency/request`의 `PoseStamped`로 시험 목표를
+보낼 수 있습니다. 상세 토픽과 배차 파라미터는
+[`src/multi_robot_emergency/README.md`](src/multi_robot_emergency/README.md)를
+따르세요.
+
+## Configuration
+
+- 공용 지도: `maps/map.yaml`
+- Dock/초기 자세: `src/aed_bringup/config/dock_poses.yaml`
+- Nav2 안전 설정: `src/aed_bringup/config/nav2_aed.yaml`
+- 카메라·검출 backend: `src/aed_vision/config/*.yaml`
+- 카메라 호모그래피: `src/aed_vision/config/homography_cam*.yaml`
+- 혼잡 구역과 ETA 배율: `src/multi_robot_emergency/config/crowd_zones.yaml`
+- LiDAR fallback: `src/sensor_recovery/config/*.yaml`
+
+지도, Dock pose, 카메라 보정값과 모델 경로는 현장마다 다시 확인해야 합니다.
+개인 환경의 절대 경로나 비밀정보는 저장소에 커밋하지 마세요.
+
+## Verification
 
 ```bash
-echo 'source ~/rokey_ws/multi_amr_aed/tools/aliases.sh' >> ~/.bashrc
-source ~/.bashrc
-aed       # 워크스페이스로 이동하고 ROS 2 및 빌드 환경 source
-aedenv    # TurtleBot 4 discovery 환경까지 추가로 적용할 때
-```
-
-비전 backend별 통합 실행 단축어도 제공합니다.
-
-```bash
-central false           # 목각인형 구조 모델, 출동 비활성
-central true            # 목각인형 구조 모델, 실제 출동
-centralp false          # 사람 Pose + COCO 조력자 검출, 출동 비활성
-centralp true           # 사람 Pose + COCO 조력자 검출, 실제 출동
-visionperson 1          # 고정 카메라 1 실제 사람 시험
-visionmannequin 1       # 고정 카메라 1 목각인형 시험
-```
-
-`central`과 `centralp`는 모두 HMI를 포함한 중앙 PC 통합 런타임입니다.
-`true/false`는 HMI 여부가 아니라 실제 출동 허용 여부입니다. 자세한 전체·개별
-실행 명령은 `src/aed_bringup/README.md`의 비전 backend 선택 절을 참고합니다.
-
-## Build
-
-```bash
-cd ~/rokey_ws/multi_amr_aed
 source /opt/ros/humble/setup.bash
-PYTHONNOUSERSITE=1 colcon build --symlink-install
 source install/setup.bash
+
+colcon test --event-handlers console_direct+
+colcon test-result --verbose
+npm run typecheck --prefix src/aed_hmi/frontend
+npm run build --prefix src/aed_hmi/frontend
 ```
 
-이 PC는 사용자 영역 `setuptools`와 Ubuntu `packaging`의 버전이 맞지 않으므로
-빌드할 때 `PYTHONNOUSERSITE=1`을 사용합니다. 단축 명령을 불러온 뒤에는
-`aedbuild`로 같은 빌드를 실행할 수 있습니다.
+하드웨어 검증은 일반 단위 테스트와 분리합니다. LiDAR OFF/ON, Nav2 → fallback
+제어권 인계, depth 정지거리 시험은
+[`src/sensor_recovery/README.md`](src/sensor_recovery/README.md)의 안전 조건과
+`tools/test_*.sh` 절차를 그대로 따르세요.
 
-현재 두 로봇의 공통 기본 지도는 `maps/map.yaml`입니다. robot2가 작성한
-map2를 공용 좌표계로 채택했으며, `loc 1`, `loc 2`와 `robotstart`의
-localization 터미널은 이 지도를 자동으로 사용합니다. 초기 위치는
-`src/aed_bringup/config/dock_poses.yaml`의 로봇별 Dock 좌표를 `initpose 1`,
-`initpose 2`가 발행합니다. 다른
-지도를 시험할 때만 `loc <robot_number> /absolute/path/to/map.yaml`처럼 경로를
-명시합니다. 카메라 보정값과 YOLO 모델은 현장 측정과 모델 검증 후 별도로
-설정해야 합니다.
+## Safety and operating rules
+
+- 로봇은 ROS namespace와 `robot_id`로 구분합니다.
+- 같은 로봇의 `/cmd_vel`에 Nav2와 fallback이 동시에 쓰지 않게 합니다.
+- 새 assignment version은 이전 goal을 취소하며, 실패한 로봇이 자체적으로 이전
+  goal을 재개하지 않습니다.
+- Localization과 공용 지도 정합, 주변 장애물, 배터리, 네트워크를 출동 전에
+  확인합니다.
+- 계단, 유리와 낮은 장애물은 2D LiDAR가 놓칠 수 있습니다.
+- 실제 환자 대응용 의료기기로 사용하기 전 별도의 안전성·신뢰성 검증이 필요합니다.
+
+## Documentation
+
+- [중앙/로봇 통합 실행](src/aed_bringup/README.md)
+- [ROS 인터페이스](docs/interfaces.md)
+- [장애 복구 설계](docs/fault-recovery.md)
+- [LiDAR fallback 요약](docs/lidar-fallback-summary.md)
+- [DB/HMI 인터페이스](docs/db_interfaces.md)
+- [호모그래피 현장 검증](docs/homography_verification_2026-08-07.md)
+- [ETA 정확도 보고서](docs/eta_accuracy_report_2026-08-07.md)
+- [모듈 담당과 통합 원칙](docs/module-ownership.md)
+
+## Collaboration
+
+`main`에서 기능 브랜치를 만든 뒤 빌드와 관련 테스트를 통과시켜 Pull Request로
+병합합니다. 한 브랜치에는 가능한 한 하나의 목적만 담고, PR에는 구현 내용,
+검증 명령·결과, 남은 제약을 기록합니다. `build/`, `install/`, `log/`, 학습
+데이터와 개인 환경 설정은 커밋하지 않습니다.

@@ -94,7 +94,7 @@ PARAMETER_DEFAULTS = (
     ("imgsz", 640),
     ("inference_device", ""),
     # 검출 확정과 혼잡도
-    ("fall_stationary_seconds", 1.0),
+    ("fall_stationary_seconds", 2.0),
     ("fall_max_center_motion_ratio", 0.025),
     ("fall_max_size_change_ratio", 0.25),
     ("fall_track_match_iou", 0.30),

@@ -33,7 +33,7 @@
   HOG+SVM으로 최종 자세를 판정합니다. 운영 기본값은 객체별 Pose 추가 추론을
   끄며, SVM이 없을 때는 bbox 비율로 낙상 판정을 보완합니다.
 - 선택 `person_pose` backend는 YOLO11n-Pose의 실제 사람 관절과 bbox로 자세 판정
-- 동일한 낙상 bbox의 위치와 크기가 1초 이상 안정적일 때 응급상황 확정
+- 동일한 낙상 bbox의 위치와 크기가 2초 이상 안정적일 때 응급상황 확정
 - 확정 뒤 2초 동안 낙상 후보가 없을 때만 응급상황 해제
 - 확정/해제 전환 시 `aed_interfaces/EmergencyEvent` 발행
 - 검출 bbox 하단 중심점을 카메라별 호모그래피로 map 좌표 변환
@@ -58,15 +58,15 @@
 않습니다. 고정 카메라는 각 프레임에서 confidence가 `0.60` 이상인
 `mannequin`을 먼저 찾고 자세 판정을 통과한 대상만 낙상 후보로 받습니다.
 동일한 낙상 bbox가 화면 대각선 기준 중심 이동률 2.5% 이하, 면적 변화율 25%
-이하인 상태로 1초 이상 유지될 때 응급상황을 확정합니다. 다른 bbox로 바뀌거나
-움직임 기준을 넘으면 1초 타이머를 다시 시작합니다. 확정 뒤에는 순간 가림으로
+이하인 상태로 2초 이상 유지될 때 응급상황을 확정합니다. 다른 bbox로 바뀌거나
+움직임 기준을 넘으면 2초 타이머를 다시 시작합니다. 확정 뒤에는 순간 가림으로
 바로 취소되지 않도록 실제 시간 기준 2초 연속 미검출 뒤에만 `CANCELED`로
 전환합니다.
 
 ```text
 고정 카메라 YOLO confidence >= 0.60
         ↓ 후보 검출 — recall 우선
-동일 bbox 위치·크기 안정 상태 1초 유지
+동일 bbox 위치·크기 안정 상태 2초 유지
         ↓ 시간·움직임 검증 — 순간 오검출 억제
 EmergencyEvent.CONFIRMED
         ↓ 2초 연속 미검출
@@ -162,7 +162,7 @@ ros2 launch aed_vision camera_vision.launch.py \
   `pose_min_box_area`: Pose 사람·관절 품질 필터
 - `rescue_conf`: 구조 대상 YOLO의 1차 후보 confidence 임계값. 고정 카메라
   `0.60`, 로봇 카메라 `0.50`
-- `fall_stationary_seconds`: 동일 bbox가 안정적으로 유지돼야 하는 시간. `1.0`
+- `fall_stationary_seconds`: 동일 bbox가 안정적으로 유지돼야 하는 시간. `2.0`
 - `fall_max_center_motion_ratio`: 화면 대각선 대비 허용 중심 이동률. `0.025`
 - `fall_max_size_change_ratio`: 기준 bbox 대비 허용 면적 변화율. YOLO bbox
   jitter를 흡수하도록 `0.25`
